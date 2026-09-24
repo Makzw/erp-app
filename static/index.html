@@ -2594,10 +2594,10 @@ function renderPMCTree(items, title) {
   html += '<th style="padding:7px 4px;text-align:center">层</th>';
   html += '<th style="padding:7px 4px;text-align:right">需求</th>';
   html += '<th style="padding:7px 4px;text-align:right">销未出</th>';
-  html += '<th style="padding:7px 4px;text-align:right">原仓</th>';
-  html += '<th style="padding:7px 4px;text-align:right">生仓</th>';
+  html += '<th style="padding:7px 4px;text-align:right">原材料仓</th>';
+  html += '<th style="padding:7px 4px;text-align:right">生产仓</th>';
   html += '<th style="padding:7px 4px;text-align:right">在途</th>';
-  html += '<th style="padding:7px 4px;text-align:right">在单请</th>';
+  html += '<th style="padding:7px 4px;text-align:right">在单请购</th>';
   html += '<th style="padding:7px 4px;text-align:right">合计</th>';
   html += '<th style="padding:7px 4px;text-align:right;min-width:80px">缺口</th>';
   html += '<th style="padding:7px 4px;text-align:center">调</th>';
@@ -2649,9 +2649,9 @@ function renderPMCTree(items, title) {
 
   // 说明
   html += '<div style="margin-top:10px;font-size:11px;color:var(--sub);display:flex;gap:14px;flex-wrap:wrap">';
-  html += '<span>销未出=<span style="color:#6366f1;font-weight:600">销售未交订单</span></span>';
+  html += '<span>销未出=<span style="color:#6366f1;font-weight:600">销售未出</span></span>';
   html += '<span>在途=<span style="color:#f59e0b;font-weight:600">原材料在途购</span></span>';
-  html += '<span>在单请=<span style="color:#8b5cf6;font-weight:600">原材料在单请购</span></span>';
+  html += '<span>在单请购=<span style="color:#8b5cf6;font-weight:600">原材料在单请购</span></span>';
   html += '</div>';
 
   // 生成 MPS 按钮
