@@ -1,0 +1,2717 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>安而固 ERP</title>
+  <style>
+    :root {
+      --bg: #f0f2f5; --card: #fff; --text: #1a1a1a; --sub: #888;
+      --accent: #2563eb; --green: #16a34a; --red: #dc2626; --orange: #d97706;
+      --border: #e5e7eb; --radius: 10px; --shadow: 0 1px 3px rgba(0,0,0,.08);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: var(--bg); color: var(--text);
+      -webkit-tap-highlight-color: transparent;
+    }
+    .topbar {
+      position: sticky; top: 0; z-index: 100;
+      background: var(--accent); color: #fff;
+      padding: 12px 16px;
+      display: flex; align-items: center; gap: 12px;
+      box-shadow: 0 2px 8px rgba(37,99,235,.25);
+    }
+    .topbar h1 { font-size: 17px; font-weight: 600; flex: 1; }
+    .tab-bar {
+      background: #fff; display: flex;
+      border-bottom: 1px solid var(--border);
+      overflow-x: auto; -webkit-overflow-scrolling: touch;
+    }
+    .tab-bar::-webkit-scrollbar { display: none; }
+    .tab-btn {
+      flex-shrink: 0; text-align: center; padding: 10px 16px;
+      font-size: 14px; font-weight: 500; color: var(--sub);
+      cursor: pointer; border-bottom: 2px solid transparent;
+      transition: all .15s; white-space: nowrap;
+    }
+    .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .tab-count {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 18px; height: 18px; border-radius: 9px;
+      background: var(--bg); color: var(--sub); font-size: 11px; font-weight: 700;
+      margin-left: 4px; padding: 0 4px;
+    }
+    .tab-btn.active .tab-count { background: var(--accent); color: #fff; }
+    .filter-bar {
+      background: #fff; padding: 10px 16px;
+      display: flex; gap: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    .filter-tab {
+      flex-shrink: 0; padding: 5px 14px; border-radius: 20px;
+      font-size: 13px; border: 1px solid var(--border);
+      background: #fff; color: var(--sub); cursor: pointer; transition: all .15s;
+    }
+    .filter-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .pmc-card {
+      border: 1.5px solid var(--border); border-radius: 8px; padding: 12px; margin: 6px 12px;
+      display: flex; align-items: flex-start; gap: 10px; background: #fff; transition: all .15s;
+    }
+    .pmc-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+    .pmc-card-sel { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(59,130,246,.15); }
+    .pmc-card-sel:hover { box-shadow: 0 0 0 3px rgba(59,130,246,.25), 0 2px 8px rgba(59,130,246,.1); }
+    .state-msg { text-align: center; padding: 48px 16px; color: var(--sub); font-size: 14px; }
+    .spinner {
+      width: 24px; height: 24px; border: 3px solid var(--border);
+      border-top-color: var(--accent); border-radius: 50%;
+      animation: spin .7s linear infinite; margin: 24px auto 12px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .error-msg { text-align: center; padding: 16px; color: var(--red); font-size: 14px; }
+    .list { padding: 12px 12px 80px; }
+
+    /* ── 请购单卡片 ───────────────────────── */
+    .qts-row {
+      background: var(--card); border-radius: var(--radius);
+      box-shadow: var(--shadow); padding: 12px; margin-bottom: 10px;
+      cursor: pointer; transition: box-shadow .15s;
+    }
+    .qts-row:active { box-shadow: none; }
+    .qts-row-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; min-width: 0; }
+    .qts-status { font-size: 12px; padding: 2px 8px; border-radius: 10px; font-weight: 500; }
+    .qts-status.open { background: #dcfce7; color: #16a34a; }
+    .qts-status.closed { background: #f3f4f6; color: #6b7280; }
+    .qts-no { font-weight: 700; font-size: 14px; }
+    .qts-cus { font-size: 12px; color: var(--accent); font-weight: 500; }
+    .qts-date { font-size: 12px; color: var(--sub); }
+    .qts-cus-code { font-size: 11px; background: #dbeafe; color: #1d4ed8; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
+    .search-bar {
+      background: #fff; padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+      display: flex; gap: 8px; align-items: center;
+    }
+    .search-bar input {
+      flex: 1; padding: 7px 12px; border: 1px solid var(--border);
+      border-radius: 20px; font-size: 14px; outline: none;
+      background: var(--bg);
+    }
+    .search-bar input:focus { border-color: var(--accent); }
+    .search-bar input::placeholder { color: var(--sub); }
+    .search-clear {
+      background: none; border: none; color: var(--sub);
+      font-size: 16px; cursor: pointer; padding: 4px; line-height: 1;
+      display: none;
+    }
+    .search-clear.show { display: block; }
+    mark { background: #fff176; color: #1a1a1a; border-radius: 2px; padding: 0 1px; }
+    .qts-row-body { display: flex; flex-direction: column; gap: 4px; }
+    .qts-prd { display: flex; gap: 8px; }
+    .qts-pno { font-weight: 600; font-size: 13px; color: var(--text); }
+    .qts-pname { font-size: 12px; color: var(--sub); flex: 1; word-break: break-all; }
+    .qts-row-foot { display: flex; gap: 12px; font-size: 12px; color: var(--sub); }
+    .qts-row-foot b { color: var(--text); }
+    .qts-row-meta { display: flex; gap: 12px; font-size: 12px; color: var(--sub); border-top: 1px solid var(--border); margin-top: 6px; padding-top: 6px; flex-wrap: wrap; }
+    .qts-detail-card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px; margin-bottom: 12px; }
+    .qts-detail-row { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px; margin-bottom: 8px; }
+    .qts-header { padding-bottom: 6px; }
+    .qts-no { font-weight: 700; font-size: 15px; }
+    .qts-dt { color: var(--sub); font-size: 13px; margin-top: 2px; }
+    .qts-divider { border: none; border-top: 1px solid var(--border); margin: 8px 0; }
+    .qts-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; }
+    .qts-meta { font-size: 12px; color: var(--sub); }
+    .qts-meta span { margin-right: 10px; }
+
+    /* ── Section / Group ─────────────────── */
+    .smo-section { margin-bottom: 16px; }
+    .smo-section-head {
+      padding: 8px 14px; border-radius: 8px;
+      font-weight: 700; font-size: 14px; margin-bottom: 4px;
+      background: #fff; color: var(--text);
+      border-bottom: 2px solid var(--accent);
+    }
+    .smo-sub-section { margin-bottom: 4px; }
+    .smo-sub-head {
+      padding: 4px 8px; font-size: 13px; font-weight: 600;
+      color: var(--sub); border-left: 3px solid;
+      margin: 4px 0;
+    }
+
+    /* ── SMO Card ─────────────────────────── */
+    .smo-card {
+      background: var(--card); border-radius: var(--radius);
+      box-shadow: var(--shadow); padding: 14px;
+      margin-bottom: 10px; position: relative;
+      cursor: pointer;
+      border: 2px solid transparent;
+      transition: border-color .15s, box-shadow .15s;
+      min-width: 0; /* 防止 flex 子项横向溢出 */
+    }
+    .smo-card.selected {
+      border-color: var(--red);
+      box-shadow: 0 0 0 3px rgba(220,38,38,.15);
+    }
+    .smo-card.unclickable {
+      cursor: not-allowed;
+      opacity: 0.6;
+    }
+    .smo-card.transferred {
+      cursor: not-allowed;
+      opacity: 0.65;
+    }
+    .smo-card.dispatch-ready {
+      /* 默认无边框，选中后才有绿色边框 */
+    }
+    .smo-card.selected {
+      border-color: var(--green) !important;
+      box-shadow: 0 0 0 3px rgba(34,197,94,.2);
+    }
+    .smo-card-header { padding-bottom: 6px; }
+    .dispatch-mat-list { background: var(--bg); border-radius: 8px; overflow: hidden; }
+    .smo-fg { font-weight: 700; font-size: 15px; word-break: break-all; }
+    .smo-fg-name { color: var(--sub); font-size: 13px; margin-top: 2px; word-break: break-all; }
+    .smo-divider { border: none; border-top: 1px solid var(--border); margin: 8px 0; }
+    .smo-bom-rows { border-top: 1px solid var(--border); margin-top: 8px; padding-top: 8px; }
+    .smo-bom-row { padding: 4px 0; min-width: 0; display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+    .smo-bom-row-prd { font-weight: 600; font-size: 13px; word-break: break-all; flex: 0 0 auto; }
+    .smo-bom-row-name { color: var(--sub); font-size: 12px; flex: 1 1 auto; min-width: 0; word-break: break-all; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .smo-bom-row-right { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+    .smo-bom-row .ok { color: var(--green); font-size: 12px; }
+    .smo-bom-row .part { color: var(--orange); font-size: 12px; }
+    .smo-bom-row .no { color: var(--red); font-size: 12px; }
+    .smo-bom-row-wh { color: var(--sub); font-size: 11px; }
+    .smo-card-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; gap: 8px; flex-wrap: wrap; }
+    .smo-qty-row { font-size: 12px; color: var(--text); white-space: nowrap; }
+    .smo-meta { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; color: var(--sub); flex: 1; min-width: 0; }
+    .smo-meta span { word-break: break-all; min-width: 0; }
+    .stock { font-size: 12px; }
+    .ready-box { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 14px; font-size: 12px; font-weight: 600; }
+    .ready-box.ok { background: #dcfce7; color: var(--green); }
+    .ready-box.no { background: #fee2e2; color: var(--red); }
+    .ready-box.warn { background: #fef3c7; color: var(--orange); }
+
+    /* ── 盘点仓库卡片 ─────────────────────────── */
+    .stock-wh-head { font-size: 12px; color: var(--sub); padding: 4px 0 6px; border-bottom: 1px solid var(--border); margin-bottom: 6px; }
+    .stock-wh-card {
+      display: flex; align-items: center; gap: 12px;
+      background: var(--card); border-radius: var(--radius);
+      box-shadow: var(--shadow); padding: 12px 14px; margin-bottom: 8px;
+      cursor: pointer; transition: box-shadow .15s;
+    }
+    .stock-wh-card:active { box-shadow: none; }
+    .stock-wh-card.stock-wh-new {
+      border: 2px dashed var(--border); background: #fafafa;
+      color: var(--sub);
+    }
+    .stock-wh-icon { font-size: 24px; line-height: 1; flex-shrink: 0; width: 36px; text-align: center; }
+    .stock-wh-info { flex: 1; min-width: 0; }
+    .stock-wh-name { font-weight: 600; font-size: 14px; color: var(--text); }
+    .stock-wh-qty { font-size: 12px; color: var(--sub); margin-top: 2px; }
+    .stock-wh-arrow { font-size: 20px; color: var(--sub); flex-shrink: 0; }
+
+    /* ── Checkbox (hidden) ───────────────────── */
+    .smo-check-wrap { display: none; }
+
+    /* ── FAB (floating +) ────────────────── */
+    .fab {
+      position: fixed; bottom: 28px; right: 24px; z-index: 200;
+      width: 52px; height: 52px; border-radius: 26px;
+      background: var(--green); color: #fff;
+      font-size: 32px; font-weight: 300; line-height: 52px; text-align: center;
+      box-shadow: 0 4px 16px rgba(22,163,74,.4);
+      cursor: pointer; display: none;
+      transition: transform .15s, box-shadow .15s;
+    }
+    .fab.show { display: block; }
+    .fab:active { transform: scale(.93); }
+
+    /* ── Modal ────────────────────────────── */
+    .modal-overlay {
+      display: none; position: fixed; inset: 0; z-index: 300;
+      background: rgba(0,0,0,.5);
+      align-items: flex-end; justify-content: center;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: var(--card); border-radius: 16px 16px 0 0;
+      width: 100%; max-width: 600px; max-height: 88vh;
+      display: flex; flex-direction: column;
+      animation: slideUp .2s ease;
+    }
+    @keyframes slideUp { from { transform: translateY(100%); } }
+    .modal-head {
+      padding: 16px 16px 0;
+      display: flex; align-items: center; gap: 12px;
+      border-bottom: 1px solid var(--border); flex-shrink: 0;
+    }
+    .modal-head h2 { font-size: 16px; font-weight: 600; flex: 1; }
+    .modal-close {
+      width: 32px; height: 32px; border-radius: 50%; border: none;
+      background: var(--bg); font-size: 18px; cursor: pointer; color: var(--sub);
+    }
+    .modal-tabs {
+      display: flex; padding: 12px 16px 0; gap: 8px; flex-shrink: 0;
+    }
+    .modal-tab {
+      flex: 1; padding: 8px 0; text-align: center; font-size: 14px;
+      border-radius: 8px 8px 0 0; cursor: pointer; font-weight: 500;
+      border: 1px solid var(--border); border-bottom: none;
+      color: var(--sub); background: var(--bg);
+    }
+    .modal-tab.active { background: var(--card); color: var(--text); }
+    .modal-body {
+      flex: 1; overflow-y: auto; padding: 12px 16px 16px;
+    }
+
+    /* ── Issue rows ──────────────────────── */
+    .issue-row {
+      background: var(--bg); border-radius: 10px; padding: 12px;
+      margin-bottom: 8px;
+    }
+    .issue-row-top {
+      display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
+    }
+    .issue-prd { font-weight: 700; font-size: 14px; flex: 1; }
+    .issue-name { font-size: 12px; color: var(--sub); }
+    .issue-stock { font-size: 11px; color: var(--sub); }
+    .issue-stock span { margin-right: 8px; }
+    .issue-stock .shortage { color: var(--red); font-weight: 600; }
+    .issue-stock .enough { color: var(--green); font-weight: 600; }
+    .issue-fields { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-top: 8px; }
+    .issue-field label { font-size: 11px; color: var(--sub); display: block; margin-bottom: 3px; }
+    .issue-field input, .issue-field select {
+      width: 100%; padding: 6px 8px; font-size: 13px;
+      border: 1px solid var(--border); border-radius: 6px;
+      background: var(--card); color: var(--text);
+    }
+    .issue-field input[type="number"] { text-align: right; }
+    .issue-type-tag {
+      font-size: 11px; padding: 2px 8px; border-radius: 10px;
+      font-weight: 600;
+    }
+    .issue-type-tag.prod { background: #dbeafe; color: #1d4ed8; }
+    .issue-type-tag.sub { background: #fef3c7; color: #92400e; }
+
+    /* ── Modal footer ────────────────────── */
+    .modal-footer {
+      padding: 12px 16px; border-top: 1px solid var(--border);
+      display: flex; gap: 10px; flex-shrink: 0;
+    }
+    .btn-confirm {
+      flex: 1; padding: 12px; border: none; border-radius: 10px;
+      background: var(--green); color: #fff; font-size: 15px; font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-confirm:active { opacity: .85; }
+    .btn-cancel {
+      padding: 12px 20px; border: 1px solid var(--border); border-radius: 10px;
+      background: var(--card); color: var(--text); font-size: 15px; cursor: pointer;
+    }
+
+    /* ── Toast ───────────────────────────── */
+    .toast {
+      position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%);
+      background: rgba(0,0,0,.8); color: #fff; padding: 10px 20px;
+      border-radius: 8px; font-size: 14px; z-index: 400;
+      display: none; white-space: nowrap;
+    }
+    .toast.show { display: block; animation: fadeIn .2s; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateX(-50%) translateY(10px); } }
+    /* 采购未回 工具栏+分页 */
+    .pos-un-toolbar { display: flex; align-items: center; justify-content: space-between; padding: 8px 4px 4px; font-size: 13px; gap: 8px; }
+    .pos-un-toolbar select { padding: 3px 6px; border-radius: 6px; border: 1px solid var(--border); font-size: 13px; }
+    .pos-un-info { color: var(--sub); font-size: 12px; }
+    .pos-un-filter-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .pos-un-filter-row label { font-size: 12px; color: var(--sub); display: flex; align-items: center; gap: 3px; }
+    .pos-un-filter-row input { padding: 3px 6px; border-radius: 5px; border: 1px solid var(--border); font-size: 12px; width: 80px; }
+    .pos-un-filter-reset { font-size: 12px; color: var(--accent); cursor: pointer; border: none; background: none; padding: 2px 4px; }
+    .pager { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 12px 4px; }
+    .pager button { padding: 6px 16px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent); color: #fff; font-size: 13px; cursor: pointer; }
+    .pager button:disabled { background: #ccc; border-color: #ccc; cursor: not-allowed; }
+    .pager span { font-size: 13px; color: var(--sub); }
+
+    /* ── 待升单列表：FAB + 侧边栏 ─────────────── */
+    .stock-batch-fab {
+      position: fixed; right: 16px; bottom: 24px; z-index: 500;
+      width: 56px; height: 56px; border-radius: 50%;
+      background: var(--accent); color: #fff; border: none;
+      font-size: 26px; cursor: pointer; box-shadow: 0 4px 14px rgba(37,99,235,.4);
+      display: flex; align-items: center; justify-content: center;
+      font-family: inherit; transition: transform .15s;
+    }
+    .stock-batch-fab:active { transform: scale(.95); }
+    .stock-batch-fab-badge {
+      position: absolute; top: -4px; right: -4px;
+      min-width: 22px; height: 22px; padding: 0 6px;
+      background: var(--red); color: #fff; border-radius: 11px;
+      font-size: 12px; font-weight: 700; line-height: 22px;
+      text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,.2);
+    }
+    .stock-batch-overlay {
+      display: none;
+    }
+    .stock-batch-overlay.show { display: block; }
+    .stock-batch-side {
+      position: fixed; top: 0; right: 0; bottom: 0; z-index: 470;
+      width: 100%; max-width: 380px;
+      background: var(--card); box-shadow: -4px 0 16px rgba(0,0,0,.12);
+      transform: translateX(100%); transition: transform .25s ease;
+      display: flex; flex-direction: column;
+      font-family: inherit;
+    }
+    .stock-batch-side.show { transform: translateX(0); }
+    .stock-batch-head {
+      padding: 14px 16px; display: flex; align-items: center; gap: 10px;
+      border-bottom: 1px solid var(--border); flex-shrink: 0;
+    }
+    .stock-batch-head .title { font-size: 15px; font-weight: 700; flex: 1; color: var(--text); }
+    .stock-batch-head .count {
+      background: var(--accent); color: #fff;
+      padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: 700;
+    }
+    .stock-batch-head .close {
+      width: 32px; height: 32px; border-radius: 50%; border: none;
+      background: var(--bg); font-size: 18px; cursor: pointer; color: var(--sub);
+    }
+    .stock-batch-body { flex: 1; overflow-y: auto; padding: 8px 12px; }
+    .stock-batch-empty {
+      padding: 60px 16px; text-align: center; color: var(--sub); font-size: 13px;
+    }
+    .batch-row {
+      background: var(--bg); border-radius: 10px; padding: 10px;
+      margin-bottom: 8px; border: 1px solid var(--border);
+    }
+    .batch-row-head {
+      display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+    }
+    .batch-row-dir {
+      font-size: 11px; font-weight: 700; padding: 2px 6px;
+      border-radius: 4px; flex-shrink: 0;
+    }
+    .batch-row-dir.out { background: #fee2e2; color: var(--red); }
+    .batch-row-dir.in  { background: #dcfce7; color: var(--green); }
+    .batch-row-prd {
+      flex: 1; font-size: 13px; font-weight: 600; color: var(--text);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .batch-row-del {
+      width: 26px; height: 26px; border-radius: 50%; border: none;
+      background: var(--card); color: var(--sub); cursor: pointer;
+      font-size: 14px; line-height: 1; flex-shrink: 0;
+    }
+    .batch-row-meta {
+      font-size: 12px; color: var(--sub); margin-bottom: 8px;
+      display: flex; gap: 8px; flex-wrap: wrap;
+    }
+    .batch-row-meta b { color: var(--text); font-weight: 600; }
+    .batch-row-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+    }
+    .batch-row-grid label {
+      display: block; font-size: 10px; color: var(--sub);
+      margin-bottom: 2px; font-weight: 600;
+    }
+    .batch-row-grid input {
+      width: 100%; box-sizing: border-box;
+      padding: 6px 8px; border: 1px solid var(--border);
+      border-radius: 6px; font-size: 12px;
+      font-family: inherit; outline: none; background: var(--card);
+    }
+    .stock-batch-foot {
+      padding: 12px; border-top: 1px solid var(--border);
+      display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+      flex-shrink: 0; background: var(--card);
+    }
+    .stock-batch-foot .btn-clear {
+      grid-column: span 2; padding: 8px;
+      background: var(--card); color: var(--sub);
+      border: 1px solid var(--border); border-radius: 8px;
+      font-size: 12px; cursor: pointer; font-family: inherit;
+    }
+    .stock-batch-foot .btn-clear:disabled {
+      opacity: .4; cursor: not-allowed;
+    }
+    .stock-batch-foot .btn-up {
+      padding: 12px 8px; border-radius: 10px;
+      border: 1.5px solid; font-size: 13px; font-weight: 700;
+      cursor: pointer; font-family: inherit;
+    }
+    .stock-batch-foot .btn-up:disabled { opacity: .4; cursor: not-allowed; }
+    .stock-batch-foot .btn-up-out {
+      background: #fee2e2; color: var(--red); border-color: #fca5a5;
+    }
+    .stock-batch-foot .btn-up-in {
+      background: #dcfce7; color: var(--green); border-color: #86efac;
+    }
+    .stock-batch-foot .btn-up-transfer {
+      grid-column: span 2; /* 调拨独占一行，便于识别 */
+      background: #dbeafe; color: var(--accent); border-color: #93c5fd;
+    }
+
+    /* ── 调拨 tab ───────────────────────────────────── */
+    .transfer-wh-card .stock-wh-icon {
+      background: rgba(37,99,235,.12); color: var(--accent);
+    }
+    .transfer-wh-card .stock-wh-qty b { color: var(--accent); }
+    /* 调拨项 badge (蓝色) */
+    .batch-row-dir.transfer { background: #dbeafe; color: var(--accent); }
+    /* 调拨模态框 FROM/TO 行 */
+    .transfer-wh-row {
+      display:flex; align-items:center; gap:8px; padding:8px 10px;
+      border:1.5px solid var(--border); border-radius:10px;
+      background:var(--bg); margin-bottom:8px;
+    }
+    .transfer-wh-row .label {
+      font-size:11px; font-weight:700; color:var(--sub);
+      flex-shrink:0; min-width:42px;
+    }
+    .transfer-wh-row .name {
+      flex:1; font-size:13px; font-weight:600; color:var(--text);
+      overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    }
+    .transfer-wh-row .qty-tag {
+      font-size:11px; color:var(--sub); flex-shrink:0;
+    }
+    .transfer-wh-row select {
+      flex:1; padding:8px 10px;
+      border:1.5px solid var(--border); border-radius:8px;
+      font-size:13px; font-family:inherit; outline:none;
+      background:var(--card); color:var(--text); min-width:0;
+    }
+    .transfer-arrow {
+      text-align:center; font-size:18px; color:var(--accent);
+      font-weight:700; padding:2px 0; line-height:1;
+    }
+  </style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>安而固 ERP</h1>
+  <button id="priceLock" onclick="togglePriceLock()" style="background:none;border:none;color:#fff;font-size:18px;cursor:pointer;padding:4px;line-height:1" title="显示单价">👁</button>
+</div>
+
+<div class="tab-bar">
+  <div class="tab-btn active" data-tab="qts">请购单</div>
+  <div class="tab-btn" data-tab="pos-unreceived">采购未回</div>
+  <div class="tab-btn" data-tab="smo">齐料列表</div>
+  <div class="tab-btn" data-tab="smo-mm">🎯 派工单</div>
+  <div class="tab-btn" data-tab="stock">📦 盘点</div>
+  <div class="tab-btn" data-tab="transfer">🔄 调拨</div>
+  <div class="tab-btn" data-tab="completion">🏭 完工</div>
+  <div class="tab-btn" data-tab="pmc">📊 PMC</div>
+</div>
+
+<div class="search-bar" id="searchBar" style="display:none">
+  <input type="text" id="searchInput" placeholder="搜索…"
+    oninput="handleSearch(this.value)"
+    autocomplete="off" />
+  <button class="search-clear" id="searchClear" onclick="clearSearch()">✕</button>
+</div>
+
+<div id="smoTabBar" class="tab-bar" style="display:none"></div>
+
+<div id="content"><div class="state-msg"><div class="spinner"></div>加载中…</div></div>
+
+<!-- FAB -->
+<div class="fab" id="fabIssue" onclick="openIssueModal()">+</div>
+<div class="fab" id="fabMm" onclick="openMmModal()" style="bottom:170px">📦+</div>
+
+<!-- Issue Modal -->
+<div class="modal-overlay" id="issueModal">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>发料</h2>
+      <button class="modal-close" onclick="closeIssueModal()">✕</button>
+    </div>
+    <div class="modal-tabs" id="modalTabs" style="display:flex">
+      <div class="modal-tab active" data-type="prod" onclick="switchTab('prod')">🏭 生产领料</div>
+      <div class="modal-tab" data-type="sub" onclick="switchTab('sub')">🔧 外发加工领料</div>
+    </div>
+    <div class="modal-body" id="modalBody">
+      <div class="state-msg"><div class="spinner"></div>加载中…</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="closeIssueModal()">取消</button>
+      <button class="btn-confirm" id="btnConfirm" onclick="confirmIssue()">确认发料</button>
+    </div>
+  </div>
+</div>
+
+<!-- MM 完工入库弹窗 -->
+<div class="modal-overlay" id="mmModal">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>开工发料</h2>
+      <button class="modal-close" onclick="closeMmModal()">✕</button>
+    </div>
+    <div class="modal-body" id="mmModalBody">
+      <div class="state-msg"><div class="spinner"></div>加载中…</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="closeMmModal()">取消</button>
+      <button class="btn-confirm" id="btnMmConfirm" onclick="confirmMm()">确认入库</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+const BASE = '/api';
+let curTab = 'qts';
+let curFilter = 'pending';
+let selected = new Set(); // ref_itm (MO_NO) keys
+let rawData = []; // 存储原始数据供搜索过滤
+let curSearch = ''; // 当前搜索词
+
+// ── Utils ───────────────────────────────────────────────────────────────────
+function api(url, opts) {
+  return fetch(url, opts).then(r => r.json());
+}
+function fmt(v) { return v == null || v === '' ? '' : String(v); }
+// 适合 HTML data-attribute 里 JSON 的转义（处理 HTMLEncode 后仍然残留的问题）
+function htmlJsonEscape(s) {
+  if (!s) return '';
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+
+function escAttr(v) { return v.replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+function escHtml(v) { return v == null ? '' : String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function fmtNum(v) { return v == null ? '' : Number(v).toLocaleString('zh-CN'); }
+function fmtDate(v) {
+  if (!v) return '';
+  const d = new Date(v);
+  return isNaN(d) ? v : d.toLocaleDateString('zh-CN');
+}
+function toast(msg, dur = 2500) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), dur);
+}
+function $id(id) { return document.getElementById(id); }
+
+// ── Search ─────────────────────────────────────────────────────────────────
+function highlight(s, q) {
+  if (!q || !s) return fmt(s);
+  return fmt(s).replace(new RegExp(escapeRegex(q), 'gi'), m => `<mark>${m}</mark>`);
+}
+function escapeRegex(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+function handleSearch(v) {
+  const q = v.trim();
+  curSearch = q;
+  $id('searchClear').classList.toggle('show', q.length > 0);
+
+  switch (curTab) {
+    case 'pos-unreceived':
+      loadPosUnreceived(q); break;
+    case 'qts':
+      if (!q) { renderQts(rawData, ''); break; }
+      renderQts(rawData.filter(r => JSON.stringify(r).toLowerCase().includes(q.toLowerCase())), q); break;
+    case 'smo':
+      if (!q) { loadSmo(); break; }
+      loadStockSuggestions(q); break;
+    case 'stock':
+      if (!q) { loadStock(); break; }
+      loadStockSuggestions(q); break;
+    case 'smo-mm':
+      curMmSearch = q;
+      if (!q) { renderDispatch(dispatchData, q); break; }
+      renderDispatch(dispatchData.filter(r => JSON.stringify(r).toLowerCase().includes(q.toLowerCase())), q); break;
+    case 'completion':
+      if (!q) { loadCompletion(); break; }
+      if (!completionData.length) { loadCompletion(); break; }
+      renderCompletionListFiltered(completionData.filter(r => JSON.stringify(r).toLowerCase().includes(q.toLowerCase()))); break;
+    case 'pmc':
+      (async () => {
+        try {
+          const data = await api(BASE + '/pmc/pos_unanalyzed?' + new URLSearchParams({q: q||''}));
+          renderPMCList(data.items || [], q||'');
+        } catch(e) { renderPMCList([], q||''); }
+      })();
+      break;
+  }
+}
+
+function clearSearch() {
+  $id('searchInput').value = '';
+  $id('searchClear').classList.remove('show');
+  curSearch = '';
+  handleSearch('');
+}
+
+function renderCurrentTab() {
+  if (curTab === 'qts') renderQts(rawData, '');
+  else if (curTab === 'pos-unreceived') loadPosUnreceived();
+  else if (curTab === 'completion') loadCompletion();
+  else if (curTab === 'smo-mm') renderDispatch(dispatchData, '');
+  else if (curTab === 'pmc') loadPMC();
+}
+
+function renderFiltered(items, q) {
+  switch (curTab) {
+    case 'qts':   renderQts(items, q); break;
+    case 'smo-mm': renderDispatch(dispatchData, q); break;
+  }
+}
+
+// ── Tab / Filter ────────────────────────────────────────────────────────────
+// Main tab bar only (not smoTabBar)
+const mainTabBar = document.querySelector('.tab-bar');
+mainTabBar.addEventListener('click', e => {
+    const btn = e.target.closest('.tab-btn');
+    if (!btn) return;
+    mainTabBar.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+    btn.classList.add('active');
+
+    if (btn.dataset.tab) {
+      // Main tab
+      curTab = btn.dataset.tab;
+      $id('smoTabBar').style.display = 'none';
+      // 切换时清除盘点tab的autocomplete残留
+      if (typeof dismissSuggestions === 'function') dismissSuggestions();
+      stockSuggestions = [];
+      $id('searchBar').style.display = 'flex';
+      $id('searchInput').value = '';
+      $id('searchClear').classList.remove('show');
+      curSearch = '';
+      // FAB 只在完工单(smo-mm)tab显示
+      $id('fabIssue').style.display = 'none';
+      if (curTab === 'pos-unreceived') {
+        posUnSearch = ''; posUnQ = '';
+        posUnCustomer = ''; posUnSupplier = ''; posUnOrderNo = '';
+      }
+      else if (curTab === 'smo-mm') curMmSearch = '';
+      if (curTab === 'smo') {
+        loadSmo();
+      } else if (curTab === 'pos-unreceived') {
+        loadPosUnreceived();
+      } else if (curTab === 'smo-mm') {
+        loadSmoMm();
+      } else if (curTab === 'stock') {
+        loadStock();
+      } else if (curTab === 'transfer') {
+        loadTransfer();
+      } else if (curTab === 'completion') {
+        loadCompletion();
+      } else if (curTab === 'pmc') {
+        loadPMC();
+      } else {
+        loadQts();
+      }
+    }
+  });
+
+// ── 请购单 ──────────────────────────────────────────────────────────────────
+let qtsSupplier = '', qtsOrderNo = '';
+
+async function loadQts() {
+  const el = $id('content');
+  el.innerHTML = '<div class="state-msg"><div class="spinner"></div>加载中…</div>';
+  try {
+    const params = new URLSearchParams({});
+    if (qtsSupplier) params.set('supplier', qtsSupplier);
+    if (qtsOrderNo)  params.set('order_no',  qtsOrderNo);
+    const data = await api(BASE + '/qts?' + params);
+    rawData = data.items || [];
+    renderQts(rawData, '');
+  } catch(e) { el.innerHTML = '<div class="error-msg">'+e.message+'</div>'; }
+}
+
+function applyQtsFilters() {
+  qtsSupplier = ($id('qtsFSupplier') || {value:''}).value.trim();
+  qtsOrderNo  = ($id('qtsFOrderNo')  || {value:''}).value.trim();
+  loadQts();
+}
+
+function resetQtsFilters() {
+  qtsSupplier = ''; qtsOrderNo = '';
+  loadQts();
+}
+
+function renderQts(items, q) {
+  const el = $id('content');
+  const toolbar = `
+<div class="pos-un-toolbar" style="padding:8px 12px">
+  <span class="pos-un-filter-row">
+    <label>供应商<input type="text" id="qtsFSupplier" value="${escAttr(qtsSupplier)}" placeholder="筛选" autocomplete="off" onkeydown="if(event.key==='Enter')applyQtsFilters()"></label>
+    <label>指令单<input type="text" id="qtsFOrderNo" value="${escAttr(qtsOrderNo)}" placeholder="筛选" autocomplete="off" onkeydown="if(event.key==='Enter')applyQtsFilters()"></label>
+    <button class="pos-un-filter-reset" onclick="resetQtsFilters()">清除</button>
+    <button onclick="applyQtsFilters()">筛选</button>
+  </span>
+  <span class="pos-un-info">${items.length} 条</span>
+</div>`;
+  if (!items || !items.length) { el.innerHTML=toolbar+'<div class="state-msg">暂无请购单</div>'; return; }
+  let h = toolbar + '<div class="list">';
+  for (const r of items) {
+    const closed = r.cls_id;
+    h += `<div class="qts-row">
+      <div class="qts-row-head">
+        <span class="qts-status ${closed?'closed':'open'}">${closed?'已结':'未结'}</span>
+        <span class="qts-no">${highlight(r.qt_no, q)}</span>
+        <span class="qts-date">${highlight(r.qt_dd, q)}</span>
+      </div>
+      <div class="qts-row-body">
+        <div class="qts-prd">
+          <span class="qts-pno">${highlight(r.prd_no, q)}</span>
+          <span class="qts-pname">${highlight(r.prd_name, q)||'—'}</span>
+        </div>
+        <div class="qts-row-foot">
+          <span>数量: <b>${r.qty} ${fmt(r.ut)}</b></span>
+          <span>上次单价: <b class="price-val" style="display:none">${r.last_up ? '¥'+Number(r.last_up).toFixed(4) : '—'}</b><span class="price-lock-icon">🔒</span></span>
+        </div>
+      </div>
+      <div class="qts-row-meta">
+        <span>交期: ${highlight(r.est_dd, q)||'—'}</span>
+        <span>指令单: ${highlight(r.order_no, q)||'—'}</span>
+        <span>供应商: ${highlight(r.supplier, q)||'—'}</span>
+      </div>
+    </div>`;
+  }
+  el.innerHTML = h + '</div>';
+}
+
+// ── 采购未回 ─────────────────────────────────────────────────────────────────
+let posUnTotal = 0;
+let posUnQ = '', posUnCustomer = '', posUnSupplier = '', posUnOrderNo = '';
+
+async function loadPosUnreceived(q) {
+  posUnQ = (q !== undefined ? q : '').trim();
+  const el = $id('content');
+  el.innerHTML = '<div class="state-msg"><div class="spinner"></div>加载中…</div>';
+  try {
+    const params = new URLSearchParams({});
+    const search = (q !== undefined ? q : '').trim();
+    if (search) params.set('q', search);
+    if (posUnCustomer) params.set('customer', posUnCustomer);
+    if (posUnSupplier) params.set('supplier', posUnSupplier);
+    if (posUnOrderNo) params.set('order_no', posUnOrderNo);
+    const data = await api(BASE + '/pos-unreceived?' + params);
+    const items = data.items || [];
+    posUnTotal = data.total || 0;
+    renderPosUnreceived(items, posUnQ);
+  } catch(e) { el.innerHTML = '<div class="error-msg">'+e.message+'</div>'; }
+}
+
+function renderPosUnreceived(items) {
+  const el = $id('content');
+  const q = posUnQ;
+  const qC = posUnCustomer;
+  const qS = posUnSupplier;
+  const qO = posUnOrderNo;
+  const anyQ = q || qC || qS || qO;
+
+  let h = `
+    <div class="pos-un-toolbar">
+      <span class="pos-un-filter-row">
+        <label>客户<input type="text" id="posUnFCustomer" value="${escAttr(posUnCustomer)}" placeholder="筛选" autocomplete="off" onkeydown="if(event.key==='Enter')applyPosUnFilters()"></label>
+        <label>供应商<input type="text" id="posUnFSupplier" value="${escAttr(posUnSupplier)}" placeholder="筛选" autocomplete="off" onkeydown="if(event.key==='Enter')applyPosUnFilters()"></label>
+        <label>指令单<input type="text" id="posUnFOrderNo" value="${escAttr(posUnOrderNo)}" placeholder="筛选" autocomplete="off" onkeydown="if(event.key==='Enter')applyPosUnFilters()"></label>
+        <button class="pos-un-filter-reset" onclick="resetPosUnFilters()">清除</button>
+        <button onclick="applyPosUnFilters()">筛选</button>
+      </span>
+      <span class="pos-un-info">${posUnTotal} 条</span>
+    </div>`;
+
+  if (!items.length) {
+    el.innerHTML = h + '<div class="state-msg">暂无采购未回</div>';
+    return;
+  }
+
+  h += '<div class="list">';
+  for (const r of items) {
+    h += `<div class="qts-row">
+      <div class="qts-row-head">
+        <span class="qts-status open">未入库</span>
+        <span class="qts-no">${highlight(fmt(r.os_no), q)}</span>
+        <span class="qts-date">${fmt(r.os_dd)}</span>
+        ${r.customer ? `<span class="qts-cus">${highlight(r.customer, qC || q)}</span>` : ''}
+      </div>
+      <div class="qts-row-body">
+        <div class="qts-prd">
+          <span class="qts-pno">${highlight(fmt(r.prd_no), q)}</span>
+          <span class="qts-pname">${highlight(fmt(r.prd_name)||'—', q)}</span>
+        </div>
+        <div class="qts-row-foot">
+          <span>未回: <b>${r.unreceived} ${fmt(r.ut)}</b></span>
+          <span style="color:var(--sub)">订单: ${r.qty}</span>
+        </div>
+      </div>
+      <div class="qts-row-meta">
+        <span>交期: ${fmt(r.est_dd)||'—'}</span>
+        <span>指令单: ${highlight(fmt(r.order_no)||'—', qO)}</span>
+        ${r.supplier ? `<span>供应商: ${highlight(r.supplier, qS || q)}</span>` : ''}
+      </div>
+    </div>`;
+  }
+  h += '</div>';
+  el.innerHTML = h;
+}
+
+function applyPosUnFilters() {
+  posUnCustomer = ($id('posUnFCustomer') || {value:''}).value.trim();
+  posUnSupplier = ($id('posUnFSupplier') || {value:''}).value.trim();
+  posUnOrderNo  = ($id('posUnFOrderNo')  || {value:''}).value.trim();
+  loadPosUnreceived();
+}
+
+function resetPosUnFilters() {
+  posUnQ = ''; posUnCustomer = ''; posUnSupplier = ''; posUnOrderNo = '';
+  const elC = $id('posUnFCustomer'), elS = $id('posUnFSupplier'), elO = $id('posUnFOrderNo');
+  if (elC) elC.value = '';
+  if (elS) elS.value = '';
+  if (elO) elO.value = '';
+  loadPosUnreceived();
+}
+
+async function showQtDetail(qt_no) {
+  const el = $id('content');
+  el.innerHTML = '<div class="state-msg"><div class="spinner"></div></div>';
+  try {
+    const d = await api(BASE + '/qts/' + encodeURIComponent(qt_no));
+    if (d.error) { el.innerHTML='<div class="error-msg">'+d.error+'</div>'; return; }
+    let h = `<div class="list">
+      <div class="qts-detail-card">
+        <div class="qts-header">
+          <div class="qts-no">${fmt(d.qt_no)}</div>
+          <div class="qts-dt">${fmt(d.qt_dd)} ${d.cls_id?'<span class="qts-status closed">已结案</span>':'<span class="qts-status open">未结案</span>'}</div>
+        </div>
+        <div class="qts-divider"></div>
+        <dl class="detail-info" style="font-size:13px;line-height:1.8">
+          <dt>制单人</dt><dd>${fmt(d.usr)||'—'}</dd>
+          <dt>审核人</dt><dd>${fmt(d.chk_man)||'—'}</dd>
+          <dt>供应商</dt><dd>${fmt(d.cus_name)||'—'}</dd>
+          <dt>备注</dt><dd>${fmt(d.rem)||'—'}</dd>
+        </dl>
+      </div>
+      <h3 style="font-size:13px;color:var(--sub);padding:8px 0">明细行（${(d.items||[]).length} 条）</h3>`;
+    for (const item of d.items||[]) {
+      h += `<div class="qts-detail-row">
+        <div class="qts-header">
+          <div class="qts-no">${fmt(item.prd_no)}</div>
+          <div class="qts-dt">${fmt(item.prd_name)||'—'}</div>
+        </div>
+        <div class="qts-footer">
+          <div class="qts-meta">
+            <span>¥${Number(item.up||0).toFixed(2)} × ${fmtNum(item.qty)}${fmt(item.ut)}</span>
+            <span>= ¥${Number(item.amt||0).toLocaleString('zh-CN',{minimumFractionDigits:2})}</span>
+            ${item.est_dd?'<span>交期 '+fmtDate(item.est_dd)+'</span>':''}
+          </div>
+        </div>
+      </div>`;
+    }
+    el.innerHTML = h + '</div><div style="padding:16px"><button class="btn-cancel" onclick="loadQts()">← 返回</button></div>';
+  } catch(e) { el.innerHTML = '<div class="error-msg">'+e.message+'</div>'; }
+}
+
+// ── 派工单 SMO ─────────────────────────────────────────────────────────────
+let smoFullData = []; // SMO tab 新版不使用（派工单发料改到其他Tab）
+async function loadSmo() {
+  const el = $id('content');
+  el.innerHTML = `
+    <div class="list">
+      <div style="padding:4px 0 8px">
+        <div style="font-size:13px;color:var(--sub);margin-bottom:6px">输入品号或品名搜索（支持下拉选择）</div>
+      </div>
+    </div>`;
+  // 清空全局搜索框
+  const inp = $id('searchInput');
+  if (inp) inp.value = '';
+  $id('searchClear')?.classList.remove('show');
+  curSearch = '';
+  // 只接管回车键（点击建议/按回车 → 调 BOM 接口）
+  if (inp) {
+    inp.onkeydown = function(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const val = inp.value.trim();
+        if (stockSuggestions.length > 0) {
+          const first = stockSuggestions[0];
+          inp.value = first.prd_no;
+          dismissSuggestions();
+          smoSearchByPRD(first.prd_no);
+        } else if (val) {
+          smoSearchByPRD(val);
+        }
+      }
+    };
+  }
+}
+
+async function smoSearchByPRD(prdNo) {
+  dismissSuggestions();
+  const el = $id('content');
+  el.innerHTML = '<div class="state-msg"><div class="spinner"></div>搜索中…</div>';
+  try {
+    const d = await api(BASE + '/smo/bom_stock?' + new URLSearchParams({fg_no: prdNo}));
+    if (!d.items || !d.items.length) {
+      el.innerHTML = `<div class="list">
+        <div style="padding:16px;text-align:center;color:var(--orange);font-size:14px">
+          ⚠️ 品号 <b>${fmt(prdNo)}</b> 无 BOM 子件
+        </div>
+      </div>`;
+      return;
+    }
+    renderBomStock(d);
+  } catch(e) {
+    el.innerHTML = '<div class="error-msg">'+e.message+'</div>';
+  }
+}
+
+function renderBomStock(d) {
+  const el = $id('content');
+  const summary = `
+    <div class="smo-card" style="background:var(--bg2);margin-bottom:8px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        <b style="font-size:15px">${fmt(d.fg_no)}</b>
+        <span style="font-size:12px;color:var(--sub)">${fmt(d.fg_name||'').substring(0,40)}</span>
+      </div>
+      <div style="font-size:12px;color:var(--sub)">
+        ${d.node_count} 节点 · 最深 D${d.max_depth} ·
+        <span style="color:${d.ready_count===d.node_count?'var(--green)':'var(--orange)'}">
+          ${d.ready_count} 齐料 · ${d.shortage_count} 缺料
+        </span>
+      </div>
+    </div>`;
+
+  // 渲染嵌套树节点（递归）
+  function renderNode(node, depth) {
+    const isLeaf  = node.is_leaf;
+    const stock  = node.stock;
+    const short  = node.shortage;
+    const qty    = node.qty_per_unit;
+    const name   = (node.prd_name || '').trim();
+    const children = node.children || [];
+
+    let statusIcon, statusColor, stockLabel;
+    if (isLeaf) {
+      if (stock === null || stock === undefined || stock === 0) {
+        statusIcon = '❌'; statusColor = 'var(--orange)';
+        stockLabel = short > 0 ? `缺 ${short}` : '无库存';
+      } else {
+        statusIcon = '✅'; statusColor = 'var(--green)';
+        stockLabel = stock.toLocaleString();
+      }
+    } else {
+      statusIcon = children.length ? '▶' : '·';
+      statusColor = 'var(--sub)';
+      stockLabel = '';
+    }
+
+    // 颜色：按层级渐变，越深越暖
+    const depthColors = [
+      '#4A90D9', // D0 成品 蓝
+      '#6B8E6B', // D1 深绿
+      '#4CAF50', // D2 绿
+      '#E8A838', // D3 黄橙
+      '#F4A261', // D4 橙
+      '#E76F51', // D5 红
+    ];
+    const badgeColor = depthColors[Math.min(depth, depthColors.length - 1)];
+    const kndLabel   = node.knd == '4'
+      ? '<span style="font-size:10px;color:var(--sub);background:var(--bg2);padding:1px 5px;border-radius:3px">原料</span>'
+      : '';
+    const depthBadge = `<span style="font-size:10px;color:#fff;background:${badgeColor};padding:1px 5px;border-radius:3px;min-width:20px;text-align:center;display:inline-block">D${depth}</span>`;
+
+    const hasChildren = children.length > 0;
+    const toggleClass = hasChildren ? 'tree-toggle' : '';
+    const toggleIcon  = hasChildren ? '<span class="tree-caret">▶</span>' : '<span style="display:inline-block;width:14px"></span>';
+
+    const indent = depth * 16;
+
+    let html = `
+      <div class="tree-node" data-prd="${node.prd_no}" style="margin-bottom:2px">
+        <div style="display:flex;align-items:${isLeaf?'center':'flex-start'};gap:6px;padding:6px 12px 6px ${12+indent}px;cursor:pointer;border-radius:6px"
+             class="${toggleClass}"
+             onclick="stockSearchByPRD('${node.prd_no}')">
+          ${toggleIcon}
+          ${depthBadge}
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+              <span style="font-size:13px;font-weight:500;color:var(--text)">${fmt(node.prd_no)}</span>
+              ${kndLabel}
+              <span style="font-size:10px;color:var(--sub)">×${qty}</span>
+            </div>
+            ${name ? `<div style="font-size:11px;color:var(--sub);margin-top:2px;word-break:break-all;white-space:normal">${fmt(name)}</div>` : ''}
+          </div>
+          ${isLeaf ? `<span style="font-size:13px;font-weight:700;color:${statusColor};white-space:nowrap;margin-left:8px">${statusIcon} ${stockLabel}</span>` : ''}
+        </div>
+        <div class="tree-children" style="display:none;margin-top:2px">`;
+    for (const c of children) {
+      html += renderNode(c, depth + 1);
+    }
+    html += `</div>
+      </div>`;
+    return html;
+  }
+
+  const tree = d.nested_tree || {};
+  const treeHtml = tree.prd_no ? renderNode(tree, 0) : '<div style="padding:16px;text-align:center;color:var(--sub)">无 BOM 数据</div>';
+
+  const html = `
+    <div class="list">
+      ${summary}
+      <div class="smo-card" style="padding:8px 12px;margin-bottom:8px">
+        <div style="font-size:12px;color:var(--sub);margin-bottom:4px">
+          节点说明：<span style="color:var(--green)">✅</span>=有库存 &nbsp;
+          <span style="color:var(--orange)">❌</span>=缺货 &nbsp;
+          <span style="color:var(--sub)">▶</span>=点击展开 &nbsp;
+          D0=成品 &nbsp; D3-D5=原料
+        </div>
+      </div>
+      ${treeHtml}
+      <div style="padding:8px 16px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn-cancel" onclick="expandAllTree()">📂 展开全部</button>
+        <button class="btn-cancel" onclick="collapseAllTree()">📁 收起全部</button>
+        <button class="btn-cancel" onclick="clearSearch()">← 清除搜索</button>
+      </div>
+    </div>`;
+
+  el.innerHTML = html;
+}
+
+// 折叠/展开树节点
+function treeToggle(el) {
+  const children = el.nextElementSibling;
+  if (!children) return;
+  const isHidden = children.style.display === 'none';
+  children.style.display = isHidden ? '' : 'none';
+  const caret = el.querySelector('.tree-caret');
+  if (caret) caret.textContent = isHidden ? '▼' : '▶';
+}
+
+// 一键展开/收起全部 BOM 树
+function expandAllTree() {
+  document.querySelectorAll('.tree-children').forEach(el => el.style.display = '');
+  document.querySelectorAll('.tree-caret').forEach(el => el.textContent = '▼');
+}
+
+function collapseAllTree() {
+  document.querySelectorAll('.tree-children').forEach(el => el.style.display = 'none');
+  document.querySelectorAll('.tree-caret').forEach(el => el.textContent = '▶');
+}
+
+// ── Issue Modal ─────────────────────────────────────────────────────────────
+let issueRows = [];
+let curIssueTab = 'prod';
+let whList = [];
+let whAll = [];
+
+async function openIssueModal() {
+  const modal = $id('issueModal');
+  const body = $id('modalBody');
+  modal.classList.add('open');
+  body.innerHTML = '<div class="state-msg"><div class="spinner"></div>加载发料数据…</div>';
+  const keys = [];
+  selected.forEach(ref_itm => {
+    const item = (smoFullData || []).find(i => i.ref_itm === ref_itm);
+    if (item) keys.push({smo_no: item.smo_no, itm: item.itm});
+  });
+  try {
+    const d = await api(BASE + '/smo/issue_preview', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(keys),
+    });
+    whList = d.warehouses || {};
+    whAll = d.warehouses_all ?? [{code:'4',display:'原材料仓(4)'},{code:'8',display:'车间仓(8)'}];
+    window.whForWh2 = d.warehouses_for_wh2 || [];
+    issueRows = d.rows || [];
+    renderIssueRows();
+  } catch(e) {
+    body.innerHTML = '<div class="error-msg">加载失败: ' + e.message + '</div>';
+  }
+}
+
+function closeIssueModal() {
+  $id('issueModal').classList.remove('open');
+}
+
+function switchTab(type) {
+  curIssueTab = type;
+  document.querySelectorAll('.modal-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.type === type);
+  });
+  renderIssueRows();
+}
+
+function renderIssueRows() {
+  const body = $id('modalBody');
+  const rows = issueRows.filter(r => curIssueTab === 'prod' ? r.is_prod : !r.is_prod);
+
+  if (!rows.length) {
+    body.innerHTML = `<div class="state-msg" style="padding:32px">该分类下暂无物料行</div>`;
+    return;
+  }
+
+  let h = '';
+  rows.forEach((r, idx) => {
+    h += `<div class="issue-row">
+      <div class="issue-row-top">
+        <span class="issue-type-tag ${r.is_prod?'prod':'sub'}">${r.is_prod?'生产':'外发'}</span>
+        <div class="issue-prd">${fmt(r.prd_no)}</div>
+        ${r.supplier_name ? `<span style="font-size:12px;color:var(--orange)">${fmt(r.supplier_name)}</span>` : ''}
+      </div>
+      <div class="issue-name">${fmt(r.name)||'—'}</div>
+      <div class="issue-stock">
+        <span>需求 ${fmtNum(r.need_qty)} ${fmt(r.ut)}</span>
+        <span>| 库存 ${fmtNum(r.cur_stock)}</span>
+      </div>
+      <div class="issue-fields">
+        <div class="issue-field">
+          <label>发料数量</label>
+          <input type="number" id="iqty_${idx}" value="${Number(r.qty||0).toFixed(0)}" min="0" step="1">
+        </div>
+        <div class="issue-field">
+          <label>← 收货仓</label>
+          <select id="iwh1_${idx}" style="width:140px">
+            ${(r.wh1_choices||[]).map(w => `<option value="${w[0]}" ${w[0]===r.wh1?'selected':''}>${w[1]||w[0]}</option>`).join('')}
+          </select>
+        </div>
+        <div class="issue-field">
+          <label>发货仓 →</label>
+          <select id="iwh2_${idx}" style="width:140px">
+            ${(r.stock_rows||[]).map(w => `<option value="${w[0]}" ${w[0]===r.wh2?'selected':''}>${w[1]||w[0]}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <input type="hidden" id="ikey_${idx}" value="${idx}">
+    </div>`;
+  });
+  body.innerHTML = h;
+}
+
+async function confirmIssue() {
+  const rows = issueRows.filter(r => curIssueTab === 'prod' ? r.is_prod : !r.is_prod);
+  const payload = rows.map((r, idx) => {
+    const qty = parseFloat($id('iqty_' + idx)?.value || 0);
+    const wh1 = $id('iwh1_' + idx)?.value || '';
+    const wh2 = $id('iwh2_' + idx)?.value || '';
+    // wh1/wh2 需要转换：文本 → 仓库代码（MY_WH.NAME → MY_WH.WH）
+    return {
+      smo_no: r.smo_no,
+      itm: r.itm,
+      ref_itm: r.ref_itm,
+      mot_itm: r.mot_itm,
+      mo_id: !r.is_prod,   // false=生产领料, true=外发加工
+      prd_no: r.prd_no,
+      prd_name: r.name || '',
+      qty: qty,
+      wh1: wh1,
+      wh2: wh2,
+      cus_no: r.cus_no || '',
+      order_no: r.order_no,
+      so_no_itm: r.so_no_itm,
+    };
+  }).filter(r => r.qty > 0);
+
+  if (!payload.length) {
+    toast('请输入发料数量');
+    return;
+  }
+
+  $id('btnConfirm').disabled = true;
+  $id('btnConfirm').textContent = '提交中…';
+  try {
+    const d = await api(BASE + '/smo/issue', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(payload),
+    });
+    if (d.ok) {
+      const tfNos = d.transfers.map(t => t.ic_no).join(', ');
+      toast('✅ 发料成功！调拨单: ' + tfNos);
+      closeIssueModal();
+      selected.clear();
+      loadSmo();
+    } else {
+      toast('❌ 失败: ' + JSON.stringify(d));
+    }
+  } catch(e) {
+    toast('❌ 提交失败: ' + e.message);
+  } finally {
+    $id('btnConfirm').disabled = false;
+    $id('btnConfirm').textContent = '确认发料';
+  }
+}
+
+// ── 盘点 ───────────────────────────────────────────────────────────────────
+let stockData = null; // 当前查询结果
+let stockSuggestions = []; // 实时补全列表
+let stockBatchList = []; // 调拨待升单列表
+let stockBatchTools = []; // 运输工具
+let _toolRowCount = 0;
+let _suggestQ = '';
+
+function hl(s) {
+  if (!_suggestQ) return fmt(s);
+  const q = _suggestQ.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return String(s).replace(new RegExp(`(${q})`, 'gi'), '<b style="color:var(--accent)">$1</b>');
+}
+
+async function loadStock() {
+  const el = $id('content');
+  el.innerHTML = `
+    <div class="list">
+      <div style="padding:4px 0 8px">
+        <div style="font-size:13px;color:var(--sub);margin-bottom:6px">输入品号或品名搜索（支持下拉选择）</div>
+      </div>
+    </div>`;
+  stockData = null;
+  stockSuggestions = [];
+  // 只接管回车键，input 时调用 handleSearch → loadStockSuggestions
+  const inp = $id('searchInput');
+  if (inp) {
+    inp.onkeydown = function(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const val = inp.value.trim();
+        if (stockSuggestions.length > 0) {
+          const first = stockSuggestions[0];
+          inp.value = first.prd_no;
+          dismissSuggestions();
+          stockSearchByPRD(first.prd_no);
+        } else if (val) {
+          stockSearchByPRD(val);
+        }
+      }
+    };
+  }
+}
+
+
+
+// ── 完工 tab ───────────────────────────────────────────────
+let completionData = [];        // KND=30 调拨单列表（已过滤）
+let allCompletionData = [];     // 全量数据（不过滤）
+let completionList = [];         // 已选待完工成品 [{transfer_ic_no, transfer_prd, fg_no, fg_name, qty}]
+let compCustomer = '', compDdjh = '', compDdjhPlan = '', compWh = '';
+
+// 完工 tab：点击行 → openCompletionModal
+
+async function loadCompletion() {
+  const el = $id('content');
+  el.innerHTML = '<div class="state-msg"><div class="spinner"></div>加载调拨单…</div>';
+  if (!window.__completionSelected) window.__completionSelected = new Set();
+  try {
+    const data = await api(BASE + '/completion/transfer');
+    allCompletionData = data.items || [];
+    completionData = allCompletionData;
+    renderCompletionList();
+  } catch(e) {
+    el.innerHTML = '<div class="error-msg">加载失败: '+e.message+'</div>';
+  }
+}
+
+// 搜索触发时用的本地过滤渲染
+function renderCompletionListFiltered(filteredItems) {
+  completionData = filteredItems;
+  renderCompletionList();
+}
+
+function applyCompFilters() {
+  compCustomer = ($id('compFCustomer') || {value:''}).value.trim();
+  compDdjh     = ($id('compFDdjh')    || {value:''}).value.trim();
+  compDdjhPlan = ($id('compFDdjhPlan') || {value:''}).value.trim();
+  completionData = allCompletionData.filter(d => {
+    if (compCustomer && !(d.cus||'').toLowerCase().includes(compCustomer.toLowerCase())) return false;
+    if (compDdjh    && !(d.ref||'').toLowerCase().includes(compDdjh.toLowerCase()))    return false;
+    if (compDdjhPlan && !(d.ddjh||'').toLowerCase().includes(compDdjhPlan.toLowerCase())) return false;
+    if (compWh && (d.wh1_name||d.wh1||'') !== compWh) return false;
+    return true;
+  });
+  renderCompletionList();
+}
+
+function resetCompFilters() {
+  compCustomer = ''; compDdjh = ''; compDdjhPlan = ''; compWh = '';
+  completionData = allCompletionData;
+  renderCompletionList();
+}
+
+function filterByWh(wh) {
+  compWh = wh;
+  completionData = compWh
+    ? allCompletionData.filter(d => (d.wh1_name||d.wh1||'') === compWh)
+    : allCompletionData;
+  renderCompletionList();
+}
+
+function renderCompletionList() {
+  const el = $id('content');
+  const toolbar = `
+<div class="pos-un-toolbar" style="padding:8px 12px;display:flex;flex-direction:column;gap:6px">
+  <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+    <span class="pos-un-filter-row">
+      <label>客户<input type="text" id="compFCustomer" value="${escAttr(compCustomer)}" placeholder="筛选" autocomplete="off" onkeydown="if(event.key==='Enter')applyCompFilters()"></label>
+      <label>指令单<input type="text" id="compFDdjh" value="${escAttr(compDdjh)}" placeholder="筛选" autocomplete="off" onkeydown="if(event.key==='Enter')applyCompFilters()"></label>
+      <label>外发计划<input type="text" id="compFDdjhPlan" value="${escAttr(compDdjhPlan)}" placeholder="筛选" autocomplete="off" onkeydown="if(event.key==='Enter')applyCompFilters()"></label>
+      <button class="pos-un-filter-reset" onclick="resetCompFilters()">清除</button>
+      <button onclick="applyCompFilters()">筛选</button>
+    </span>
+    <span class="pos-un-info">${completionData.length} 条</span>
+    ${completionList.length > 0 ? `<button onclick="openBatchCompletionModal()" id="batchCompBtn" style="padding:6px 14px;background:var(--accent);color:#fff;border:none;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer">批量完工 (${completionList.length})</button>` : ''}
+  </div>
+  <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center" id="compWhTabs">
+    <span style="font-size:11px;color:var(--sub)">仓库:</span>
+  </div>
+</div>`;
+
+  // ── 暂存成品列表（可改数量可删）───────────────────────────────
+  let stashedHtml = '';
+  if (completionList.length > 0) {
+    stashedHtml = `
+<div style="padding:0 12px 8px">
+  <div style="font-size:12px;font-weight:600;margin-bottom:6px;color:var(--accent)">\u6682\u5b58\u5df2\u9009\u6210\u54c1\uff08${completionList.length}\uff09</div>
+  <div style="display:flex;flex-direction:column;gap:4px">
+    ${completionList.map((item, idx) => `
+    <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#EFF6FF;border-radius:8px;font-size:12px;border:1px solid #BFDBFE">
+      <span style="color:var(--sub);font-size:11px">${idx+1}</span>
+      <span style="font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${fmt(item.fg_no)}</span>
+      <input type="number" value="${item.fg_qty||1}" min="1" id="clQty_${idx}"
+        onchange="completionList[${idx}].fg_qty=parseInt(this.value)||1;updateBatchBtnCount()"
+        style="width:52px;padding:3px 4px;border:1px solid var(--border);border-radius:4px;font-size:11px;text-align:center">
+      <span style="font-size:10px;color:var(--sub)">\u4ef6</span>
+      <span style="font-size:10px;color:var(--sub);max-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escAttr(item.ref||'')}">${fmt(item.ref||'\u65e0\u6307\u4ee4\u5355')}</span>
+      <span style="font-size:10px;color:var(--sub);max-width:50px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${fmt(item.customer||'')}</span>
+      <button onclick="completionList.splice(${idx},1);renderCompletionList()" style="width:22px;height:22px;border-radius:50%;border:none;background:#fee2e2;color:#dc2626;font-size:13px;cursor:pointer;flex-shrink:0">\u00d7</button>
+    </div>`).join('')}
+  </div>
+</div>`;
+  }
+
+  if (!completionData.length) {
+    el.innerHTML = toolbar + '<div class="state-msg">暂无待完工的调拨单</div>';
+    return;
+  }
+
+  // 表格：IC_NO | 品号 | 品名 | 仓 | 指令单号 | 客户 | 总数 | 已完工 | 剩余
+  // 过滤已在 loadCompletion / renderCompletionListFiltered 完成
+  const tableRows = completionData.map((t, i) => {
+    const total = t.total_qty || 0;
+    const done  = t.transfer_qty || 0;
+    const remain = t.remaining_qty || (total - done);
+    const pct = total > 0 ? Math.round(done / total * 100) : 0;
+    const bg = i % 2 === 0 ? 'background:var(--card)' : 'background:var(--bg)';
+    return `<tr style="cursor:pointer;${bg};border-bottom:1px solid var(--border)" onclick="openCompletionModal('${t.ic_no}')">
+      <td style="padding:8px 10px;font-size:12px;color:var(--sub)">${i+1}</td>
+      <td style="padding:8px 10px;font-size:12px;font-weight:600">${fmt(t.ic_no)}</td>
+      <td style="padding:8px 10px;font-size:12px">${fmt(t.prd_no)}</td>
+      <td style="padding:8px 10px;font-size:12px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${fmt(t.prd_name||'')}">${fmt(t.prd_name||'').substring(0,15)}</td>
+      <td style="padding:8px 10px;font-size:12px;text-align:center">${fmt(t.wh1_name||t.wh1||'')}</td>
+      <td style="padding:8px 10px;font-size:12px;text-align:center">${fmt(t.ref||'')}</td>
+      <td style="padding:8px 10px;font-size:12px;text-align:center;color:var(--orange)">${fmt(t.ddjh||'')}</td>
+      <td style="padding:8px 10px;font-size:12px;text-align:center">${fmt(t.cus||'')}</td>
+      <td style="padding:8px 10px;font-size:12px;text-align:right">${total}</td>
+      <td style="padding:8px 10px;font-size:12px;text-align:right">${done}</td>
+      <td style="padding:8px 10px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="flex:1;height:6px;background:var(--bg);border-radius:3px;overflow:hidden;min-width:50px">
+            <div style="background:${pct>=100?'var(--green)':'var(--orange)'};height:100%;width:${pct}%"></div>
+          </div>
+          <span style="font-size:11px;color:var(--sub);min-width:28px;text-align:right">${pct}%</span>
+        </div>
+      </td>
+      <td style="padding:8px 10px;font-size:12px;text-align:right;color:${remain<=0?'var(--green)':'var(--orange)'};font-weight:600">${remain}</td>
+    </tr>`;
+  }).join('');
+
+  const html = `
+${toolbar}
+${stashedHtml}
+<div style="padding:0 12px 8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+  <div style="flex:1;font-size:13px;font-weight:600">调拨单（材料）</div>
+</div>
+<div style="padding:0 12px;overflow-x:auto">
+  <table style="width:100%;border-collapse:collapse;font-size:12px;border-radius:8px;overflow:hidden;border:1px solid var(--border)">
+    <thead>
+      <tr style="background:var(--bg)">
+        <th style="padding:8px 10px;text-align:left;font-size:11px;color:var(--sub);border-bottom:1px solid var(--border)">#</th>
+        <th style="padding:8px 10px;text-align:left;font-size:11px;color:var(--sub);border-bottom:1px solid var(--border)">IC单号</th>
+        <th style="padding:8px 10px;text-align:left;font-size:11px;color:var(--sub);border-bottom:1px solid var(--border)">品号</th>
+        <th style="padding:8px 10px;text-align:left;font-size:11px;color:var(--sub);border-bottom:1px solid var(--border)">品名</th>
+        <th style="padding:8px 10px;text-align:center;font-size:11px;color:var(--sub);border-bottom:1px solid var(--border)">仓</th>
+        <th style="padding:8px 10px;text-align:center;font-size:11px;color:var(--sub);border-bottom:1px solid var(--border)">指令单</th>
+        <th style="padding:8px 10px;text-align:center;font-size:11px;color:var(--sub);border-bottom:1px solid var(--border)">外发计划</th>
+        <th style="padding:8px 10px;text-align:center;font-size:11px;color:var(--sub);border-bottom:1px solid var(--border)">客户</th>
+        <th style="padding:8px 10px;text-align:right;font-size:11px;color:var(--sub);border-bottom:1px solid var(--border)">总数</th>
+        <th style="padding:8px 10px;text-align:right;font-size:11px;color:var(--sub);border-bottom:1px solid var(--border)">已完工</th>
+        <th style="padding:8px 10px;text-align:center;font-size:11px;color:var(--sub);border-bottom:1px solid var(--border)">进度</th>
+        <th style="padding:8px 10px;text-align:right;font-size:11px;color:var(--sub);border-bottom:1px solid var(--border)">剩余</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${tableRows}
+    </tbody>
+  </table>
+</div>`;
+
+  el.innerHTML = html;
+
+  // 动态渲染仓库 Tab
+  const tabsEl = $id('compWhTabs');
+  if (tabsEl) {
+    const whs = [...new Set(allCompletionData.map(d => d.wh1_name || d.wh1 || '').filter(Boolean))].sort();
+    let tabsHtml = '<span style="font-size:11px;color:var(--sub)">仓库:</span>';
+    const allActive = compWh === '';
+    tabsHtml += `<button onclick="filterByWh('')" style="padding:3px 10px;border-radius:14px;border:1px solid ${allActive?'var(--accent)':'var(--border)'};background:${allActive?'var(--accent)':'transparent'};color:${allActive?'#fff':'var(--text)'};font-size:11px;cursor:pointer">全部 (${allCompletionData.length})</button>`;
+    whs.forEach(w => {
+      const cnt = allCompletionData.filter(d => (d.wh1_name||d.wh1||'')===w).length;
+      const active = compWh === w;
+      tabsHtml += `<button onclick="filterByWh('${escAttr(w)}')" style="padding:3px 10px;border-radius:14px;border:1px solid ${active?'var(--accent)':'var(--border)'};background:${active?'var(--accent)':'transparent'};color:${active?'#fff':'var(--text)'};font-size:11px;cursor:pointer">${escHtml(w)} (${cnt})</button>`;
+    });
+    tabsEl.innerHTML = tabsHtml;
+  }
+}
+
+function updateBatchBtnCount() {
+  const btn = document.getElementById('batchCompBtn');
+  if (btn) btn.textContent = '\u6279\u91cf\u5b8c\u5de5 (' + completionList.length + ')';
+}
+
+function completionRemove(idx) {
+  completionList.splice(idx, 1);
+  renderCompletionList();
+}
+
+// 点击调拨单（材料）→ 查哪些成品用了它，显示材料状态，可加到完工列表
+async function openCompletionModal(icNo) {
+  const t = completionData.find(x => x.ic_no === icNo);
+  if (!t) return;
+  const matPrd = t.prd_no;
+  toast('查询成品…');
+
+  // 查 bom_match：哪些成品用了这个材料
+  let matchData;
+  try {
+    matchData = await api(BASE + '/completion/bom_match?' + new URLSearchParams({prd_no: matPrd}));
+  } catch(e) { matchData = {items: []}; }
+  const matches = matchData.items || [];
+  if (!matches.length) { toast('⚠️ 无成品使用此材料'); return; }
+
+  // 批量查每个成品的材料详情
+  const fgDetails = [];
+  for (const m of matches) {
+    try {
+      const d = await api(BASE + '/completion/fg_detail?' + new URLSearchParams({fg_no: m.prd_no}));
+      fgDetails.push(d);
+    } catch(e) {}
+  }
+
+  // 按材料匹配过滤：只显示该成品中用到此调拨材料的行
+  const filtered = fgDetails.filter(d => d.materials.some(m => m.transfers.some(x => x.ic_no === icNo)));
+
+  const overlay = document.createElement('div');
+  overlay.id = 'cmOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.5);display:flex;align-items:flex-end;justify-content:center;';
+  overlay.innerHTML = `
+    <div style="background:var(--card);border-radius:16px 16px 0 0;width:100%;max-width:640px;max-height:85vh;display:flex;flex-direction:column;animation:slideUp .2s;font-family:inherit">
+      <div style="padding:12px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px">
+        <div style="flex:1">
+          <div style="font-size:11px;color:var(--sub)">调拨单 ${t.ic_no} — 材料 ${fmt(matPrd)}</div>
+          <div style="font-size:13px;font-weight:600">点击成品加入完工列表</div>
+        </div>
+        <button onclick="document.getElementById('cmOverlay').remove()" style="width:28px;height:28px;border-radius:50%;border:none;background:var(--bg);font-size:16px;cursor:pointer">×</button>
+      </div>
+      <div id="cmFgList" style="flex:1;overflow-y:auto;padding:10px 12px"></div>
+    </div>
+    <style>@keyframes slideUp{from{transform:translateY(100%)}}</style>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+
+  const listEl = $id('cmFgList');
+  if (!filtered.length) {
+    listEl.innerHTML = '<div style="padding:20px;text-align:center;color:var(--sub)">无成品使用此材料</div>';
+    return;
+  }
+
+  filtered.forEach((d, idx) => {
+    const allOk = d.all_fulfilled;
+    const card = document.createElement('div');
+    card.className = 'smo-card';
+    card.style.cssText = 'margin-bottom:10px;cursor:pointer;padding:10px';
+    card.innerHTML = `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        <span style="font-size:16px">${allOk ? '✅' : '⚠️'}</span>
+        <div style="flex:1">
+          <div style="font-weight:600;font-size:13px">${fmt(d.fg_no)}</div>
+          <div style="font-size:10px;color:var(--sub)">${d.materials.length} 种材料</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:4px">
+          <input type="number" id="fgQty_${idx}" value="1" min="1" step="1"
+            onclick="event.stopPropagation()"
+            style="width:56px;padding:5px 4px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;text-align:center">
+          <span style="font-size:10px;color:var(--sub)">件</span>
+          <button style="padding:5px 10px;background:${allOk ? 'var(--green)' : 'var(--orange)'};color:#fff;border:none;border-radius:16px;font-size:12px;font-weight:600;cursor:pointer" onclick="event.stopPropagation();completionAddFgDetail('${escAttr(d.fg_no)}','${escAttr(icNo)}','fgQty_${idx}')">${allOk ? '+ 加入' : '+ 加入(缺料)'}</button>
+        </div>
+      </div>
+      <div style="padding:6px 8px;background:var(--bg);border-radius:6px;font-size:10px">
+        ${d.materials.map(m => {
+          const thisOne = m.transfers.find(x => x.ic_no === icNo);
+          const status = thisOne ? (m.fulfilled ? '✅' : '⚠️') : (m.fulfilled ? '✅' : '❌');
+          const avail = thisOne ? (thisOne.available||0).toFixed(1) : (m.total_available||0).toFixed(1);
+          return `<div style="display:flex;justify-content:space-between;padding:2px 0">
+            <span>${fmt(m.prd_no)}</span>
+            <span style="color:${m.fulfilled ? 'var(--green)' : 'var(--orange)'}">${status} ${avail}/${m.ratio}</span>
+          </div>`;
+        }).join('')}
+      </div>`;
+    card.onclick = () => completionAddFgDetail(d.fg_no, icNo, 'fgQty_' + idx);
+    listEl.appendChild(card);
+  });
+}
+
+// 加入完工列表：查 BOM materials + 调拨单字段，再暂存
+async function completionAddFgDetail(fgNo, icNo, qtyInputId) {
+  if (completionList.some(x => x.fg_no === fgNo)) { toast('\u26a0\ufe0f \u5df2\u6dfb\u52a0'); return; }
+  const fgQty = parseInt(document.getElementById(qtyInputId)?.value) || 1;
+  // 从调拨单获取指令单号/客户/单重/净重
+  const tRec = completionData.find(x => x.ic_no === icNo) || {};
+  const ref = tRec.ref || '';
+  const customer = tRec.cus || '';
+  const ddjh = tRec.ddjh || '';
+  const danzhong = tRec.danzhong || 0;
+  const jingzhong = tRec.jingzhong || 0;
+  let bomData;
+  try {
+    bomData = await api(BASE + '/completion/fg_detail?' + new URLSearchParams({fg_no: fgNo}));
+  } catch(e) { toast('\u274c \u52a0\u8f7d BOM \u5931\u8d25'); return; }
+  const materials = (bomData.materials||[]).map(m => ({
+    prd_no: m.prd_no,
+    prd_name: m.prd_name||'',
+    qty_per_unit: m.ratio || 0,
+    transfers: m.transfers||[],
+  }));
+  const whs = [...new Set(materials.flatMap(m => (m.transfers||[]).map(t => t.wh1_name||t.wh1||'')).filter(Boolean))];
+  const fg_wh = whs[0] || 'G';
+  completionList.push({
+    fg_no: fgNo,
+    fg_name: bomData.fg_name||'',
+    fg_qty: fgQty,
+    fg_wh,
+    transfer_ic_no: icNo,
+    ref,
+    customer,
+    ddjh,
+    danzhong,
+    jingzhong,
+    bom: materials,
+  });
+  document.getElementById('cmOverlay')?.remove();
+  renderCompletionList();
+}
+// 实时重算弹窗内某项成品的 BOM 需用量
+function bomRecalc(idx) {
+  const qty = parseInt(document.getElementById('clQ_' + idx)?.value) || 1;
+  completionList[idx].fg_qty = qty;
+  const item = completionList[idx];
+  const wh = item.fg_wh || 'G';
+  // Update each BOM sub-row need/ok cell
+  document.querySelectorAll('[data-item-idx="' + idx + '"]').forEach(row => {
+    const prdNo = row.getAttribute('data-prd');
+    const m = item.bom?.find(x => x.prd_no === prdNo);
+    if (!m) return;
+    const ratio = m.qty_per_unit || 0;
+    const need = Math.ceil(ratio * qty);
+    const tRow = (m.transfers||[]).find(t => (t.wh1_name||t.wh1||'') === wh);
+    const avail = tRow ? (tRow.available || 0) : 0;
+    const ok = avail >= need;
+    const needCell = row.querySelector('.bom-need');
+    const okCell = row.querySelector('.bom-ok');
+    if (needCell) needCell.textContent = need;
+    if (okCell) {
+      okCell.textContent = ok ? '\u2705' : '\u274c';
+      okCell.style.color = ok ? '#16a34a' : '#dc2626';
+    }
+  });
+}
+
+// 批量完工弹窗：显示暂存成品+BOM+运输工具，点确认写 IC
+async function openBatchCompletionModal() {
+  if (!completionList.length) { toast('\u26a0\ufe0f \u6682\u5b58\u5217\u8868\u4e3a\u7a7a'); return; }
+
+  const toolMap = {
+    '0300202105':'\u80f6\u68461.05KG','0300202135':'\u80f6\u68461.35KG','030020216':'\u80f6\u68461.6KG',
+    '030020220':'\u9ec4\u68462.0KG','030020222':'\u84dd\u82722.2KG','030020223':'\u84dd\u82723.0KG',
+    '0300020110010011':'\u6728\u57ab\u677f','030020224':'\u6728\u7bb1','tietong-1':'\u94c1\u6876',
+  };
+
+  // ── Build table rows (editable qty + transfer fields per item) ──
+  let rows = '';
+  for (let i = 0; i < completionList.length; i++) {
+    const item = completionList[i];
+    const wh = item.fg_wh || 'G';
+
+    // Per-item editable fields row
+    rows += '<tr style="background:#EFF6FF">'
+      + '<td colspan="2" style="padding:6px 10px;font-weight:700;font-size:13px;border-bottom:1px solid #e5e7eb">\u6210\u54c1 ' + (i+1) + '\uff1a' + fmt(item.fg_no) + '</td>'
+      + '<td style="padding:4px 6px;border-bottom:1px solid #e5e7eb"><input type="number" id="clQ_' + i + '" value="' + (item.fg_qty||1) + '" min="1" oninput="bomRecalc(' + i + ')" style="width:52px;padding:3px 4px;border:1.5px solid var(--border);border-radius:4px;font-size:12px;text-align:center"></td>'
+      + '<td colspan="2" style="padding:4px 6px;border-bottom:1px solid #e5e7eb;font-size:11px;color:#888">\u6307\u4ee4\u5355\uff1a<input type="text" id="clRef_' + i + '" value="' + escAttr(item.ref||'') + '" style="width:72px;padding:3px 4px;border:1.5px solid var(--border);border-radius:4px;font-size:11px;margin-left:4px"></td>'
+      + '<td style="padding:4px 6px;border-bottom:1px solid #e5e7eb;font-size:11px;color:#888">\u5ba2\u6237\uff1a<input type="text" id="clCus_' + i + '" value="' + escAttr(item.customer||'') + '" style="width:64px;padding:3px 4px;border:1.5px solid var(--border);border-radius:4px;font-size:11px;margin-left:4px"></td>'
+      + '<td style="padding:4px 6px;border-bottom:1px solid #e5e7eb;font-size:11px;color:#888">\u5916\u53d1\u8ba1\u5212\uff1a<input type="text" id="clDdjh_' + i + '" value="' + escAttr(item.ddjh||'') + '" style="width:60px;padding:3px 4px;border:1.5px solid var(--border);border-radius:4px;font-size:11px;margin-left:4px"></td>'
+      + '<td style="padding:4px 6px;border-bottom:1px solid #e5e7eb;font-size:11px">\u5355\u91cd(g)\uff1a<input type="number" id="clDz_' + i + '" value="' + (item.danzhong||'') + '" step="0.001" style="width:56px;padding:3px 4px;border:1.5px solid var(--border);border-radius:4px;font-size:11px;margin-left:4px"></td>'
+      + '<td style="padding:4px 6px;border-bottom:1px solid #e5e7eb;font-size:11px">\u51c0\u91cd(kg)\uff1a<input type="number" id="clJz_' + i + '" value="' + (item.jingzhong||'') + '" step="0.001" style="width:56px;padding:3px 4px;border:1.5px solid var(--border);border-radius:4px;font-size:11px;margin-left:4px"></td>'
+      + '</tr>';
+
+    // BOM sub-items header
+    rows += '<tr style="background:#F0F4FF">'
+      + '<th style="padding:4px 8px;font-size:10px;color:#888;border-bottom:1px solid #e5e7eb;text-align:left" colspan="2">\u54c1\u53f7</th>'
+      + '<th style="padding:4px 8px;font-size:10px;color:#888;border-bottom:1px solid #e5e7eb;text-align:right">\u914d\u6bd4</th>'
+      + '<th style="padding:4px 8px;font-size:10px;color:#888;border-bottom:1px solid #e5e7eb;text-align:right">\u00d7\u6570\u91cf</th>'
+      + '<th style="padding:4px 8px;font-size:10px;color:#888;border-bottom:1px solid #e5e7eb;text-align:right">\u9700\u7528\u91cf</th>'
+      + '<th style="padding:4px 8px;font-size:10px;color:#888;border-bottom:1px solid #e5e7eb;text-align:right">\u53ef\u7528\u91cf</th>'
+      + '<th style="padding:4px 8px;font-size:10px;color:#888;border-bottom:1px solid #e5e7eb;text-align:center">\u72b6\u6001</th>'
+      + '<th style="padding:4px 8px;font-size:10px;color:#888;border-bottom:1px solid #e5e7eb;text-align:left">\u8c03\u62e8\u5355</th>'
+      + '</tr>';
+
+    const bom = item.bom || [];
+    if (!bom.length) {
+      rows += '<tr><td colspan="8" style="padding:6px 12px;font-size:11px;color:#888;border-bottom:1px solid #f3f4f6">\u65e0BOM\u6570\u636e</td></tr>';
+    } else {
+      for (const m of bom) {
+        const ratio = m.qty_per_unit || 0;
+        const fgQty = item.fg_qty || 1;
+        const need = Math.ceil(ratio * fgQty);
+        const tRow = (m.transfers||[]).find(t => (t.wh1_name||t.wh1||'') === wh);
+        const avail = tRow ? (tRow.available || 0) : 0;
+        const ok = avail >= need;
+        rows += '<tr style="border-bottom:1px solid #f3f4f6" data-item-idx="' + i + '" data-prd="' + m.prd_no + '">'
+          + '<td colspan="2" style="padding:4px 8px;font-size:11px">' + fmt(m.prd_no) + '</td>'
+          + '<td style="padding:4px 8px;font-size:11px;text-align:right;font-weight:600">' + ratio + '</td>'
+          + '<td style="padding:4px 8px;font-size:11px;text-align:right">\u00d7' + fgQty + '</td>'
+          + '<td style="padding:4px 8px;font-size:11px;text-align:right;font-weight:700;color:#2563eb" class="bom-need">' + need + '</td>'
+          + '<td style="padding:4px 8px;font-size:11px;text-align:right">' + avail + '</td>'
+          + '<td class="bom-ok" style="padding:4px 8px;font-size:11px;text-align:center;font-weight:700;color:' + (ok?'#16a34a':'#dc2626') + '">' + (ok?'\u2705':'\u274c') + '</td>'
+          + '<td style="padding:4px 8px;font-size:10px;color:#888">' + (tRow ? (tRow.ic_no||'').substring(0,10) : '\u2014') + '</td>'
+          + '</tr>';
+      }
+    }
+  }
+
+  // ── Render overlay ───────────────────────────────────────────────
+  const overlay = document.createElement('div');
+  overlay.id = 'cmOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:16px;font-family:inherit';
+  overlay.innerHTML = ''
+    + '<div style="background:#fff;border-radius:14px;width:100%;max-width:800px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.25)">'
+    + '<div style="padding:14px 20px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;gap:10px">'
+    + '<div style="flex:1;font-size:15px;font-weight:700">\u6279\u91cf\u5b8c\u5de5\u786e\u8ba4 \u00b7 ' + completionList.length + ' \u9879\u6210\u54c1</div>'
+    + '<button id="cmCancelBtn" style="padding:5px 12px;border:1px solid #e5e7eb;border-radius:20px;background:#f9fafb;font-size:12px;cursor:pointer">\u53d6\u6d88</button>'
+    + '<button id="cmOkBtn" style="padding:6px 16px;background:#2563eb;color:#fff;border:none;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer">\u786e\u8ba4\u5b8c\u5de5</button>'
+    + '</div>'
+    + '<div style="flex:1;overflow-y:auto;padding:10px 0">'
+    + '<div style="padding:0 16px;overflow-x:auto">'
+    + '<table style="width:100%;min-width:700px;border-collapse:collapse;font-size:11px">'
+    + '<tbody>' + rows + '</tbody></table></div>'
+    + '<div style="padding:12px 16px 4px;font-size:12px;font-weight:600">\u8fd0\u8f93\u5de5\u5177</div>'
+    + '<div id="cmToolArea" style="padding:4px 16px 6px"></div>'
+    + '<button id="cmAddToolBtn" style="margin:0 16px 6px;padding:4px 10px;background:#f9fafb;border:1px dashed #d1d5db;border-radius:8px;font-size:11px;cursor:pointer;color:#6b7280">+ \u6dfb\u52a0\u5de5\u5177</button>'
+    + '<div style="padding:0 16px 8px;font-size:10px;color:#888">\u6210\u54c1 KND=13 \u5165\u5e93\uff0c\u6750\u6599 KND=23 \u51fa\u5e93\uff0c\u5de5\u5177 KND=13 \u5165\u5e93</div>'
+    + '</div></div>';
+  document.body.appendChild(overlay);
+
+  document.getElementById('cmCancelBtn').onclick = () => overlay.remove();
+
+  // Tool add
+  function cmAddTool() {
+    const area = document.getElementById('cmToolArea');
+    if (!area) return;
+    const o2 = '<option value="">\u2014</option>' + Object.entries(toolMap).map(([k,v]) => '<option value="'+k+'">'+v+'</option>').join('');
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:6px;margin-bottom:5px';
+    row.innerHTML = '<select style="flex:1;padding:5px 6px;border:1.5px solid #d1d5db;border-radius:6px;font-size:12px">'+o2+'</select>'
+      + '<input type="number" value="1" min="1" placeholder="\u6570\u91cf" style="width:64px;padding:5px 6px;border:1.5px solid #d1d5db;border-radius:6px;font-size:12px;text-align:center">'
+      + '<button onclick="this.parentElement.remove()" style="width:24px;height:24px;border-radius:50%;border:none;background:#f3f4f6;font-size:13px;cursor:pointer;color:#6b7280">\u00d7</button>';
+    area.appendChild(row);
+  }
+  document.getElementById('cmAddToolBtn').onclick = cmAddTool;
+  cmAddTool();
+
+  // Confirm
+  document.getElementById('cmOkBtn').onclick = async function() {
+    const btn = document.getElementById('cmOkBtn');
+    btn.disabled = true; btn.textContent = '\u63d0\u4ea8\u4e2d\u2026';
+
+    // 1. Read live DOM values into completionList
+    for (let i = 0; i < completionList.length; i++) {
+      const q = parseInt(document.getElementById('clQ_' + i)?.value) || 1;
+      completionList[i].fg_qty = q;
+      completionList[i].ref = document.getElementById('clRef_' + i)?.value || '';
+      completionList[i].customer = document.getElementById('clCus_' + i)?.value || '';
+      completionList[i].ddjh = document.getElementById('clDdjh_' + i)?.value || '';
+      completionList[i].danzhong = parseFloat(document.getElementById('clDz_' + i)?.value) || 0;
+      completionList[i].jingzhong = parseFloat(document.getElementById('clJz_' + i)?.value) || 0;
+    }
+
+    // 2. Check material stock
+    let shortItems = [];
+    for (const item of completionList) {
+      const fgQty = item.fg_qty || 0;
+      const wh = item.fg_wh || 'G';
+      for (const m of (item.bom || [])) {
+        const need = Math.ceil((m.qty_per_unit || 0) * fgQty);
+        const tRow = (m.transfers||[]).find(t => (t.wh1_name||t.wh1||'') === wh);
+        const avail = tRow ? (tRow.available || 0) : 0;
+        if (avail < need) shortItems.push({prd: m.prd_no, need, avail});
+      }
+    }
+    if (shortItems.length > 0) {
+      const detail = shortItems.slice(0,3).map(x => x.prd+'(\u9700'+x.need+'\uff0c\u6709'+x.avail+')').join('\uff1b');
+      toast('\u274c \u6750\u6599\u5e93\u5b58\u4e0d\u8db3\uff1a' + detail + (shortItems.length > 3 ? '\u2026' : ''));
+      btn.disabled = false; btn.textContent = '\u786e\u8ba4\u5b8c\u5de5';
+      return;
+    }
+
+    // 3. Collect tools
+    const toolRows = [];
+    document.querySelectorAll('#cmToolArea > div').forEach(row => {
+      const sel = row.querySelector('select');
+      const inp = row.querySelector('input');
+      if (sel && sel.value && inp && parseInt(inp.value) > 0) {
+        toolRows.push({code: sel.value, qty: parseInt(inp.value)});
+      }
+    });
+
+    // 4. Build items
+    const items = completionList.map(item => {
+      const wh = item.fg_wh || 'G';
+      const bom = item.bom || [];
+      const materials = bom.map(m => {
+        const tRow = (m.transfers||[]).find(t => (t.wh1_name||t.wh1||'') === wh);
+        return {
+          prd_no: m.prd_no,
+          ratio: m.qty_per_unit || 0,
+          transfer_ic_no: tRow ? (tRow.ic_no||'') : '',
+          transfer_wh1: tRow ? (tRow.wh1||'') : '',
+          ddjh: item.ddjh || '',
+          customer: item.customer || '',
+        };
+      });
+      return {
+        fg_no: item.fg_no,
+        qty: item.fg_qty||1,
+        dzhw: item.danzhong||0,
+        jzhw: item.jingzhong||0,
+        ref: item.ref||'',
+        customer: item.customer||'',
+        ddjh: item.ddjh||'',
+        materials,
+      };
+    });
+
+    try {
+      const res = await api(BASE + '/completion/batch', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({items, fg_wh: completionList[0]?.fg_wh||'G', tool_rows: toolRows})
+      });
+      if (res.ok) {
+        toast('\u2705 \u5b8c\u5de5\u6210\u529f\uff08\u5165\u5e93:' + (res.ic_in||'') + ' \u51fa\u5e93:' + (res.ic_out||'') + '\uff09');
+        overlay.remove();
+        completionList = [];
+        loadCompletion();
+      } else {
+        toast('\u274c ' + (res.error||JSON.stringify(res)));
+        btn.disabled = false; btn.textContent = '\u786e\u8ba4\u5b8c\u5de5';
+      }
+    } catch(e) {
+      toast('\u274c ' + e.message);
+      btn.disabled = false; btn.textContent = '\u786e\u8ba4\u5b8c\u5de5';
+    }
+  };
+}
+
+
+
+// 选成品 → 显示全部 BOM 子件，每行可选调拨单
+async function selectFgCompletion(fgNo, fgName) {
+  const overlay = document.getElementById('cmOverlay');
+  document.querySelectorAll('#cmFgList .smo-card').forEach(el => el.style.borderColor = '');
+  const card = document.getElementById('cmFg_' + fgNo);
+  if (card) card.style.borderColor = 'var(--accent)';
+
+  // 加载 BOM 子件 + 该成品可用的调拨单（并行）
+  let bomRes, trRes;
+  try {
+    [bomRes, trRes] = await Promise.all([
+      api(BASE + '/completion/bom_components?' + new URLSearchParams({fg_no: fgNo})),
+      api(BASE + '/completion/transfer_by_fg?' + new URLSearchParams({fg_no: fgNo})),
+    ]);
+  } catch(e) { toast('加载失败: ' + e.message); return; }
+
+  const bomItems = bomRes.items || [];
+  const transferList = trRes.items || [];
+
+  // 按调拨单品号建索引
+  const byPrd = {};
+  transferList.forEach(t => {
+    if (!byPrd[t.prd_no]) byPrd[t.prd_no] = [];
+    byPrd[t.prd_no].push(t);
+  });
+
+  // 初始分配：自动匹配 bomItems → transferList（按品号一一对应）
+  const initAssignments = () => {
+    const asn = {}; // prd_no → transfer item
+    bomItems.forEach(b => {
+      const pool = byPrd[b.prd_no] || [];
+      asn[b.prd_no] = pool.find(t => t.ic_no === window.__cmAssignments[b.prd_no]?.ic_no) || pool[0] || null;
+    });
+    return asn;
+  };
+  if (!window.__cmAssignments) window.__cmAssignments = {};
+  const asn = initAssignments();
+
+  // 计算最小可完工
+  const calcMin = () => {
+    let min = Infinity;
+    bomItems.forEach(b => {
+      const t = asn[b.prd_no];
+      if (!t) return;
+      const available = t.remaining_qty / b.qty_per_unit;
+      if (available < min) min = available;
+    });
+    return min === Infinity ? 0 : Math.floor(min);
+  };
+
+  const qtyInput = document.getElementById('cmQtyInput');
+  const dzhwInput = document.getElementById('cmDzhwInput');
+  // 自动计算净重：数量×单重(g)/1000=净重(kg)
+  const calcJzhw = () => {
+    const q = parseFloat(qtyInput?.value) || 0;
+    const dz = parseFloat(dzhwInput?.value) || 0;
+    if (q > 0 && dz > 0) {
+      const jzhwInput = document.getElementById('cmJzhwInput');
+      if (jzhwInput) jzhwInput.value = (q * dz / 1000).toFixed(3);
+    }
+  };
+  qtyInput?.addEventListener('input', calcJzhw);
+  dzhwInput?.addEventListener('input', calcJzhw);
+  const setQty = () => {
+    const m = calcMin();
+    if (m > 0) qtyInput.value = Math.min(m, parseInt(qtyInput.max) || m);
+    updateConfirmBtn();
+  };
+
+  // 更新确认按钮状态
+  const updateConfirmBtn = () => {
+    const btn = document.getElementById('cmConfirmBtn');
+    if (!btn) return;
+    const allAssigned = bomItems.every(b => asn[b.prd_no]);
+    const qty = parseFloat(qtyInput?.value) || 0;
+    btn.disabled = !allAssigned || qty <= 0;
+  };
+
+  // 渲染 BOM 行
+  const bomRows = document.getElementById('cmBomRows');
+  const renderRows = () => {
+    if (!bomRows) return;
+    const fgQty = parseFloat(qtyInput?.value) || 0;
+    bomRows.innerHTML = bomItems.map(b => {
+      const pool = byPrd[b.prd_no] || [];
+      const assigned = asn[b.prd_no];
+      const need = Math.ceil(b.qty_per_unit * fgQty * 100) / 100;
+      const hasStock = !!assigned;
+      return `<div style="display:flex;align-items:center;gap:6px;padding:8px;background:${hasStock ? 'var(--bg)' : 'rgba(255,80,80,0.1)'};border-radius:8px;margin-bottom:6px;border:1.5px solid ${hasStock ? 'transparent' : 'var(--red)'}">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${fmt(b.prd_no)}</div>
+          <div style="font-size:11px;color:var(--sub)">${fmt(b.prd_name||'').substring(0,22)}</div>
+        </div>
+        <div style="font-size:12px;color:var(--sub);white-space:nowrap">×${b.qty_per_unit} → <b style="color:${hasStock?'var(--green)':'var(--red)'}">${need}</b></div>
+        <select class="cmTrSel" data-prd="${b.prd_no}"
+          style="padding:5px 6px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;min-width:120px"
+          ${!pool.length ? 'disabled' : ''}>
+          ${!pool.length ? `<option value="">⚠️ 无调拨单</option>` : ''}
+          ${pool.map(t => `<option value="${t.ic_no}" ${assigned?.ic_no===t.ic_no?'selected':''}>${t.ic_no} (剩${t.remaining_qty})</option>`).join('')}
+        </select>
+      </div>`;
+    }).join('');
+
+    bomRows.querySelectorAll('.cmTrSel').forEach(sel => {
+      sel.addEventListener('change', () => {
+        const prd = sel.dataset.prd;
+        const pool = byPrd[prd] || [];
+        asn[prd] = pool.find(t => t.ic_no === sel.value) || null;
+        window.__cmAssignments[prd] = asn[prd];
+        setQty();
+        renderRows();
+      });
+    });
+  };
+
+  // BOM 区域显示
+  const bomSection = document.getElementById('cmBomSection');
+  if (bomSection) bomSection.style.display = 'block';
+
+  // 仓库下拉
+  const whSel = document.getElementById('cmWhSelect');
+  if (whSel && (!window.__allWarehouses || !window.__allWarehouses.length)) {
+    try {
+      const whRes = await api(BASE + '/warehouses/all');
+      window.__allWarehouses = whRes.warehouses || whRes.items || [];
+    } catch(e) { window.__allWarehouses = []; }
+  }
+  if (whSel) {
+    const allWh = window.__allWarehouses || [];
+    whSel.innerHTML = allWh.map(w => `<option value="${w.code}"${w.code==='G'?' selected':''}>${w.name}(${w.code})</option>`).join('');
+  }
+
+  renderRows();
+  setQty();
+
+  // 保存成品信息到 window
+  window.__cmFg = {fg_no: fgNo, fg_name: fgName, bomItems, asn, transferList, byPrd};
+
+  // 完工数量变更时重新算
+  qtyInput?.addEventListener('input', renderRows);
+
+  // 确认按钮
+  if (overlay) {
+    const confirmBtn = overlay.querySelector('#cmConfirmBtn');
+    if (confirmBtn) {
+      confirmBtn.replaceWith(confirmBtn.cloneNode(true));
+      overlay.querySelector('#cmConfirmBtn').addEventListener('click', () => submitCompletion(fgNo));
+    }
+  }
+}
+
+// 完工确认
+async function submitCompletion(fgNo) {
+  const fgQty = parseFloat(document.getElementById('cmQtyInput')?.value);
+  const fgWh = document.getElementById('cmWhSelect')?.value || 'G';
+  const cm = window.__cmFg;
+  if (!cm) { toast('⚠️ 状态异常'); return; }
+  if (!fgQty || fgQty <= 0) { toast('⚠️ 完工数量无效'); return; }
+
+  // 收集所有组件（每个BOM行 × 分配到的调拨单）
+  const rows = document.querySelectorAll('#cmBomRows > div');
+  const components = [];
+  let allAssigned = true;
+  rows.forEach(row => {
+    const sel = row.querySelector('.cmTrSel');
+    const prdNo = sel?.dataset.prd;
+    const tr = cm.byPrd[prdNo]?.find(t => t.ic_no === sel?.value);
+    if (!tr) { allAssigned = false; return; }
+    const inp = row.querySelector('.cmCompQty, input[type="number"]');
+    const qty = parseFloat(inp?.value) || 0;
+    if (qty > 0) {
+      components.push({
+        prd_no: prdNo,
+        qty,
+        transfer_ic_no: tr.ic_no,
+        transfer_wh1: tr.wh1,
+      });
+    }
+  });
+  if (!allAssigned) { toast('⚠️ 每个子件都要分配调拨单'); return; }
+  if (!components.length) { toast('⚠️ 子件数量为 0'); return; }
+
+  const btn = document.getElementById('cmConfirmBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '处理中…'; }
+
+  try {
+    const res = await api(BASE + '/completion/confirm', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        fg_no: fgNo,
+        fg_qty: fgQty,
+        fg_wh: fgWh,
+        danzhong: parseFloat(document.getElementById('cmDzhwInput')?.value) || 0,
+        jingzhong: parseFloat(document.getElementById('cmJzhwInput')?.value) || 0,
+        rem: document.getElementById('cmToolInput')?.value || '',
+        components,
+      }),
+    });
+    if (res.ok) {
+      toast(`✅ 完工成功\n入库: ${res.ic_in}\n出库: ${res.ic_out}\n出库行: ${res.ic_items}行`);
+      document.getElementById('cmOverlay')?.remove();
+      window.__cmAssignments = null;
+      loadCompletion();
+    } else {
+      toast('❌ 失败: ' + (res.error || JSON.stringify(res)));
+    }
+  } catch(e) {
+    toast('❌ 网络错误: ' + e.message);
+  } finally {
+    const b = document.getElementById('cmConfirmBtn');
+    if (b) { b.disabled = false; b.textContent = '确认完工'; }
+  }
+}
+
+
+
+// ── 调拨 tab ────────────────────────────────────────────────
+// 复用 stockData / stockSuggestions / 实时补全基础设施；
+// 区别仅在于：选了仓库 → 弹「FROM→TO+数量+4 字段」调拨模态框；
+// 调拨项入 stockBatchList 时 direction='transfer'，由 submitTransfer() 单独提交。
+async function loadTransfer() {
+  const el = $id('content');
+  el.innerHTML = `
+    <div class="list">
+      <div style="padding:4px 0 8px">
+        <div style="font-size:13px;color:var(--sub);margin-bottom:6px">
+          输入品号或品名搜索 → 选择调拨起点仓库 → 确认目标仓库与数量
+        </div>
+      </div>
+    </div>`;
+  stockData = null;
+  stockSuggestions = [];
+  // 预加载所有仓库供调拨弹窗使用
+  (async () => {
+    try {
+      const res = await api(BASE + '/warehouses/all');
+      window.__allWarehouses = res.warehouses || res.items || res || [];
+    } catch(e) { window.__allWarehouses = []; }
+  })();
+  const inp = $id('searchInput');
+  if (inp) {
+    inp.onkeydown = function(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const val = inp.value.trim();
+        if (stockSuggestions.length > 0) {
+          const first = stockSuggestions[0];
+          inp.value = first.prd_no;
+          dismissSuggestions();
+          stockSearchByPRD(first.prd_no);
+        } else if (val) {
+          stockSearchByPRD(val);
+        }
+      }
+    };
+    inp.oninput = function() {
+      const val = inp.value.trim();
+      if (val.length >= 2) {
+        loadStockSuggestions(val);
+      } else {
+        dismissSuggestions();
+      }
+    };
+  }
+}
+
+async function loadStockSuggestions(q) {
+  _suggestQ = q;
+  try {
+    const res = await api(BASE + '/product/search?' + new URLSearchParams({q}));
+    stockSuggestions = res.products || [];
+    renderSuggestions();
+  } catch(e) {
+    dismissSuggestions();
+  }
+}
+
+function renderSuggestions() {
+  // 删除旧列表
+  const old = document.getElementById('stockSuggestions');
+  if (old) old.remove();
+  if (!stockSuggestions.length) return;
+
+  const inp = $id('searchInput');
+  if (!inp) return;
+  const rect = inp.getBoundingClientRect();
+
+  const wrap = document.createElement('div');
+  wrap.id = 'stockSuggestions';
+  wrap.style.cssText = `
+    position:fixed; left:${rect.left}px; top:${rect.bottom + 4}px;
+    width:${rect.width}px; max-height:260px; overflow-y:auto;
+    background:#fff; border:1px solid var(--border); border-radius:8px;
+    box-shadow:0 4px 16px rgba(0,0,0,.15); z-index:500;
+  `;
+  for (const p of stockSuggestions.slice(0, 8)) {
+    const div = document.createElement('div');
+    div.style.cssText = 'padding:8px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border)';
+    div.innerHTML = `<b>${hl(p.prd_no)}</b> <span style="color:var(--sub)">${hl(p.name||'')}</span>`;
+    div.onmouseenter = () => div.style.background = '#f5f5f5';
+    div.onmouseleave = () => div.style.background = '';
+    div.onclick = () => {
+      const prd = p.prd_no;
+      $id('searchInput').value = prd;
+      dismissSuggestions();
+      if (curTab === 'smo') {
+        smoSearchByPRD(prd);
+      } else {
+        stockSearchByPRD(prd);
+      }
+    };
+    wrap.appendChild(div);
+  }
+  document.body.appendChild(wrap);
+}
+
+function dismissSuggestions() {
+  const old = document.getElementById('stockSuggestions');
+  if (old) old.remove();
+  stockSuggestions = [];
+  _suggestQ = '';
+}
+
+async function stockSearchByPRD(prdNo) {
+  dismissSuggestions();
+  const el = $id('content');
+  el.innerHTML = '<div class="state-msg"><div class="spinner"></div>搜索中…</div>';
+  try {
+    const d = await api(BASE + '/stock?' + new URLSearchParams({prd_no: prdNo}));
+    if (!d.found) {
+      el.innerHTML = `<div class="list">
+        <div style="padding:16px;text-align:center;color:var(--red);font-size:14px">
+          ❌ 品号 <b>${fmt(prdNo)}</b> 在系统中不存在
+        </div>
+        <div style="padding:8px 16px;font-size:13px;color:var(--sub)">
+          请从下拉列表中选择，或检查品号是否拼写错误
+        </div>
+      </div>`;
+      return;
+    }
+    stockData = d;
+    renderStock(d);
+  } catch(e) {
+    el.innerHTML = '<div class="error-msg">'+e.message+'</div>';
+  }
+}
+
+function renderStock(d) {
+  const el = $id('content');
+  const whs = d.warehouses || [];
+
+  // 顶部品号信息
+  const hasAnyRecord = whs.length > 0;
+  const hasStock = whs.filter(w => w.qty > 0);
+  const hasZero  = whs.filter(w => w.qty <= 0);
+
+  let header = `<div style="padding:4px 0 8px">
+    <div style="font-size:14px;font-weight:600;color:var(--text)">${fmt(d.prd_no)} &nbsp;${fmt(d.prd_name||'')}</div>
+    <div style="font-size:12px;color:var(--sub);margin-top:2px">${fmt(d.prd_spc||'')} &nbsp;·&nbsp;总库存 <b>${fmtNum(d.total)}</b> ${fmt(d.prd_ut||'件')}</div>
+  </div>`;
+
+  let html = `<div style="padding:0 12px 80px">${header}`;
+
+  if (!hasAnyRecord) {
+    // PRDT 有但 V2 完全无记录（全系统从没入过库）
+    html += `
+      <div style="padding:8px 0;font-size:13px;color:var(--orange)">
+        ⚠️ 该产品在系统中无任何库存记录（从未入库）
+      </div>`;
+  }
+
+  if (hasStock.length) {
+    html += `<div class="stock-wh-head">有库存（${hasStock.length}个仓库）</div>`;
+    for (const w of hasStock) {
+      const transferCls = curTab === 'transfer' ? ' transfer-wh-card' : '';
+      const e = s => String(s||'').replace(/'/g, "\\'");
+      const openFn = curTab === 'transfer' ? 'openTransferModal' : 'openInModal';
+      const onClick = openFn + "('" + e(d.prd_no) + "','" + e(w.wh) + "','" + e(w.wh_name) + "'," + (w.qty||0) + ")";
+      html += `
+        <div class="stock-wh-card${transferCls}" onclick="${onClick}">
+          <div class="stock-wh-icon" style="background:rgba(22,163,74,.12);color:var(--green)">📦</div>
+          <div class="stock-wh-info">
+            <div class="stock-wh-name">${fmt(w.wh_name)} <span style="font-size:11px;color:var(--sub)">(${fmt(w.wh)})</span></div>
+            <div class="stock-wh-qty">
+              库存 <b style="color:var(--green)">${fmtNum(w.qty)}</b> 件
+            </div>
+          </div>
+          <div class="stock-wh-arrow">›</div>
+        </div>`;
+    }
+  }
+
+  if (hasZero.length) {
+    html += `<div class="stock-wh-head" style="color:var(--orange)">无库存（${hasZero.length}个仓库有历史记录）</div>`;
+    for (const w of hasZero) {
+      const transferCls = curTab === 'transfer' ? ' transfer-wh-card' : '';
+      const e = s => String(s||'').replace(/'/g, "\\'");
+      const openFn = curTab === 'transfer' ? 'openTransferModal' : 'openInModal';
+      const onClick = openFn + "('" + e(d.prd_no) + "','" + e(w.wh) + "','" + e(fmt(w.wh_name)) + "',0)";
+      html += `
+        <div class="stock-wh-card${transferCls}" onclick="${onClick}">
+          <div class="stock-wh-icon" style="background:rgba(249,115,22,.12);color:var(--orange)">📦</div>
+          <div class="stock-wh-info">
+            <div class="stock-wh-name">${fmt(w.wh_name)} <span style="font-size:11px;color:var(--sub)">(${fmt(w.wh)})</span></div>
+            <div class="stock-wh-qty">
+              库存 <b style="color:var(--orange)">0</b> 件
+            </div>
+          </div>
+          <div class="stock-wh-arrow">›</div>
+        </div>`;
+    }
+  }
+
+  // 新增入库 (仅 stock tab 显示；调拨 tab 没有"新增"概念)
+  if (curTab !== 'transfer') {
+    html += `
+      <div class="stock-wh-card stock-wh-new"
+           onclick="openStockModal('${d.prd_no}', '', 0)">
+        <div class="stock-wh-icon">＋</div>
+        <div class="stock-wh-info">
+          <div class="stock-wh-name">新增入库</div>
+          <div class="stock-wh-qty">添加到其他仓库</div>
+        </div>
+      </div>`;
+  }
+
+  // BOM 子件（搜成品后显示）
+  window.__curStockPrdNo = d.prd_no;
+  window.__curStockPrdName = d.prd_name || '';
+  html += `<div style="padding:10px 0 4px;border-top:1px solid var(--border);margin-top:8px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+      <div style="font-size:13px;font-weight:600;color:var(--text)">📋 BOM 结构（勾选调拨）</div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span id="bomBatchCountWrap" style="display:none;font-size:12px;color:var(--accent);font-weight:600">
+          已选 <span id="bomBatchCount">0</span> 项
+        </span>
+        <button onclick="clearAllBOMStaging()" style="padding:3px 10px;background:var(--orange);color:#fff;border:none;border-radius:20px;font-size:11px;cursor:pointer">清除全部</button>
+        <button onclick="openBatchTransferModal()" style="padding:5px 12px;background:var(--accent);color:#fff;border:none;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer">批量调拨</button>
+      </div>
+    </div>
+    <div id="bomChildrenOfTransfer"></div>
+  </div>`;
+
+  el.innerHTML = html + '</div>';
+
+
+
+  // BOM 树（异步加载，纯展示）
+  (async () => {
+    const area = $id('bomChildrenOfTransfer');
+    if (!area) return;
+    area.innerHTML = '<div style="padding:8px 12px;font-size:12px;color:var(--sub)">加载 BOM…</div>';
+    try {
+      const bd = await api(BASE + '/smo/bom_stock?' + new URLSearchParams({fg_no: d.prd_no, include_tree: '1'}));
+      const area2 = $id('bomChildrenOfTransfer');
+      if (!area2) return;
+      const tree = bd.nested_tree;
+      if (!tree) { area2.innerHTML = '<div style="padding:12px;font-size:12px;color:var(--sub)">无 BOM 结构</div>'; return; }
+      // 表头：层级|品号|配比|库存|名称（无全选按钮）
+      const headerHtml = `<div style="display:flex;align-items:center;height:26px;background:var(--bg);border-bottom:2px solid var(--border);padding:0 12px;font-size:11px;color:var(--sub);font-weight:600">
+        <span style="width:28px;flex-shrink:0;text-align:center">层级</span>
+        <span style="width:150px;flex-shrink:0">品号</span>
+        <span style="width:52px;flex-shrink:0;text-align:right">配比</span>
+        <span style="width:72px;flex-shrink:0;text-align:right">库存</span>
+        <span style="flex:1">名称</span>
+      </div>`;
+      area2.innerHTML = headerHtml + renderTransferBomTree(tree);
+    } catch(e) {
+      const area3 = $id('bomChildrenOfTransfer');
+      if (area3) area3.innerHTML = '<div style="padding:12px;font-size:12px;color:var(--red)">加载 BOM 失败</div>';
+    }
+  })();
+}
+
+// BOM 树渲染函数（checkbox 勾选 + 纯展示）
+function renderTransferBomTree(node, depth = 0) {
+  const prdNo = node.prd_no;
+  const knd = node.knd || '4';
+  const kndLabel = knd === '3' ? '半' : knd === '4' ? '原' : '';
+  const qty = node.qty_per_unit != null ? node.qty_per_unit.toFixed(5) : '1.00000';
+  const stock = node.stock != null ? node.stock.toFixed(1) : '—';
+  const stockColor = node.is_ready ? 'var(--green)' : 'var(--red)';
+  const isSelected = (window.__curStockPrdNo && bomSelectedByProduct[window.__curStockPrdNo] && bomSelectedByProduct[window.__curStockPrdNo][prdNo]) ? true : false;
+  const rowKey = prdNo + '|' + depth;
+  const isRoot = depth === 0;
+
+  let html = `<div style="
+    display:flex;align-items:center;height:26px;
+    padding:0 12px;
+    border-bottom:1px solid var(--border);
+    font-size:12px;
+    ${isRoot ? 'font-weight:700;background:#F8F9FF;' : 'font-weight:400;'}
+    ${isSelected ? 'background:#EEF6FF;' : ''}
+  " data-key="${rowKey}" data-prd="${prdNo}" data-name="${htmlJsonEscape(node.prd_name||'')}" data-qty="${qty}" data-stock="${stock}" data-depth="${depth}" onclick="bomRowClick(this)">
+    <span style="width:28px;flex-shrink:0;display:flex;align-items:center;justify-content:center">
+      <input type="checkbox" class="bom-row-check" ${isSelected ? 'checked' : ''} onchange="updateBOMSelected()" style="cursor:pointer">
+    </span>
+    <span style="width:28px;flex-shrink:0;text-align:center;font-size:11px;color:var(--sub)">${kndLabel}</span>
+    <span style="width:150px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:${isRoot?'700':'500'}">${fmt(prdNo)}</span>
+    <span style="width:52px;flex-shrink:0;text-align:right;color:var(--text)">${qty}</span>
+    <span style="width:72px;flex-shrink:0;text-align:right;font-weight:600;color:${stockColor}">${stock}</span>
+    <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--sub);font-size:11px;margin-left:4px">${fmt(node.prd_name||'')}</span>
+  </div>`;
+
+  if (node.children) {
+    node.children.forEach(child => {
+      html += renderTransferBomTree(child, depth + 1);
+    });
+  }
+  return html;
+}
+
+// 清除全部 BOM 暂存
+function clearAllBOMStaging() {
+  bomSelectedByProduct = {};
+  batchFormData = {};
+  document.querySelectorAll('.bom-row-check').forEach(cb => { cb.checked = false; });
+  const countWrap = $id('bomBatchCountWrap');
+  const countEl = $id('bomBatchCount');
+  if (countWrap) countWrap.style.display = 'none';
+  if (countEl) countEl.textContent = '0';
+  toast('✓ 已清除全部暂存');
+}
+
+// 存储完整的 BOM 行数据（含母件品号）
+let bomSelectedByProduct = {};
+// { parentPrd_no -> { childPrd_no -> { prd_no, prd_name, wh_stock, qty_per_unit, parentPrd_no, parentPrdName } } }
+// 记录 BOM 弹窗表单值的全局存储 { prd_no_parent -> { rowKey -> { ref, ddjh, wh_from, qty, dz, jz } } }
+let batchFormData = {};
+
+// 事件委托：全局监听 BOM 勾选，页面加载时绑定一次即可
+document.addEventListener('change', (e) => {
+  if (e.target.classList.contains('bom-row-check')) {
+    updateBOMSelected();
+  }
+  if (e.target.id === 'bomCheckAll') {
+    const checked = e.target.checked;
+    document.querySelectorAll('.bom-row-check').forEach(cb => { cb.checked = checked; });
+    updateBOMSelected();
+  }
+});
+
+// BOM 行点击：切换勾选 + 更新已选
+function bomRowClick(div) {
+  const cb = div.querySelector('.bom-row-check');
+  if (!cb) return;
+  cb.checked = !cb.checked;
+  updateBOMSelected();
+}
+
+function updateBOMSelected() {
+  const checks = document.querySelectorAll('.bom-row-check:checked');
+  const curPrd = window.__curStockPrdNo || '';
+  if (!curPrd) return;
+
+  if (!bomSelectedByProduct[curPrd]) bomSelectedByProduct[curPrd] = {};
+  // 先清当前产品的选择
+  bomSelectedByProduct[curPrd] = {};
+  checks.forEach(cb => {
+    const div = cb.closest('[data-key]');
+    if (!div) return;
+    const prdNo = div.dataset.prd || '';
+    if (!prdNo) return;
+    const row = {
+      prd_no: prdNo,
+      prd_name: div.dataset.name || '',
+      qty_per_unit: parseFloat(div.dataset.qty) || 0,
+      qty: parseFloat(div.dataset.stock) || 0,
+      parentPrdNo: curPrd,
+      parentPrdName: window.__curStockPrdName || '',
+    };
+    bomSelectedByProduct[curPrd][prdNo] = row;
+  });
+
+  // 总已选数（跨所有产品）
+  let totalN = 0;
+  Object.values(bomSelectedByProduct).forEach(m => { totalN += Object.keys(m).length; });
+
+  const countWrap = $id('bomBatchCountWrap');
+  const countEl = $id('bomBatchCount');
+  if (countWrap) countWrap.style.display = totalN ? '' : 'none';
+  if (countEl) countEl.textContent = totalN;
+}
+
+let pmcItems = [];
+let pmcSelected = [];
+
+async function loadPMC() {
+  const el = $id('content');
+  if (!el) return;
+  el.innerHTML = '<div class="state-msg"><div class="spinner"></div>加载 PMC 待分析订单…</div>';
+  try {
+    const data = await api(BASE + '/pmc/pos_unanalyzed');
+    pmcItems = data.items || [];
+    window.__pmcItems = pmcItems;
+    renderPMCList(pmcItems, '');
+  } catch(e) {
+    if (el) el.innerHTML = '<div class="error-msg">加载失败: ' + e.message + '</div>';
+  }
+}
+
+
+
+function renderPMCList(items, q) {
+  // var p = window.__pmcPending; // disabled: no analysis panel
+  var el = $id('content');
+  if (!el) return;
+  if (!window.__pmcSelected) window.__pmcSelected = {};
+  if (!items || !items.length) { el.innerHTML = '<div class="state-msg">\u6682\u65e0\u6570\u636e</div>'; return; }
+  var selCount = pmcSelected.length;
+  var placeholder = "\u641c\u7d22\u8ba2\u5355/\u54c1\u53f7/\u5ba2\u6237";
+  var qCus = pmcItems.map(function(t){return t.cus_name||t.CUS_NAME||t.\u5ba2\u6237||'';}).filter(function(v,i,a){return v&&a.indexOf(v)===i}).slice(0,5);
+  var qRef = pmcItems.map(function(t){return t.\u6307\u4ee4\u5355\u53f7||'';}).filter(function(v,i,a){return v&&a.indexOf(v)===i}).slice(0,5);
+  var cusBtns = qCus.map(function(c){return '<button onclick="window.__pmcSearchFn&&window.__pmcSearchFn(\'' + escAttr(c) + '\')" style="padding:3px 8px;border-radius:12px;border:1px solid var(--border);background:#fff;font-size:11px;cursor:pointer">' + escAttr(c) + '</button>';}).join('');
+  var refBtns = qRef.map(function(r){return '<button onclick="window.__pmcSearchFn&&window.__pmcSearchFn(\'' + escAttr(r) + '\')" style="padding:3px 8px;border-radius:12px;border:1px solid #fef3c7;background:#fef3c7;font-size:11px;cursor:pointer;color:#92400e">#' + escAttr(r) + '</button>';}).join('');
+  var toolbar = '<div style="padding:8px 12px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:6px">' +
+    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
+    '<input id="pmcSearch" type="text" placeholder="' + placeholder + '" value=""' +
+    ' style="flex:1;min-width:100px;padding:7px 10px;border:1.5px solid var(--border);border-radius:20px;font-size:13px"' +
+    ' onkeydown="if(event.key===\'Enter\'){window.__pmcSearchFn&&window.__pmcSearchFn(this.value)}"' +
+    ' oninput="window.__pmcSearchFn&&window.__pmcSearchFn(this.value)">' +
+    '<div style="flex:1;text-align:right;font-size:13px;color:var(--sub)">' + items.length + ' \u6761 \u00b7 <b id="pmcSelCount" style="color:var(--accent);font-weight:700">' + selCount + '</b> <span style="font-size:11px;color:var(--sub)">\u5df2\u9009</span></div></div>' +
+    (cusBtns ? '<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">' + cusBtns + '</div>' : '') +
+    (refBtns ? '<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">' + refBtns + '</div>' : '') +
+    '</div>';
+  var filtered = q ? items.filter(function(t) {
+    return (t.os_no||t.SO_NO||'').indexOf(q) >= 0 ||
+           (t.prd_no||t.PRD_NO||'').indexOf(q) >= 0 ||
+           (t.cus_name||t.CUS_NAME||'').indexOf(q) >= 0 ||
+           (t.指令单号||'').indexOf(q) >= 0;
+  }) : items;
+  if (!filtered.length) { el.innerHTML = toolbar + '<div class="state-msg">\u65e0\u5339\u914d\u7ed3\u679c</div>'; return; }
+  var cards = filtered.map(function(t, i) {
+    var prdNo = t.prd_no||t.PRD_NO||'';
+    var prdName = t.prd_name||t.PRD_NAME||'';
+    var osNo = t.os_no||t.SO_NO||'';
+    var qty = t.qty||t.QTY||0;
+    var cusName = t.客户||t.cus_name||t.CUS_NAME||'';
+    var zhilian = t.指令单号||'';
+    var soItm = t.so_no_itm||'';
+    var tags = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">';
+    if (cusName) tags += '<span style="background:#f3f4f6;border-radius:4px;padding:2px 6px;font-size:11px;color:#374151">' + escAttr(cusName) + '</span>';
+    if (zhilian) tags += '<span style="background:#fef3c7;border-radius:4px;padding:2px 6px;font-size:11px;color:#92400e">#' + escAttr(zhilian) + '</span>';
+    tags += '</div>';
+    var zhilianHtml = zhilian ? '<div style="font-size:13px;font-weight:700;color:#92400e;background:#fef3c7;border-radius:4px;padding:3px 8px;display:inline-block">#' + escAttr(zhilian) + '</div>' : '';
+    var fmtQty = Number(qty).toLocaleString('zh-CN');
+    var isSel = pmcSelected.some(function(x){return (x.so_no_itm||'')===(t.so_no_itm||'')&&(x.prd_no||'')===(t.prd_no||t.PRD_NO||'');});
+    var cardContent = '<div style="flex:1;cursor:pointer;min-width:0" onclick="event.stopPropagation();pmcAnalyzeRow(\'' + escAttr(soItm) + '\',\'' + escAttr(prdNo) + '\',' + qty + ')"><div style="font-size:12px;color:var(--sub);margin-bottom:2px">' + escAttr(osNo) + '</div><div style="font-size:14px;font-weight:600;margin-bottom:2px">' + escAttr(prdNo) + '</div><div style="font-size:12px;color:var(--text);margin-bottom:4px;word-break:break-all">' + escAttr(prdName) + '</div>' + (cusName ? '<span style="font-size:11px;color:#374151;background:#f3f4f6;border-radius:3px;padding:1px 5px;margin-right:4px">' + escAttr(cusName) + '</span>' : '') + '</div>';
+    var rightDiv = '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0"><div style="font-size:18px;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums">' + fmtQty + '</div><div style="font-size:11px;color:var(--sub)">\u4ef6</div>' + zhilianHtml + '</div>';
+    var checkbox = '<div style="display:flex;align-items:flex-start;padding-top:2px" onclick="event.stopPropagation();pmcToggleSel(' + i + ')"><input type="checkbox" ' + (isSel?'checked':'') + ' style="width:16px;height:16px;cursor:pointer;accent-color:var(--accent)"></div>';
+    return '<div class="pmc-card' + (isSel?' pmc-card-sel':'') + '">' + checkbox + cardContent + rightDiv + '</div>';
+  }).join('');
+  var footer = selCount > 0 ? '<div style="position:sticky;bottom:0;padding:12px;background:rgba(255,255,255,.95);border-top:1px solid var(--border);display:flex;gap:8px;align-items:center"><div style="flex:1;display:flex;align-items:center;gap:8px"><span style="background:var(--accent);color:#fff;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:700">' + selCount + '</span><span style="font-size:13px;color:var(--text)">\u5df2\u9009</span></div><button onclick="pmcPreviewBatch()" style="background:var(--accent);color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:14px;font-weight:600;cursor:pointer">\u6279\u91cf\u9884\u89c8 (' + selCount + ')</button><button onclick="pmcSubmit()" style="background:#16a34a;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:14px;font-weight:600;cursor:pointer">\u751f\u6210 MPS</button></div>' : '';
+  el.innerHTML = toolbar + '<div style="padding:6px 0">' + cards + '</div>' + footer;
+}
+
+function pmcToggleSel(key, idx) {
+  var items = window.__pmcItems || [];
+  var t = items[parseInt(idx)];
+  if (!t) return;
+  // pmcSelected is an array: [{so_no_itm, prd_no, qty}]
+  var exists = pmcSelected.findIndex(function(x) {
+    return (x.so_no_itm||'') === (t.so_no_itm||'') && (x.prd_no||'') === (t.prd_no||t.PRD_NO||'');
+  });
+  if (exists >= 0) {
+    pmcSelected.splice(exists, 1);
+  } else {
+    pmcSelected.push({
+      so_no_itm: t.so_no_itm||'',
+      so_no: t.os_no||t.SO_NO||'',
+      prd_no: t.prd_no||t.PRD_NO||'',
+      qty: parseFloat(t.qty||t.QTY||0)
+    });
+  }
+  renderPMCList(items, $id('pmcSearch') ? $id('pmcSearch').value : '');
+}
+
+window.__pmcSearchFn = function(q) {
+  renderPMCList(window.__pmcItems || [], q);
+};
+
+// ── PMC 批量提交（旧版）──────────────────────────────────────────────
+async function pmcSubmit() {
+  if (!pmcSelected || !pmcSelected.length) {
+    alert('\u8bf7\u5148\u9009\u4e2d\u8ba1\u5355');
+    return;
+  }
+  var el = $id('content');
+  el.innerHTML = '<div class="state-msg"><div class="spinner"></div>\u751f\u6210 MPS \u4e2d\u2026</div>';
+  try {
+    var res = await api(BASE + '/pmc/generate_mps', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({items: pmcSelected})
+    });
+    if (res.error) { el.innerHTML = '<div class="error-msg">' + res.error + '</div>'; return; }
+    var results = res.results || (res.mps_no ? [res] : []);
+    var mpsList = results.map(function(r) { return r.mps_no; }).filter(Boolean).join(' / ') || res.mps_no || '\u2014';
+    var totalItm = results.reduce(function(s, r) { return s + (r.total_itm || 0); }, 0);
+    el.innerHTML = '<div style="padding:20px;text-align:center"><div style="font-size:16px;font-weight:600;color:var(--green);margin-bottom:8px">\u2713 MPS \u751f\u6210\u5b8c\u6210</div><div style="font-size:14px;word-break:break-all">' + mpsList + '</div><div style="font-size:13px;color:var(--sub);margin-top:6px">' + results.length + ' \u5f20\u5de5\u5355 \u00b7 ' + totalItm + ' \u4e2a ITM</div><div style="margin-top:16px"><button onclick="loadPMC()" style="padding:10px 20px;background:var(--accent);color:#fff;border:none;border-radius:8px;cursor:pointer">\u7ee7\u7eed\u5206\u6790</button></div></div>';
+  } catch(e) { el.innerHTML = '<div class="error-msg">' + e.message + '</div>'; }
+}
+
+// PMC 批量预览（BOM 树合并）
+async function pmcPreviewBatch() {
+  if (!pmcSelected || !pmcSelected.length) { alert('\u8bf7\u5148\u9009\u4e2d\u8ba1\u5355'); return; }
+  var el = $id('content');
+  el.innerHTML = '<div class="state-msg"><div class="spinner"></div>\u52a0\u8f7d\u4e2d\u2026</div>';
+  var allRows = [];
+  try {
+    for (var i = 0; i < pmcSelected.length; i++) {
+      var it = pmcSelected[i];
+      var data = await api(BASE + '/pmc/preview_mps?' + new URLSearchParams({so_no_itm: it.so_no_itm, prd_no: it.prd_no, qty: it.qty}));
+      if (data.items) allRows = allRows.concat(data.items);
+    }
+    renderPMCTree(allRows, pmcSelected.length + ' \u6761\u8ba1\u5355\u5408\u5e76');
+  } catch(e) { el.innerHTML = '<div class="error-msg">' + e.message + '</div>'; }
+}
+
+// PMC 批量生成
+async function pmcGenerateBatch() {
+  await pmcSubmit();
+}
+
+// PMC 单行分析 → BOM 树
+async function pmcAnalyzeRow(soNoItm, prdNo, qty) {
+  var el = $id('content');
+  el.innerHTML = '<div class="state-msg"><div class="spinner"></div>\u52a0\u8f7d\u4e2d\u2026</div>';
+  try {
+    var data = await api(BASE + '/pmc/preview_mps?' + new URLSearchParams({so_no_itm: soNoItm, prd_no: prdNo, qty: qty}));
+    if (data.error) { el.innerHTML = '<div class="error-msg">' + data.error + '</div>'; return; }
+    var items = data.items || [];
+    // 保存 BOM 行供调整弹窗用
+    window.__pmcBomRows = items;
+    window.__pmcPending = {soNoItm: soNoItm, prdNo: prdNo, qty: qty};
+    renderPMCTree(items, soNoItm + ' ' + prdNo);
+  } catch(e) { el.innerHTML = '<div class="error-msg">' + e.message + '</div>'; }
+}
+
+// PMC BOM 树渲染
+function renderPMCTree(items, title) {
+  var el = $id('content');
+  if (!items || !items.length) { el.innerHTML = '<div class="state-msg">\u65e0 BOM \u6570\u636e</div>'; return; }
+  var fgRow = items.find(function(r) { return r.is_fg; });
+  var bomRows = items.filter(function(r) { return !r.is_fg; });
+
+  var html = '<div style="padding:12px">';
+  html += '<div style="margin-bottom:12px"><button onclick="loadPMC()" style="background:#6b7280;color:#fff;border:none;border-radius:6px;padding:6px 14px;cursor:pointer;font-size:13px">\u2190 \u8fd4\u56de\u5217\u8868</button></div>';
+  var totalGap = 0, gapCount = 0;
+  for (var gi = 0; gi < items.length; gi++) { if ((items[gi].gap||0) > 0) { totalGap += items[gi].gap||0; gapCount++; } }
+  var summaryTag = fgRow ? (totalGap > 0
+    ? '<span style="background:#fee2e2;color:#dc2626;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:600">\u7f3a ' + totalGap.toLocaleString('zh-CN') + ' \u4ef6 \u5173 ' + gapCount + ' \u9879</span>'
+    : '<span style="background:#dcfce7;color:#16a34a;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:600">\u2713 \u5168\u90e8\u5145\u8db3</span>')
+    : '';
+  html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap"><div style="font-size:13px;color:var(--sub)">' + (title||'') + '</div>' + summaryTag + '</div>';
+
+  // BOM 表
+  html += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f3f4f6">';
+  html += '<th style="padding:7px 8px;text-align:left">\u54c1\u53f7</th>';
+  html += '<th style="padding:7px 6px;text-align:center">\u5c42\u7ea7</th>';
+  html += '<th style="padding:7px 6px;text-align:right">BOM\u91cf</th>';
+  html += '<th style="padding:7px 6px;text-align:right">\u539f\u6599\u4ed3</th>';
+  html += '<th style="padding:7px 6px;text-align:right">\u751f\u4ea7\u4ed3</th>';
+  html += '<th style="padding:7px 6px;text-align:right">\u5408\u8ba1</th>';
+  html += '<th style="padding:7px 6px;text-align:right">\u7f3a\u53e3</th>';
+  html += '<th style="padding:7px 6px;text-align:center">\u64cd\u4f5c</th>';
+  html += '</tr></thead><tbody>';
+
+  for (var i = 0; i < items.length; i++) {
+    var r = items[i];
+    var isFg = r.is_fg;
+    var depth = r.depth || 0;
+    var matQty = r.mat_qty || 0;
+    var prodQty = r.prod_qty || 0;
+    var total = matQty + prodQty;
+    var demand = r.qty || 0;
+    var gap = demand - total;
+    var bg = isFg ? '#eff6ff' : (gap > 0 ? '#fef9c3' : '');
+    var gapColor = gap > 0 ? '#dc2626' : '#16a34a';
+    var indent = depth * 12;
+    var depthLabel = isFg ? '\u6210\u54c1' : 'L' + depth;
+    var adjBtn = !isFg && depth > 0 ? '<button onclick="pmcOpenAdjust(\'' + escAttr(r.prd_no||'') + '\',\'\',\'mat\',' + total + ')" style="padding:3px 8px;background:#f3f4f6;border:1px solid #d1d5db;border-radius:4px;font-size:11px;cursor:pointer;color:#374151">\u8c03\u6574</button>' : '';
+    html += '<tr style="border-bottom:1px solid #f3f4f6;background:' + bg + '">';
+    html += '<td style="padding:7px 8px"><span style="display:inline-block;margin-left:' + indent + 'px"></span><b>' + escHtml(r.prd_no||'') + '</b> <span style="font-size:11px;color:var(--sub)">' + escHtml(r.prd_name||'') + '</span></td>';
+    html += '<td style="padding:7px 6px;text-align:center;font-size:11px;color:var(--sub)">' + depthLabel + '</td>';
+    html += '<td style="padding:7px 6px;text-align:right">' + demand + '</td>';
+    html += '<td style="padding:7px 6px;text-align:right;color:#16a34a;cursor:' + (!isFg ? 'pointer' : 'default') + '" ' + (!isFg ? 'onclick="pmcOpenAdjust(\'' + escAttr(r.prd_no||'') + '\',\'\',\'mat\',' + matQty + ')"' : '') + '>' + matQty + '</td>';
+    html += '<td style="padding:7px 6px;text-align:right;color:#16a34a;cursor:not-allowed" title="\u751f\u4ea7\u4ed3\u4e0d\u53ef\u8c03\u6574">' + prodQty + '</td>';
+    html += '<td style="padding:7px 6px;text-align:right;font-weight:600">' + total + '</td>';
+    html += '<td style="padding:7px 6px;text-align:right;font-weight:700;color:' + gapColor + '">' + (gap > 0 ? gap : '\u2713') + '</td>';
+    html += '<td style="padding:7px 6px;text-align:center">' + adjBtn + '</td>';
+    html += '</tr>';
+  }
+  html += '</tbody></table></div>';
+
+  // 生成 MPS 按钮
+  if (fgRow) {
+    html += '<div style="margin-top:16px"><button onclick="pmcSubmit()" style="background:#2563eb;color:#fff;border:none;border-radius:8px;padding:10px 24px;font-size:14px;font-weight:600;cursor:pointer">\u751f\u6210 MPS</button></div>';
+  }
+
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+// PMC 库存调整弹窗（只调原材料仓）
+async function pmcOpenAdjust(prdNo, prdName, type, totalQty) {
+  // 从 BOM 行数据找 mat_detail
+  var bomRows = window.__pmcBomRows || [];
+  var row = bomRows.find(function(r) { return r.prd_no === prdNo; });
+  var matDetail = (row && row.mat_detail) ? row.mat_detail : [];
+  if (!matDetail.length) { alert('\u8be5\u54c1\u53f7\u65e0\u539f\u6750\u6599\u4ed3\u5e93\u5b58\uff0c\u65e0\u9879\u8c03\u6574'); return; }
+
+  var whOpts = matDetail.map(function(m) {
+    return '<option value="' + m[0] + '">' + m[0] + ' ' + (m[1]||'') + ' (' + (m[2]||0) + ')</option>';
+  }).join('');
+  var overlay = document.createElement('div');
+  overlay.id = 'pmcAdjOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:490;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center';
+  overlay.innerHTML = '<div style="background:var(--card);border-radius:16px;width:90%;max-width:400px;padding:20px;font-family:inherit">' +
+    '<div style="font-size:16px;font-weight:600;margin-bottom:14px">\u8c03\u6574\u5e93\u5b58 <b>' + escHtml(prdNo) + '</b></div>' +
+    '<div style="font-size:13px;color:var(--sub);margin-bottom:12px">\u539f\u6750\u6599\u4ed3\u660e\u7ec6</div>' +
+    '<div style="margin-bottom:12px">' + matDetail.map(function(m) {
+      return '<div style="padding:6px 8px;background:var(--bg);border-radius:6px;margin-bottom:4px;font-size:12px">' +
+        '<b>' + (m[0]||'') + '</b> ' + (m[1]||'') + ': <b>' + (m[2]||0) + '</b></div>';
+    }).join('') + '</div>' +
+    '<div style="margin-bottom:12px"><label style="font-size:13px;color:var(--sub);display:block;margin-bottom:4px">\u76ee\u6807\u4ed3\u5e93</label>' +
+    '<select id="pmcAdjWhSelect" style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:6px;font-size:13px">' + whOpts + '</select></div>' +
+    '<div style="margin-bottom:14px"><label style="font-size:13px;color:var(--sub);display:block;margin-bottom:4px">\u8c03\u6574\u540e\u6570\u91cf</label>' +
+    '<input id="pmcAdjQtyInput" type="number" step="0.01" min="0" value="' + (matDetail[0] ? matDetail[0][2] : totalQty) + '" style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;box-sizing:border-box"></div>' +
+    '<div style="display:flex;gap:8px"><button onclick="document.getElementById(\'pmcAdjOverlay\').remove()" style="flex:1;padding:10px;background:#6b7280;color:#fff;border:none;border-radius:6px;cursor:pointer">\u53d6\u6d88</button>' +
+    '<button onclick="doPmcAdjust(\'' + escAttr(prdNo) + '\')" style="flex:1;padding:10px;background:#2563eb;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600">\u786e\u8ba4\u8c03\u6574</button></div>' +
+    '</div>';
+  document.body.appendChild(overlay);
+}
+
+// PMC 确认调整
+async function doPmcAdjust(prdNo) {
+  var wh = $id('pmcAdjWhSelect').value;
+  var qty = parseFloat($id('pmcAdjQtyInput').value) || 0;
+  if (!wh || qty < 0) { alert('\u8bf7\u586b\u5199\u4ed3\u5e93\u548c\u6570\u91cf'); return; }
+  try {
+    await api(BASE + '/pmc/adjust_stock', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({prd_no: prdNo, wh: wh, qty: qty})
+    });
+    document.getElementById('pmcAdjOverlay').remove();
+    // 刷新当前 BOM 树
+    var p = window.__pmcPending;
+    if (p) { pmcAnalyzeRow(p.soNoItm, p.prdNo, p.qty); }
+  } catch(e) { alert('\u8c03\u6574\u5931\u8d25: ' + e.message); }
+}
+
+// ── 批量调拨弹窗（来自批量升单弹窗）───────────
+function openBatchTransferModal() {
+  var bomItems = [];
+  Object.entries(bomSelectedByProduct).forEach(function(entry) {
+    Object.values(entry[1]).forEach(function(r) {
+      bomItems.push({prd_no: r.prd_no, qty: r.qty, wh: r.wh, wh_name: r.wh_name});
+    });
+  });
+  var stockItems = stockBatchList.filter(function(i) { return i.direction === 'transfer'; });
+  var allItems = bomItems.concat(stockItems);
+  if (!allItems.length) { alert('⚠️ 请先勾选 BOM 行或加入升单列表'); return; }
+  var n = allItems.length;
+  var overlay = document.createElement('div');
+  overlay.id = 'bomBatchOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:490;background:rgba(0,0,0,.5);display:flex;align-items:flex-end;justify-content:center';
+  overlay.innerHTML = '<div style="background:var(--card);border-radius:16px 16px 0 0;width:100%;max-width:960px;padding:14px 16px;font-family:inherit">' +
+    '<div style="font-size:16px;font-weight:600;margin-bottom:12px">' + n + ' \u9879\u8c03\u6295\u5355\uff0c\u7acb\u5373\u5f00\u59cb\u5f00\u5355\uff01</div>' +
+    '<button onclick="document.getElementById(\'bomBatchOverlay\').remove()" style="position:absolute;top:10px;right:10px;width:32px;height:32px;border-radius:50%;border:none;background:var(--bg);font-size:18px;cursor:pointer">×</button>' +
+    '<button onclick="confirmBatchTransfer()" style="width:100%;padding:12px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer">\u786e\u8ba4\u751f\u6210 ' + n + ' \u9879\u8c03\u6295\u5355</button></div>';
+  document.body.appendChild(overlay);
+}
+
+function confirmBatchTransfer() {
+  // TODO: implement
+  document.getElementById('bomBatchOverlay').remove();
+}
+
+</script>
+</body>
+</html>

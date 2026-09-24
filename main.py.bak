@@ -1,0 +1,1182 @@
+"""
+安而固 ERP — 请购单手机端
+FastAPI 后端 + 响应式 SPA
+"""
+import pymssql
+import re
+import time
+from fastapi import FastAPI, Query, Body
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse
+from fastapi.middleware.cors import CORSMiddleware
+from typing import Optional, List
+from datetime import datetime
+
+# ── DB 连接 ──────────────────────────────────────────────────────────────────
+def get_conn(db: str = "C041"):
+    return pymssql.connect(
+        "39.108.237.63:11039", "Hermes", "aeg123456", db,
+        charset="utf8"
+    )
+
+def g(v) -> str:
+    """GBK 字节 → str 或 None → ''
+    坑：QTS 的 varchar 列（PRD_NO/PRD_NAME 等）存 GBK 字节，
+    pymssql 无 charset 时读出为 latin-1 形态的 str（如 'Æ½Í·'）。
+    必须 .encode('latin-1').decode('gbk') 转回中文。
+    nvarchar 列（CUS_NAME 等）已是真 Unicode，latin-1 编码会失败 → 原样返回。
+    """
+    if v is None:
+        return ""
+    if isinstance(v, bytes):
+        try:
+            return v.encode("latin-1").decode("gbk", errors="replace")
+        except Exception:
+            return str(v)
+    if hasattr(v, "strftime"):  # datetime
+        return v.strftime("%Y-%m-%d")
+    s = str(v)
+    try:
+        return s.encode("latin-1").decode("gbk", errors="replace")
+    except Exception:
+        return s
+
+def col_zh(name) -> str:
+    """中文字段名 → GBK bytes → decode via pymssql"""
+    return name
+
+def f(v) -> Optional[float]:
+    """安全转 float"""
+    try:
+        return float(v)
+    except Exception:
+        return None
+
+# ── FastAPI ───────────────────────────────────────────────────────────────────
+app = FastAPI(title="安而固 ERP — 请购单", version="1.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+# ── 首页 ──────────────────────────────────────────────────────────────────────
+@app.get("/", response_class=HTMLResponse)
+async def root():
+    with open("static/index.html", encoding="utf-8") as f:
+        return f.read()
+
+
+# ── API: 未采购行列表（扁平，不分单）────────────────────────────────────────
+# GET /api/qts?usr=0012&page=1
+@app.get("/api/qts")
+async def list_qts(
+    usr: str = Query(default="0012", description="制单人员"),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
+    filter: str = Query(default="pending", description="pending | all"),
+):
+    conn = get_conn()
+    cur = conn.cursor()
+
+    # filter=pending: UP IS NULL（未确认采购单价）
+    # filter=all:     不限
+    up_filter = "AND (q.UP IS NULL OR q.UP = 0)" if filter == "pending" else "AND 1=1"
+
+    # 供应商：OUTER APPLY 取该品号历史上最新的采购供应商和单价
+    cur.execute(f"""
+        SELECT
+            q.QT_NO,
+            q.ITM,
+            q.QT_DD,
+            q.PRD_NO,
+            q.PRD_NAME,
+            q.SPC,
+            q.UT,
+            q.QTY,
+            q.UP,
+            q.AMT,
+            q.EST_DD,
+            q.指令单号,
+            q.紧急程度,
+            CAST(q.CLS_ID AS INT) as CLS_ID,
+            lp.CUS_NAME as last_supplier,
+            lp.OS_NO as PO_NO,
+            lp.UP as last_up
+        FROM QTS q WITH (NOLOCK)
+        OUTER APPLY (
+            SELECT TOP 1 OS_NO, CUS_NAME, UP
+            FROM POS WITH (NOLOCK)
+            WHERE PRD_NO = q.PRD_NO
+            ORDER BY OS_DD DESC
+        ) lp
+        WHERE q.USR = %s
+          {up_filter}
+          AND ISNULL(q.删除, 0) = 0
+        ORDER BY q.QT_DD DESC, q.QT_NO DESC, q.ITM
+        OFFSET %s ROWS FETCH NEXT %s ROWS ONLY
+    """, (usr, (page - 1) * page_size, page_size))
+
+    rows = cur.fetchall()
+    COLS = {c[0]: i for i, c in enumerate(cur.description)}
+
+    # 总数
+    cur.execute(f"""
+        SELECT COUNT(*)
+        FROM QTS q WITH (NOLOCK)
+        WHERE q.USR = %s
+          {up_filter}
+          AND ISNULL(q.删除, 0) = 0
+    """, (usr,))
+    total = cur.fetchone()[0]
+
+    conn.close()
+
+    items = []
+    for r in rows:
+        items.append({
+            "qt_no":     g(r[COLS["QT_NO"]]),
+            "itm":       r[COLS["ITM"]],
+            "qt_dd":     g(r[COLS["QT_DD"]]),
+            "prd_no":    g(r[COLS["PRD_NO"]]),
+            "prd_name":  g(r[COLS["PRD_NAME"]]),
+            "spc":       g(r[COLS["SPC"]]),
+            "ut":        g(r[COLS["UT"]]),
+            "qty":       f(r[COLS["QTY"]]),
+            "up":        f(r[COLS["UP"]]),
+            "amt":       f(r[COLS["AMT"]]),
+            "est_dd":    g(r[COLS["EST_DD"]]),
+            "order_no":  g(r[COLS["指令单号"]]),
+            "urgency":   g(r[COLS["紧急程度"]]),
+            "cls_id":    bool(r[COLS["CLS_ID"]]),
+            "supplier":  g(r[COLS["last_supplier"]]),
+            "po_no":     g(r[COLS["PO_NO"]]),
+            "last_up":   f(r[COLS["last_up"]]),
+        })
+
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "pages": (total + page_size - 1) // page_size,
+    }
+
+
+# ── API: 单张明细 ─────────────────────────────────────────────────────────────
+# GET /api/qts/{qt_no}
+@app.get("/api/qts/{qt_no}")
+async def get_qts(qt_no: str):
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT QT_NO, QT_ID, CUS_NO, CUS_NAME, QT_DD, SAL_NO, SAL_NAME,
+               USR, CHK_MAN, REM, ACCESSORY, USABLE, CLS_ID, 删除,
+               PRD_NO, PRD_NAME, SPC, UT, QTY, UP, AMT,
+               EST_DD, FLD1, FLD2, FLD3, REF_ITM, SO_NO_ITM,
+               指令单号, 成品编号, 紧急程度, 订单数量, ITM
+        FROM QTS WITH (NOLOCK)
+        WHERE QT_NO = %s
+        ORDER BY ITM
+    """, (qt_no,))
+
+    rows = cur.fetchall()
+    conn.close()
+
+    if not rows:
+        return {"error": "单据不存在"}, 404
+
+    # 用普通cursor：按列名访问，避免索引错误
+    def row_val(r, cols, name, idx):
+        v = r[idx]
+        return v
+
+    COL = {c: i for i, c in enumerate([c[0] for c in cur.description])}
+
+    header = {
+        "qt_no":    g(rows[0][COL["QT_NO"]]),
+        "qt_id":    g(rows[0][COL["QT_ID"]]),
+        "cus_no":   g(rows[0][COL["CUS_NO"]]),
+        "cus_name": g(rows[0][COL["CUS_NAME"]]),
+        "qt_dd":    g(rows[0][COL["QT_DD"]]),
+        "sal_no":   g(rows[0][COL["SAL_NO"]]),
+        "sal_name": g(rows[0][COL["SAL_NAME"]]),
+        "usr":      g(rows[0][COL["USR"]]),
+        "chk_man":  g(rows[0][COL["CHK_MAN"]]),
+        "rem":      g(rows[0][COL["REM"]]),
+        "usable":   bool(rows[0][COL["USABLE"]]),
+        "cls_id":   bool(rows[0][COL["CLS_ID"]]),
+        "del":      bool(rows[0][COL["删除"]]) if rows[0][COL["删除"]] is not None else False,
+    }
+
+    items = []
+    for r in rows:
+        items.append({
+            "itm":        r[COL["ITM"]],
+            "prd_no":     g(r[COL["PRD_NO"]]),
+            "prd_name":   g(r[COL["PRD_NAME"]]),
+            "spc":        g(r[COL["SPC"]]),
+            "ut":         g(r[COL["UT"]]),
+            "qty":        f(r[COL["QTY"]]),
+            "up":         f(r[COL["UP"]]),
+            "amt":        f(r[COL["AMT"]]),
+            "est_dd":     g(r[COL["EST_DD"]]),
+            "fld1":       g(r[COL["FLD1"]]),
+            "fld2":       g(r[COL["FLD2"]]),
+            "fld3":       g(r[COL["FLD3"]]),
+            "ref_itm":    g(r[COL["REF_ITM"]]),
+            "so_no_itm":  g(r[COL["SO_NO_ITM"]]),
+            "order_no":   g(r[COL["指令单号"]]),
+            "product_no": g(r[COL["成品编号"]]),
+            "urgency":    g(r[COL["紧急程度"]]),
+            "order_qty":  f(r[COL["订单数量"]]),
+        })
+
+    return {**header, "items": items}
+
+
+# ── API: 派工单列表（SMO）──────────────────────────────────────────────
+# GET /api/smo
+# ── API: 仓库列表（用于发料下拉）────────────────────────────────────────────
+@app.get("/api/warehouses")
+async def list_warehouses(db: str = Query(default="t041", description="c041 | t041")):
+    """
+    返回有库存的仓库列表，供前端发料弹窗选择 WH1/WH2。
+    只返回有实际物料库存的仓库，按库存余额排序。
+    """
+    db_name = "T041" if db.lower() == "t041" else "C041"
+    conn = get_conn(db=db_name)
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT TOP 50
+            w.WH,
+            w.NAME,
+            ISNULL(SUM(mm.QTY - ISNULL(mm.QTYIC, 0)), 0) AS mm_stock,
+            ISNULL(SUM(ic.QTY), 0) AS ic_stock
+        FROM MY_WH w WITH (NOLOCK)
+        LEFT JOIN MM mm WITH (NOLOCK) ON mm.WH = w.WH AND mm.USABLE = 1 AND ISNULL(mm.删除, 0) = 0
+        LEFT JOIN IC ic WITH (NOLOCK) ON ic.WH2 = w.WH AND ic.USABLE = 1 AND ISNULL(ic.删除, 0) = 0
+        WHERE w.USABLE = 1
+        GROUP BY w.WH, w.NAME
+        HAVING ISNULL(SUM(mm.QTY - ISNULL(mm.QTYIC, 0)), 0) > 0
+            OR ISNULL(SUM(ic.QTY), 0) > 0
+        ORDER BY mm_stock DESC, w.NAME
+    """)
+    rows = cur.fetchall()
+    conn.close()
+    return {
+        "warehouses": [
+            {
+                "code": g(r[0]),
+                "name": g(r[1]),
+                "display": g(r[1]) + "(" + g(r[0]) + ")",
+                "mm_stock": float(r[2] or 0),
+                "ic_stock": float(r[3] or 0),
+            }
+            for r in rows
+        ]
+    }
+
+
+@app.get("/api/smo")
+async def list_smo(
+    filter: str = Query(default="pending", description="pending | all"),
+    db: str = Query(default="t041", description="c041 | t041"),
+):
+    """
+    派工单列表：单条 CTE SQL（SMO + MOM + CUST + MOT）
+    齐料：C041 用 MOT.是否齐料，T041 用 XYKC >= QTY 计算
+    """
+    t_all = time.time()
+    db_name = "T041" if db.lower() == "t041" else "C041"
+    conn = get_conn(db=db_name)
+    cur = conn.cursor()
+
+    cls_cond = "CAST(s.CLS_ID AS INT) = 0" if filter == "pending" else "1=1"
+
+    # 先拿所有 MO_NO
+    cur.execute(f"""
+        SELECT DISTINCT s.REF_ITM FROM SMO s WITH (NOLOCK)
+        JOIN MOM m ON s.REF_ITM = m.MO_NO
+        WHERE s.USABLE = 1 AND {cls_cond}
+    """)
+    mo_nos = [g(r[0]) for r in cur.fetchall()]
+    if not mo_nos:
+        conn.close()
+        return {"items": [], "total": 0}
+
+    placeholders = ','.join(['%s'] * len(mo_nos))
+
+    # 单条 CTE SQL：SMO + MOM + CUST + MOT，1 次 DB 往返
+    cur.execute(f"""
+        WITH mom_cte AS (
+            SELECT MO_NO, CAST(MO_ID AS INT) AS MO_ID, CUS_NO
+            FROM MOM WITH (NOLOCK) WHERE MO_NO IN ({placeholders})
+        )
+        SELECT
+            s.SMO_NO, s.SMO_DD, s.ITM, s.REF_ITM, s.SFLD1, s.REM,
+            CAST(s.CLS_ID AS INT) AS CLS_ID, CAST(s.APP_ID AS INT) AS APP_ID,
+            m.FG_NO, m.FG_NAME, m.FG_QTY, m.指令单号,
+            mc.MO_ID, mc.CUS_NO,
+            c.简称 AS supplier_name,
+            mt.ITM AS mt_ITM, mt.PRD_NO, mt.PRD_NAME, mt.KND,
+            mt.QTY, mt.UT, mt.WH, mt.USABLE,
+            mt.QTY AS bom_qty, mt.XYKC, mt.ZXYKC,
+            CASE WHEN mt.XYKC IS NOT NULL AND mt.QTY IS NOT NULL
+                 AND mt.QTY > 0 AND mt.XYKC >= mt.QTY
+                 THEN 1 ELSE 0 END AS is_ready_calc
+        FROM SMO s WITH (NOLOCK)
+        JOIN MOM m WITH (NOLOCK) ON s.REF_ITM = m.MO_NO
+        LEFT JOIN mom_cte mc ON mc.MO_NO = m.MO_NO
+        LEFT JOIN CUST c WITH (NOLOCK) ON c.CUS_NO = mc.CUS_NO AND c.生成委外仓库 = 1
+        LEFT JOIN MOT mt WITH (NOLOCK) ON mt.MO_NO = m.MO_NO
+        WHERE s.USABLE = 1 AND {cls_cond}
+        ORDER BY s.SMO_DD DESC, s.ITM, mt.ITM
+    """, mo_nos + mo_nos)
+
+    rows = cur.fetchall()
+    conn.close()
+    print(f"[perf] CTE单SQL {len(rows)}行, {time.time()-t_all:.3f}s")
+
+    # Python 内存重组
+    import re as _re
+    items = []
+    prev_key = None
+    cur_item = None
+    for r in rows:
+        key = (g(r[0]), r[2])  # (SMO_NO, ITM)
+        if key != prev_key:
+            mo_id = bool(r[12])
+            cus_no = g(r[13]) if r[13] else ""
+            is_prod = not mo_id
+            sup_name = g(r[14]) if (r[14] and not is_prod) else ""
+
+            rem = g(r[5])
+            fg_qty = float(r[10]) if r[10] else 0.0
+            unparsed = fg_qty
+            try:
+                m2 = _re.search(r'未出[：:]([\d.]+)个', rem or '')
+                if m2: unparsed = float(m2.group(1))
+            except: pass
+
+            cur_item = {
+                "smo_no":        g(r[0]),
+                "smo_dd":        g(r[1]),
+                "itm":           r[2],
+                "ref_itm":       g(r[3]),
+                "sfld1":         g(r[4]),
+                "order_no":       g(r[11]),
+                "fg_no":         g(r[8]),
+                "fg_name":       g(r[9]),
+                "fg_qty":        fg_qty,
+                "unparsed_qty":  unparsed,
+                "cls_id":        bool(r[6]),
+                "app_id":        bool(r[7]),
+                "is_prod":       is_prod,
+                "supplier_name":  sup_name,
+                "supplier_no":   cus_no if not is_prod else "",
+                "bom_items":     [],
+            }
+            items.append(cur_item)
+            prev_key = key
+
+        if r[15] is not None:  # MOT row
+            qty = float(r[19]) if r[19] else 0.0
+            xykc = float(r[24]) if r[24] else 0.0
+            # is_ready: 用 SQL 计算的 is_ready_calc（XYKC >= QTY）
+            is_ready_val = bool(r[26]) if r[26] is not None else None
+
+            cur_item["bom_items"].append({
+                "prd_no":   g(r[16]),
+                "name":     g(r[17]),
+                "knd":      r[18],
+                "qty":      qty,
+                "ut":       g(r[20]),
+                "wh":       g(r[21]),
+                "usable":   r[22],
+                "is_ready": is_ready_val,
+                "ic_qty":   xykc,
+                "shortage":  qty - xykc,
+            })
+
+    for item in items:
+        mats = item["bom_items"]
+        known = [m["is_ready"] for m in mats if m["is_ready"] is not None]
+        item["bom_count"]      = len(mats)
+        item["bom_all_ready"] = all(known) if known else None
+
+    print(f"[perf] 总耗时 {time.time()-t_all:.3f}s")
+    return {"items": items, "total": len(items)}
+
+
+
+async def get_smo(smo_no: str):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT s.SMO_NO, s.SMO_DD, s.ITM, s.REF_ITM, s.SFLD1, s.REM, s.MOREM,
+               CAST(s.CLS_ID AS INT) AS CLS_ID, CAST(s.APP_ID AS INT) AS APP_ID,
+               m.FG_NO, m.FG_NAME, m.FG_QTY, m.指令单号, m.STA_DD, m.EST_DD
+        FROM SMO s WITH (NOLOCK)
+        JOIN MOM m WITH (NOLOCK) ON s.REF_ITM = m.MO_NO
+        WHERE s.SMO_NO = %s
+        ORDER BY s.ITM
+    """, (smo_no,))
+    rows = cur.fetchall()
+    if not rows:
+        conn.close()
+        return {"error": "派工单不存在"}, 404
+
+    COLS = {c[0]: i for i, c in enumerate(cur.description)}
+    r = rows[0]
+    header = {
+        "smo_no":   g(r[COLS["SMO_NO"]]),
+        "smo_dd":   g(r[COLS["SMO_DD"]]),
+        "itm":      r[COLS["ITM"]],
+        "ref_itm":  g(r[COLS["REF_ITM"]]),
+        "sfld1":    g(r[COLS["SFLD1"]]),
+        "rem":      g(r[COLS["REM"]]),
+        "cls_id":   bool(r[COLS["CLS_ID"]]),
+        "app_id":   bool(r[COLS["APP_ID"]]),
+        "fg_no":    g(r[COLS["FG_NO"]]),
+        "fg_name":  g(r[COLS["FG_NAME"]]),
+        "fg_qty":   f(r[COLS["FG_QTY"]]),
+        "order_no": g(r[COLS["指令单号"]]),
+        "sta_dd":   g(r[COLS["STA_DD"]]),
+        "est_dd":   g(r[COLS["EST_DD"]]),
+    }
+
+    # BOM LEV=1
+    fg, qty = header["fg_no"], header["fg_qty"] or 0
+    cur.execute("""
+        SELECT b.PRD_NO, b.NAME, b.QTY, b.UT
+        FROM BOM b WITH (NOLOCK)
+        WHERE b.UPGUID = (SELECT GUID FROM BOM WITH (NOLOCK) WHERE PRD_NO = %s AND LEV = 0)
+          AND b.LEV = 1
+        ORDER BY b.IDX
+    """, (fg,))
+    bom_rows = cur.fetchall()
+    bom_items = []
+    for br in bom_rows:
+        prd_no = g(br[0])
+        bom_qty = f(br[2]) or 0
+        need_qty = qty * bom_qty
+        cur.execute("""
+            SELECT TOP 1 QTY FROM IC WITH (NOLOCK)
+            WHERE PRD_NO = %s AND IC_KND = 13
+            ORDER BY IC_DD DESC
+        """, (prd_no,))
+        ic_row = cur.fetchone()
+        ic_qty = f(ic_row[0]) if ic_row else 0
+        shortage = need_qty - ic_qty
+        bom_items.append({
+            "prd_no":   prd_no,
+            "name":     g(br[1]),
+            "bom_qty":  bom_qty,
+            "ut":       g(br[3]),
+            "need_qty": need_qty,
+            "ic_qty":   ic_qty,
+            "shortage":  shortage,
+            "is_ready":  ic_qty >= need_qty,
+        })
+    conn.close()
+    return {**header, "bom_items": bom_items}
+
+
+# ── API: 工单列表（已废弃，用 /api/smo）─────────────────────────────────
+@app.get("/api/mom")
+async def list_mom_legacy():
+    return {"error": "请使用 /api/smo", "items": []}
+
+
+# ── API: 单张工单明细 ─────────────────────────────────────────────────────────
+# GET /api/mom/{mo_no}
+@app.get("/api/mom/{mo_no}")
+async def get_mom(mo_no: str):
+    conn = get_conn()
+    cur = conn.cursor()
+
+    # 主表
+    cur.execute("""
+        SELECT MO_NO, MO_DD, FG_NO, FG_NAME, FG_SPC, FG_UT, FG_MARK, FG_QTY,
+               DEP, USR, CHK_MAN, REM, APP_ID, SFFG, WH,
+               SO_NO_ITM, REF_ITM, STA_DD, EST_DD, ACT_STA_DD, ACT_EST_DD,
+               UP, AMT, SAL_NO, CUS_NO, CUS_NAME, 指令单号
+        FROM MOM WITH (NOLOCK)
+        WHERE MO_NO = %s
+    """, (mo_no,))
+
+    rows = cur.fetchall()
+    if not rows:
+        conn.close()
+        return {"error": "工单不存在"}, 404
+
+    COL = {c: i for i, c in enumerate([c[0] for c in cur.description])}
+    r = rows[0]
+
+    header = {
+        "mo_no":      g(r[COL["MO_NO"]]),
+        "mo_dd":      g(r[COL["MO_DD"]]),
+        "fg_no":      g(r[COL["FG_NO"]]),
+        "fg_name":    g(r[COL["FG_NAME"]]),
+        "fg_spc":     g(r[COL["FG_SPC"]]),
+        "fg_ut":      g(r[COL["FG_UT"]]),
+        "fg_mark":    g(r[COL["FG_MARK"]]),
+        "fg_qty":     f(r[COL["FG_QTY"]]),
+        "dep":        g(r[COL["DEP"]]),
+        "usr":        g(r[COL["USR"]]),
+        "chk_man":    g(r[COL["CHK_MAN"]]),
+        "rem":        g(r[COL["REM"]]),
+        "app_id":     bool(r[COL["APP_ID"]]),
+        "sffg":       bool(r[COL["SFFG"]]),
+        "wh":         g(r[COL["WH"]]),
+        "so_no_itm":  g(r[COL["SO_NO_ITM"]]),
+        "ref_itm":    g(r[COL["REF_ITM"]]),
+        "sta_dd":     g(r[COL["STA_DD"]]),
+        "est_dd":     g(r[COL["EST_DD"]]),
+        "act_sta_dd": g(r[COL["ACT_STA_DD"]]),
+        "act_est_dd": g(r[COL["ACT_EST_DD"]]),
+        "up":         f(r[COL["UP"]]),
+        "amt":        f(r[COL["AMT"]]),
+        "sal_no":     g(r[COL["SAL_NO"]]),
+        "cus_no":     g(r[COL["CUS_NO"]]),
+        "cus_name":   g(r[COL["CUS_NAME"]]),
+        "order_no":   g(r[COL["指令单号"]]),
+    }
+
+    fg_qty_val = header["fg_qty"] or 0
+
+    # BOM 明细：LEV=1 子件 + IC 库存 + 需求数量
+    cur.execute("""
+        SELECT
+            b.PRD_NO,
+            b.NAME,
+            b.SPC,
+            b.UT,
+            b.QTY       AS bom_qty,
+            CAST(b.QTY * %s AS DECIMAL(15,3)) AS need_qty,
+            ic.QTY      AS ic_qty,
+            CASE WHEN (ic.QTY >= CAST(b.QTY * %s AS DECIMAL(15,3))
+                      OR CAST(b.QTY * %s AS DECIMAL(15,3)) <= 0)
+                 THEN 1 ELSE 0 END AS is_ready
+        FROM BOM b WITH (NOLOCK)
+        OUTER APPLY (
+            SELECT TOP 1 QTY
+            FROM IC WITH (NOLOCK)
+            WHERE PRD_NO = b.PRD_NO AND IC_KND = 13
+            ORDER BY IC_DD DESC
+        ) ic
+        WHERE b.UPGUID = (
+            SELECT GUID FROM BOM WITH (NOLOCK)
+            WHERE PRD_NO = %s AND LEV = 0
+        )
+          AND b.LEV = 1
+        ORDER BY b.IDX
+    """, (fg_qty_val, fg_qty_val, fg_qty_val, header["fg_no"]))
+
+    bom_rows = cur.fetchall()
+    conn.close()
+
+    bom_items = []
+    for br in bom_rows:
+        bom_items.append({
+            "prd_no":    g(br[0]),
+            "name":      g(br[1]),
+            "spc":       g(br[2]),
+            "ut":        g(br[3]),
+            "bom_qty":   f(br[4]),
+            "need_qty":  f(br[5]),
+            "ic_qty":    f(br[6]),
+            "is_ready":  bool(br[7]),
+        })
+
+    return {**header, "bom_items": bom_items}
+
+
+# ── 调拨单 helpers ──────────────────────────────────────────────────────────
+
+def next_ic_no(prefix: str = "IC", db: str = "C041") -> str:
+    """生成下一个 IC 单号 IC{YYMM}{NNNN}"""
+    conn = get_conn(db=db)
+    cur = conn.cursor()
+    today = datetime.now().strftime("%y%m")
+    cur.execute(f"""
+        SELECT TOP 1 IC_NO FROM IC WITH (NOLOCK)
+        WHERE IC_NO LIKE %s
+        ORDER BY IC_NO DESC
+    """, (f"{prefix}{today}%",))
+    r = cur.fetchone()
+    if r:
+        seq = int(r[0][len(prefix) + 4:]) + 1
+    else:
+        seq = 1
+    conn.close()
+    return f"{prefix}{today}{seq:04d}"
+
+
+def get_wh_stock(wh: str, prd: str) -> float:
+    """查某仓库某品号的有效库存 = MM.avail + IC.net"""
+    conn = get_conn()
+    cur = conn.cursor()
+    # MM 可用量（该仓库）
+    cur.execute("""
+        SELECT ISNULL(SUM(QTY - ISNULL(QTYIC, 0)), 0)
+        FROM MM WITH (NOLOCK)
+        WHERE PRD_NO = %s AND WH = %s AND USABLE = 1 AND ISNULL(删除, 0) = 0
+    """, (prd, wh))
+    mm = float(cur.fetchone()[0] or 0)
+    # IC 入库 (1/5开头, 该仓库→WH1)
+    cur.execute("""
+        SELECT ISNULL(SUM(QTY), 0)
+        FROM IC WITH (NOLOCK)
+        WHERE PRD_NO = %s AND WH1 = %s AND IC_KND / 10 IN (1, 5)
+          AND ISNULL(USABLE, 1) = 1 AND ISNULL(删除, 0) = 0
+    """, (prd, wh))
+    ic_in = float(cur.fetchone()[0] or 0)
+    # IC 出库 (2/4开头, 该仓库→WH2)
+    cur.execute("""
+        SELECT ISNULL(SUM(QTY), 0)
+        FROM IC WITH (NOLOCK)
+        WHERE PRD_NO = %s AND WH2 = %s AND IC_KND / 10 IN (2, 4)
+          AND ISNULL(USABLE, 1) = 1 AND ISNULL(删除, 0) = 0
+    """, (prd, wh))
+    ic_out = float(cur.fetchone()[0] or 0)
+    conn.close()
+    return mm + ic_in - ic_out
+
+
+def suggest_wh2_for_subcontract(prd: str) -> str:
+    """外发领料：为品号找有库存的仓库（MM>0 或 IC.net>0），按库存量倒序"""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT WH, SUM(ISNULL(QTY-QTYIC, QTY)) AS stock
+        FROM MM WITH (NOLOCK)
+        WHERE PRD_NO = %s AND USABLE = 1 AND ISNULL(删除, 0) = 0
+          AND ISNULL(QTY - ISNULL(QTYIC, 0), 0) > 0
+        GROUP BY WH
+        UNION ALL
+        SELECT WH1 AS WH, SUM(QTY) AS stock
+        FROM IC WITH (NOLOCK)
+        WHERE PRD_NO = %s AND IC_KND / 10 IN (1, 5)
+          AND ISNULL(USABLE, 1) = 1 AND ISNULL(删除, 0) = 0
+        GROUP BY WH1
+        UNION ALL
+        SELECT WH2 AS WH, -SUM(QTY) AS stock
+        FROM IC WITH (NOLOCK)
+        WHERE PRD_NO = %s AND IC_KND / 10 IN (2, 4)
+          AND ISNULL(USABLE, 1) = 1 AND ISNULL(删除, 0) = 0
+        GROUP BY WH2
+    """, (prd, prd, prd))
+    rows = cur.fetchall()
+    conn.close()
+    # 按库存量倒序
+    agg = {}
+    for wh, stock in rows:
+        if wh:
+            agg[wh] = agg.get(wh, 0) + float(stock)
+    if not agg:
+        return "地面"
+    best = max(agg.items(), key=lambda x: x[1])
+    return best[0] if best[1] > 0 else "地面"
+
+
+def suggest_wh1_for_supplier(cus_no: str) -> str:
+    """
+    外发领料 WH1 显示名，格式与 _wh_name 一致：简称(代码)
+    如 "九盛(20390)"
+    """
+    if not cus_no:
+        return "地面"
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT TOP 1 简称 FROM CUST WITH (NOLOCK)
+        WHERE CUS_NO=%s AND 生成委外仓库=1
+    """, (cus_no,))
+    r = cur.fetchone()
+    conn.close()
+    if r and r[0]:
+        name = g(r[0])
+        return name + "(" + cus_no + ")"
+    return "地面"
+
+
+# ── API: 发料（创建调拨单）──────────────────────────────────────────────────
+# POST /api/smo/issue
+@app.post("/api/smo/issue")
+async def issue_transfer(
+    items: List[dict] = Body(...),
+    db: str = Query(default="t041"),
+):
+    """
+    items: [{smo_no, itm, ref_itm, mo_id, prd_no, qty, wh1, wh2, cus_no, order_no, so_no_itm}]
+    """
+    db_name = "T041" if db.lower() == "t041" else "C041"
+    conn = get_conn(db=db_name)
+    cur = conn.cursor()
+    now = datetime.now()
+    today_str = now.strftime("%Y-%m-%d %H:%M:%S")
+    result = []  # {"knd": 40, "ic_no": "IC26090001", "rows": 3}
+
+    # 按 KND 分组
+    prod_rows = [r for r in items if not r.get("mo_id")]   # KND=40 生产
+    sub_rows  = [r for r in items if r.get("mo_id")]        # KND=41 外发
+
+    # ── 生产领料 KND=40 ──────────────────────────────────────────────────────
+    if prod_rows:
+        ic_no = next_ic_no(db=db_name)
+        knd = 40
+        usr = "Hermes"
+        for i, row in enumerate(prod_rows, start=1):
+            cur.execute("""
+                INSERT INTO IC (IC_NO,IC_DD,IC_KND,USR,USABLE,ITM,SO_NO_ITM,REF_ITM,
+                               PRD_NO,QTY,WH1,WH1NAME,WH2,WH2NAME,SALP,UP,AMT,
+                               FLD1,FLD2,FLD3,CLS_ID,REM1,EFF_DD,
+                               APP_ID,APP_MAN,APP_DD,删除,指令单号)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            """, (
+                ic_no, today_str, knd, usr,
+                1, i, row.get("so_no_itm",""), row["ref_itm"],
+                row["prd_no"], float(row["qty"]),
+                str(row.get("wh1","")), str(row.get("wh1_name","")),
+                str(row.get("wh2","")), str(row.get("wh2_name","")),
+                None, None, 0.0,
+                None, None, None, 0, None, today_str,
+                0, None, today_str, 0, str(row.get("order_no","")),
+            ))
+        conn.commit()
+        result.append({"knd": knd, "ic_no": ic_no, "rows": len(prod_rows)})
+
+    # ── 外发加工领料 KND=41（每个供应商一张单）────────────────────────────────
+    if sub_rows:
+        # 按 cus_no 分组
+        by_supplier = {}
+        for row in sub_rows:
+            key = row.get("cus_no", "_none_")
+            by_supplier.setdefault(key, []).append(row)
+
+        for cus_no, rows in by_supplier.items():
+            ic_no = next_ic_no(db=db_name)
+            knd = 41
+            usr = "Hermes"
+            # 取供应商名称
+            sup_name = ""
+            if cus_no and cus_no != "_none_":
+                conn2 = get_conn(db=db_name)
+                cur2 = conn2.cursor()
+                cur2.execute("""
+                    SELECT TOP 1 WH1NAME, CUSNAME FROM IC WITH (NOLOCK)
+                    WHERE 客户=%s AND IC_KND=41 AND WH1 IS NOT NULL
+                    ORDER BY IC_DD DESC
+                """, (cus_no,))
+                r_sup = cur2.fetchone()
+                if r_sup:
+                    sup_name = g(r_sup[0]) if r_sup[0] else g(r_sup[1]) if r_sup[1] else ""
+                conn2.close()
+
+            for i, row in enumerate(rows, start=1):
+                wh1_name_input = str(row.get("wh1", "地面"))
+                wh1_code = _wh_code(wh1_name_input)  # 名称→代码
+                wh2_name_input = str(row.get("wh2", "地面"))
+                wh2_code = _wh_code(wh2_name_input)  # 名称→代码
+                cur.execute("""
+                    INSERT INTO IC (IC_NO,IC_DD,IC_KND,USR,USABLE,ITM,SO_NO_ITM,REF_ITM,
+                                   PRD_NO,QTY,WH1,WH1NAME,WH2,WH2NAME,CUSNAME,SALP,UP,AMT,
+                                   FLD1,FLD2,FLD3,CLS_ID,REM1,EFF_DD,
+                                   APP_ID,APP_MAN,APP_DD,删除,客户,指令单号)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                """, (
+                    ic_no, today_str, knd, usr,
+                    1, i, row.get("so_no_itm",""), row["ref_itm"],
+                    row["prd_no"], float(row["qty"]),
+                    str(row.get("wh1","")), str(row.get("wh1_name","")),
+                    str(row.get("wh2","")), str(row.get("wh2_name","")),
+                    sup_name, None, None, 0.0,
+                    None, None, None, 0, None, today_str,
+                    0, None, today_str, 0,
+                    str(cus_no) if cus_no != "_none_" else "",
+                    str(row.get("order_no","")),
+                ))
+            conn.commit()
+            result.append({"knd": knd, "ic_no": ic_no, "supplier": cus_no if cus_no != "_none_" else None, "rows": len(rows)})
+
+    conn.close()
+    return {"ok": True, "transfers": result}
+
+
+# ── API: 发料弹窗数据 ────────────────────────────────────────────────────────
+# POST /api/smo/issue_preview
+@app.post("/api/smo/issue_preview")
+async def issue_preview(
+    smo_keys: List[dict] = Body(...),
+    db: str = Query(default="t041"),
+):
+    """
+    smo_keys: [{"smo_no": "SM26090001", "itm": 1}, ...]
+    返回勾选行的完整 BOM + 仓库建议数据。
+    """
+    db_name = "T041" if db.lower() == "t041" else "C041"
+    conn = get_conn(db=db_name)
+    cur = conn.cursor()
+
+    def get_mo_info(mo_no):
+        cur.execute("""
+            SELECT CAST(MO_ID AS INT) AS MO_ID, DEP, FG_NO, FG_NAME, FG_QTY, 指令单号
+            FROM MOM WITH (NOLOCK) WHERE MO_NO=%s
+        """, (mo_no,))
+        r = cur.fetchone()
+        return {"mo_id": bool(r[0]) if r else False,
+                "dep": g(r[1]) if r else "",
+                "fg_no": g(r[2]) if r else "",
+                "fg_name": g(r[3]) if r else "",
+                "fg_qty": f(r[4]) if r else 0,
+                "order_no": g(r[5]) if r else ""} if r else {}
+
+    rows_out = []
+    for sk in smo_keys:
+        smo_no = sk["smo_no"]
+        itm = sk["itm"]
+        # 取 SMO 行
+        cur.execute("""
+            SELECT s.REF_ITM, s.SFLD1, CAST(m.MO_ID AS INT) AS MO_ID, m.FG_NO, m.FG_NAME, m.FG_QTY, m.指令单号
+            FROM SMO s WITH (NOLOCK)
+            JOIN MOM m WITH (NOLOCK) ON s.REF_ITM = m.MO_NO
+            WHERE s.SMO_NO=%s AND s.ITM=%s AND s.USABLE=1
+        """, (smo_no, itm))
+        r = cur.fetchone()
+        if not r:
+            continue
+        ref_itm = g(r[0]); so_no = g(r[1]); mo_id = bool(r[2])
+        fg_no = g(r[3]); fg_name = g(r[4]); fg_qty = f(r[5]); order_no = g(r[6])
+
+        # 解析 REM 中的未出数量
+        cur.execute("SELECT REM FROM SMO WITH (NOLOCK) WHERE SMO_NO=%s AND ITM=%s", (smo_no, itm))
+        rem_r = cur.fetchone()
+        rem = g(rem_r[0]) if rem_r else ""
+        unparsed_qty = fg_qty
+        try:
+            m2 = re.search(r'未出[：:]([\d.]+)个', rem)
+            if m2: unparsed_qty = float(m2.group(1))
+        except: pass
+
+        is_prod = not mo_id  # MO_ID=False → 生产领料
+
+        # 供应商信息（外发用）
+        supplier_no = ""
+        supplier_name = ""
+        if mo_id:
+            conn3 = get_conn()
+            cur3 = conn3.cursor()
+            cur3.execute("""
+                SELECT TOP 1 c.CUS_NO, c.简称
+                FROM MOM mo WITH (NOLOCK)
+                JOIN CUST c WITH (NOLOCK) ON c.CUS_NO = mo.CUS_NO
+                WHERE mo.MO_NO=%s AND c.生成委外仓库=1
+            """, (ref_itm,))
+            r3 = cur3.fetchone()
+            if r3 and r3[0]:
+                supplier_no = g(r3[0])
+                supplier_name = g(r3[1]) if r3[1] else supplier_no
+            if not supplier_no:
+                cur3.execute("""
+                    SELECT TOP 1 客户 FROM IC WITH (NOLOCK)
+                    WHERE REF_ITM=%s AND IC_KND=41 AND 客户 IS NOT NULL
+                    ORDER BY IC_DD DESC
+                """, (ref_itm,))
+                r4 = cur3.fetchone()
+                if r4 and r4[0]:
+                    supplier_no = g(r4[0])
+                    cur3.execute("SELECT TOP 1 简称 FROM CUST WITH (NOLOCK) WHERE CUS_NO=%s", (supplier_no,))
+                    r5 = cur3.fetchone()
+                    supplier_name = g(r5[0]) if r5 and r5[0] else supplier_no
+            conn3.close()
+
+        # 用 MOT 数据构建发料预览（替代 BOM+MM 循环查询）
+        # 获取该 SMO 行的 MO_NO 和成品信息
+        cur.execute("""
+            SELECT s.REF_ITM, s.SFLD1, m.FG_NO, m.FG_QTY, m.指令单号
+            FROM SMO s WITH (NOLOCK)
+            JOIN MOM m WITH (NOLOCK) ON s.REF_ITM = m.MO_NO
+            WHERE s.SMO_NO=%s AND s.ITM=%s AND s.USABLE=1
+        """, (smo_no, itm))
+        r_meta = cur.fetchone()
+        if not r_meta:
+            continue
+        ref_itm = g(r_meta[0])
+        so_no = g(r_meta[1])
+        fg_no = g(r_meta[2])
+        fg_qty = f(r_meta[3])
+        order_no = g(r_meta[4])
+        is_prod = True  # T041 无 MO_ID，全部当生产领料
+
+        # 批量查 MOT（与 list_smo 相同的查询）
+        cur.execute(f"""
+            ;WITH MOMList AS (
+                SELECT DISTINCT s.REF_ITM AS MO_NO, m.FG_NO
+                FROM SMO s WITH (NOLOCK)
+                JOIN MOM m WITH (NOLOCK) ON s.REF_ITM = m.MO_NO
+                WHERE s.SMO_NO IN ({','.join(['%s']*len({sk['smo_no'] for sk in smo_keys}))})
+                  AND s.USABLE = 1
+            )
+            SELECT
+                m.PRD_NO,
+                ISNULL(m.XYKC, 0) AS xykc,
+                ISNULL(m.QTY, 0) AS qty,
+                ISNULL(m.是否齐料, 1) AS is_ready_calc,
+                mm_st.stock AS mm_stock,
+                ic_in_st.stock AS ic_in_stock,
+                ic_out_st.stock AS ic_out_stock
+            FROM MOMList ml
+            JOIN MOT m WITH (NOLOCK) ON m.MO_NO = ml.MO_NO
+            LEFT JOIN (
+                SELECT PRD_NO, ISNULL(SUM(QTY - ISNULL(QTYIC, 0)), 0) AS stock
+                FROM MM WITH (NOLOCK) WHERE USABLE = 1 AND ISNULL(删除, 0) = 0
+                GROUP BY PRD_NO
+            ) mm_st ON mm_st.PRD_NO = m.PRD_NO
+            LEFT JOIN (
+                SELECT PRD_NO, ISNULL(SUM(QTY), 0) AS stock
+                FROM IC WITH (NOLOCK)
+                WHERE IC_KND / 10 IN (1, 5) AND ISNULL(USABLE, 1) = 1 AND ISNULL(删除, 0) = 0
+                GROUP BY PRD_NO
+            ) ic_in_st ON ic_in_st.PRD_NO = m.PRD_NO
+            LEFT JOIN (
+                SELECT PRD_NO, ISNULL(SUM(QTY), 0) AS stock
+                FROM IC WITH (NOLOCK)
+                WHERE IC_KND / 10 IN (2, 4) AND ISNULL(USABLE, 1) = 1 AND ISNULL(删除, 0) = 0
+                GROUP BY PRD_NO
+            ) ic_out_st ON ic_out_st.PRD_NO = m.PRD_NO
+            WHERE m.MO_NO = %s
+        """, ([sk['smo_no'] for sk in smo_keys] + [ref_itm]))
+        mot_rows = cur.fetchall()
+        if not mot_rows:
+            continue
+
+        # 取 PRDT 名称
+        prd_nos = [g(r[0]) for r in mot_rows]
+        prdt_map = {}
+        for pn in set(prd_nos):
+            cur.execute("SELECT NAME FROM PRDT WHERE PRD_NO=%s", (pn,))
+            r_p = cur.fetchone()
+            prdt_map[pn] = g(r_p[0]) if r_p else ""
+
+        # 仓库列表
+        cur.execute("""
+            SELECT TOP 30 WH, NAME FROM MY_WH WITH (NOLOCK) WHERE USABLE = 1
+            ORDER BY NAME
+        """)
+        wh_rows = [(g(r[0]), g(r[1])) for r in cur.fetchall()]
+        wh_default = "8"   # 车间仓
+        wh2_default = "4"  # 原材料仓
+        wh1_name = next((n for c, n in wh_rows if c == wh_default), "车间仓")
+        wh2_name = next((n for c, n in wh_rows if c == wh2_default), "原材料仓")
+
+        for r in mot_rows:
+            prd_no = g(r[0])
+            xykc = f(r[1]) or 0
+            qty = f(r[2]) or 0
+            mm_stock = f(r[4]) or 0
+            ic_in = f(r[5]) or 0
+            ic_out = f(r[6]) or 0
+            cur_stock = mm_stock + ic_in - ic_out
+            shortage = qty - cur_stock
+            rows_out.append({
+                "smo_no": smo_no, "itm": itm,
+                "ref_itm": ref_itm, "so_no_itm": so_no,
+                "is_prod": is_prod,
+                "prd_no": prd_no,
+                "name": prdt_map.get(prd_no, ""),
+                "bom_qty": qty, "ut": "",
+                "need_qty": qty, "cur_stock": cur_stock,
+                "shortage": shortage,
+                "qty": max(0, shortage),
+                "wh1": wh_default, "wh1_name": wh1_name,
+                "wh2": wh2_default, "wh2_name": wh2_name,
+                "supplier_name": "",
+                "order_no": order_no,
+            })
+            # 当前库存
+            cur.execute("""
+                SELECT ISNULL(SUM(QTY - ISNULL(QTYIC, 0)), 0)
+                FROM MM WITH (NOLOCK)
+                WHERE PRD_NO = %s AND USABLE = 1 AND ISNULL(删除, 0) = 0
+            """, (prd_no,))
+            mm_avail = float(cur.fetchone()[0] or 0)
+            cur.execute("""
+                SELECT ISNULL(SUM(QTY), 0)
+                FROM IC WITH (NOLOCK)
+                WHERE PRD_NO = %s AND IC_KND / 10 IN (1, 5) AND ISNULL(USABLE, 1) = 1 AND ISNULL(删除, 0) = 0
+            """, (prd_no,))
+            ic_in = float(cur.fetchone()[0] or 0)
+            cur.execute("""
+                SELECT ISNULL(SUM(QTY), 0)
+                FROM IC WITH (NOLOCK)
+                WHERE PRD_NO = %s AND IC_KND / 10 IN (2, 4) AND ISNULL(USABLE, 1) = 1 AND ISNULL(删除, 0) = 0
+            """, (prd_no,))
+            ic_out = float(cur.fetchone()[0] or 0)
+            cur_stock = mm_avail + ic_in - ic_out
+            shortage = need_qty - cur_stock
+
+            # 仓库建议
+            if not is_prod:
+                # 外发：WH1 = 供应商仓（WH=供应商CUS_NO），WH2 = 有库存仓
+                wh1_code = supplier_no if supplier_no else "地面"
+                # 完整显示名：名称(代码)
+                if wh1_code != "地面":
+                    name_raw = _wh_name(wh1_code)  # "九盛"
+                    wh1_name = name_raw + "(" + wh1_code + ")"  # "九盛(20390)"
+                else:
+                    wh1_name = "地面(临时堆放)"
+            else:
+                wh1_code = "8"    # 车间仓
+                name_raw = _wh_name("8")  # "车间仓"
+                wh1_name = name_raw + "(8)"  # "车间仓(8)"
+            wh2_suggest = "4" if is_prod else suggest_wh2_for_subcontract(prd_no)
+            # WH2 完整显示名
+            if wh2_suggest == "地面":
+                wh2_name = "地面(临时堆放)"
+            elif wh2_suggest == "4":
+                wh2_name = "原材料仓(4)"
+            elif wh2_suggest == "8":
+                wh2_name = "车间仓(8)"
+            else:
+                wh2_name = _wh_name(wh2_suggest) + "(" + wh2_suggest + ")"
+            rows_out.append({
+                "smo_no": smo_no, "itm": itm,
+                "ref_itm": ref_itm, "so_no_itm": so_no,
+                "is_prod": is_prod,
+                "prd_no": prd_no, "name": g(br[1]),
+                "bom_qty": bom_qty, "ut": ut,
+                "need_qty": need_qty, "cur_stock": cur_stock,
+                "shortage": shortage,
+                "qty": max(0, shortage),   # 默认发料量=缺口
+                "wh1": wh1_code, "wh1_name": wh1_name,
+                "wh2": wh2_suggest, "wh2_name": wh2_name,
+                "supplier_name": supplier_name if not is_prod else "",
+                "order_no": order_no,
+            })
+
+    conn.close()
+    return {"rows": rows_out}
+
+
+def _wh_code(name: str) -> str:
+    """仓库名称 → 实际存储代码（用于写库）。尝试短代码、GBK decode、双向查 MY_WH。"""
+    if not name:
+        return ""
+    conn = get_conn()
+    cur = conn.cursor()
+    # 1. 直接命中
+    cur.execute("SELECT TOP 1 WH FROM MY_WH WITH (NOLOCK) WHERE NAME=%s", (name,))
+    r = cur.fetchone()
+    if r:
+        conn.close()
+        return g(r[0])
+    # 2. GBK decode → 再查（MY_WH 里存的可能是 GBK bytes 的 latin1 形态）
+    try:
+        name_gbk = name.encode('utf-8').decode('gbk', errors='ignore')
+        if name_gbk != name:
+            cur.execute("SELECT TOP 1 WH FROM MY_WH WITH (NOLOCK) WHERE NAME=%s", (name_gbk,))
+            r = cur.fetchone()
+            if r:
+                conn.close()
+                return g(r[0])
+    except Exception:
+        pass
+    conn.close()
+    # 3. 尝试直接作为代码
+    return name
+
+
+def _get_smo_supplier(mo_no: str) -> tuple:
+    """
+    查 SMO/工单是否外发，返回 (is_prod, supplier_name, supplier_no)
+    - is_prod=True → 生产领料
+    - is_prod=False → 外发，supplier_no=CUST.CUS_NO（即供应商仓库代码）
+    """
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT CAST(MO_ID AS INT) AS MO_ID
+        FROM MOM WITH (NOLOCK) WHERE MO_NO=%s
+    """, (mo_no,))
+    r = cur.fetchone()
+    mo_id = bool(r[0]) if r else False
+    conn.close()
+    if mo_id:
+        conn2 = get_conn()
+        cur2 = conn2.cursor()
+        # 正确 JOIN：MOM.CUS_NO → CUST.CUS_NO，供应商仓库代码 = CUS_NO
+        cur2.execute("""
+            SELECT TOP 1 c.CUS_NO, c.简称
+            FROM MOM mo WITH (NOLOCK)
+            JOIN CUST c WITH (NOLOCK) ON c.CUS_NO = mo.CUS_NO
+            WHERE mo.MO_NO=%s AND c.生成委外仓库=1
+        """, (mo_no,))
+        r2 = cur2.fetchone()
+        if r2 and r2[0]:
+            sup_no = g(r2[0])
+            sup_name = g(r2[1]) if r2[1] else sup_no
+            conn2.close()
+            return False, sup_name, sup_no
+
+        # 回退：从 KND=41 历史取
+        cur2.execute("""
+            SELECT TOP 1 客户 FROM IC WITH (NOLOCK)
+            WHERE REF_ITM=%s AND IC_KND=41 AND 客户 IS NOT NULL
+            ORDER BY IC_DD DESC
+        """, (mo_no,))
+        r3 = cur2.fetchone()
+        sup_no = g(r3[0]) if r3 and r3[0] else ""
+        sup_name = ""
+        if sup_no:
+            cur2.execute("SELECT TOP 1 简称 FROM CUST WITH (NOLOCK) WHERE CUS_NO=%s", (sup_no,))
+            r4 = cur2.fetchone()
+            sup_name = g(r4[0]) if r4 and r4[0] else sup_no
+        conn2.close()
+        return False, sup_name, sup_no
+    else:
+        return True, "", ""
+
+
+def _wh_name(wh: str) -> str:
+    """仓库代码 → 中文名。WH 可能是 GBK-latin1 乱码、纯中文名、或短代码。"""
+    if not wh:
+        return ""
+    conn = get_conn()
+    cur = conn.cursor()
+    # 尝试原始值（短代码如 '4' 直接命中）
+    cur.execute("SELECT NAME FROM MY_WH WITH (NOLOCK) WHERE WH=%s", (wh,))
+    r = cur.fetchone()
+    if r:
+        conn.close()
+        return g(r[0])
+    # 尝试 GBK decode（WH 存的是 GBK bytes 的 latin-1 乱码）
+    try:
+        wh_gbk = wh.encode('latin-1').decode('gbk')
+        cur.execute("SELECT NAME FROM MY_WH WITH (NOLOCK) WHERE WH=%s", (wh_gbk,))
+        r = cur.fetchone()
+        if r:
+            conn.close()
+            return g(r[0])
+    except Exception:
+        pass
+    conn.close()
+    # 回退：GBK encode 再查
+    try:
+        return wh.encode('latin-1').decode('gbk')
+    except Exception:
+        return wh
+
+
+# ── 运行 ──────────────────────────────────────────────────────────────────────
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8001)
