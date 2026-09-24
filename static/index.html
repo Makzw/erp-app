@@ -2590,42 +2590,71 @@ function renderPMCTree(items, title) {
 
   // BOM 表
   html += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f3f4f6">';
-  html += '<th style="padding:7px 8px;text-align:left">\u54c1\u53f7</th>';
-  html += '<th style="padding:7px 6px;text-align:center">\u5c42\u7ea7</th>';
-  html += '<th style="padding:7px 6px;text-align:right">BOM\u91cf</th>';
-  html += '<th style="padding:7px 6px;text-align:right">\u539f\u6599\u4ed3</th>';
-  html += '<th style="padding:7px 6px;text-align:right">\u751f\u4ea7\u4ed3</th>';
-  html += '<th style="padding:7px 6px;text-align:right">\u5408\u8ba1</th>';
-  html += '<th style="padding:7px 6px;text-align:right">\u7f3a\u53e3</th>';
-  html += '<th style="padding:7px 6px;text-align:center">\u64cd\u4f5c</th>';
+  // BOM 表
+  html += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f3f4f6">';
+  html += '<th style="padding:7px 8px;text-align:left">\u54c1\u53f8</th>';
+  html += '<th style="padding:7px 4px;text-align:center">\u5c42</th>';
+  html += '<th style="padding:7px 4px;text-align:right">\u9700\u6c42</th>';
+  html += '<th style="padding:7px 4px;text-align:right">\u9500\u672a\u51fa</th>';
+  html += '<th style="padding:7px 4px;text-align:right">\u539f\u4ed3</th>';
+  html += '<th style="padding:7px 4px;text-align:right">\u751f\u4ed3</th>';
+  html += '<th style="padding:7px 4px;text-align:right">\u5728\u9014</th>';
+  html += '<th style="padding:7px 4px;text-align:right">\u5728\u5355</th>';
+  html += '<th style="padding:7px 4px;text-align:right">\u5408\u8ba1</th>';
+  html += '<th style="padding:7px 4px;text-align:right;min-width:80px">\u7f3a\u53e3</th>';
+  html += '<th style="padding:7px 4px;text-align:center">\u8c03</th>';
   html += '</tr></thead><tbody>';
 
+  var depthColors = ['#1d4ed8','#16a34a','#d97706','#ea580c','#dc2626'];
   for (var i = 0; i < items.length; i++) {
     var r = items[i];
     var isFg = r.is_fg;
     var depth = r.depth || 0;
     var matQty = r.mat_qty || 0;
     var prodQty = r.prod_qty || 0;
-    var total = matQty + prodQty;
-    var demand = r.qty || 0;
-    var gap = demand - total;
-    var bg = isFg ? '#eff6ff' : (gap > 0 ? '#fef9c3' : '');
-    var gapColor = gap > 0 ? '#dc2626' : '#16a34a';
-    var indent = depth * 12;
-    var depthLabel = isFg ? '\u6210\u54c1' : 'L' + depth;
-    var adjBtn = !isFg && depth > 0 ? '<button onclick="pmcOpenAdjust(\'' + escAttr(r.prd_no||'') + '\',\'\',\'mat\',' + total + ')" style="padding:3px 8px;background:#f3f4f6;border:1px solid #d1d5db;border-radius:4px;font-size:11px;cursor:pointer;color:#374151">\u8c03\u6574</button>' : '';
+    var wayQty = r.qty_on_way || 0;
+    var odrQty = r.qty_on_odr || 0;
+    var totalStock = r.total_stock || 0;
+    var realDemand = r.real_demand || 0;
+    var soRemain = r.so_remain || 0;
+    var gap = r.gap || 0;
+    var bg = isFg ? '#dbeafe' : (gap > 0 ? '#fef9c3' : '');
+    var indent = depth * 14;
+    var depthColor = depthColors[Math.min(depth, depthColors.length-1)];
+    var depthLabel = isFg ? '\u6210' : 'L' + depth;
+    var adjBtn = !isFg && depth > 0 ? '<button onclick="pmcOpenAdjust(\'' + escAttr(r.prd_no||'') + '\',\'\',\'mat\',' + matQty + ')" style="padding:3px 6px;background:#f3f4f6;border:1px solid #d1d5db;border-radius:4px;font-size:11px;cursor:pointer;color:#374151">\u8c03</button>' : '';
+    // 缺口进度条
+    var barPct = realDemand > 0 ? Math.min(100, Math.round((totalStock/realDemand)*100)) : 0;
+    var barColor = gap > 0 ? '#dc2626' : '#16a34a';
+    var gapHtml = gap > 0
+      ? '<div style="display:flex;align-items:center;gap:4px"><div style="flex:1;height:5px;background:#f3f4f6;border-radius:3px;overflow:hidden"><div style="width:' + barPct + '%;height:100%;background:' + barColor + ';border-radius:3px"></div></div><span style="font-weight:700;color:' + barColor + ';font-size:11px;min-width:24px;text-align:right;font-variant-numeric:tabular-nums">' + gap + '</span></div>'
+      : '<span style="color:#16a34a;font-weight:700">\u2713</span>';
+    // 销未出 / 在途 / 在单
+    var soRemainHtml = isFg && soRemain > 0 ? '<span style="color:#6366f1;font-weight:600;font-variant-numeric:tabular-nums">' + Number(soRemain).toLocaleString('zh-CN') + '</span>' : '<span style="font-variant-numeric:tabular-nums">-</span>';
+    var wayHtml = wayQty > 0 ? '<span style="color:#f59e0b;font-weight:600;font-variant-numeric:tabular-nums">' + Number(wayQty).toLocaleString('zh-CN') + '</span>' : '<span style="font-variant-numeric:tabular-nums">-</span>';
+    var odrHtml = odrQty > 0 ? '<span style="color:#8b5cf6;font-weight:600;font-variant-numeric:tabular-nums">' + Number(odrQty).toLocaleString('zh-CN') + '</span>' : '<span style="font-variant-numeric:tabular-nums">-</span>';
     html += '<tr style="border-bottom:1px solid #f3f4f6;background:' + bg + '">';
-    html += '<td style="padding:7px 8px"><span style="display:inline-block;margin-left:' + indent + 'px"></span><b>' + escHtml(r.prd_no||'') + '</b> <span style="font-size:11px;color:var(--sub)">' + escHtml(r.prd_name||'') + '</span></td>';
-    html += '<td style="padding:7px 6px;text-align:center;font-size:11px;color:var(--sub)">' + depthLabel + '</td>';
-    html += '<td style="padding:7px 6px;text-align:right">' + demand + '</td>';
-    html += '<td style="padding:7px 6px;text-align:right;color:#16a34a;cursor:' + (!isFg ? 'pointer' : 'default') + '" ' + (!isFg ? 'onclick="pmcOpenAdjust(\'' + escAttr(r.prd_no||'') + '\',\'\',\'mat\',' + matQty + ')"' : '') + '>' + matQty + '</td>';
-    html += '<td style="padding:7px 6px;text-align:right;color:#16a34a;cursor:not-allowed" title="\u751f\u4ea7\u4ed3\u4e0d\u53ef\u8c03\u6574">' + prodQty + '</td>';
-    html += '<td style="padding:7px 6px;text-align:right;font-weight:600">' + total + '</td>';
-    html += '<td style="padding:7px 6px;text-align:right;font-weight:700;color:' + gapColor + '">' + (gap > 0 ? gap : '\u2713') + '</td>';
-    html += '<td style="padding:7px 6px;text-align:center">' + adjBtn + '</td>';
+    html += '<td style="padding:7px 8px"><span style="display:inline-block;margin-left:' + indent + 'px"></span><b style="font-variant-numeric:tabular-nums">' + escHtml(r.prd_no||'') + '</b> <span style="font-size:11px;color:var(--sub)">' + escHtml(r.prd_name||'') + '</span></td>';
+    html += '<td style="padding:7px 4px;text-align:center"><span style="font-size:10px;font-weight:700;color:#fff;background:' + depthColor + ';padding:2px 5px;border-radius:10px">' + depthLabel + '</span></td>';
+    html += '<td style="padding:7px 4px;text-align:right;font-weight:600;font-variant-numeric:tabular-nums">' + Number(realDemand).toLocaleString('zh-CN') + '</td>';
+    html += '<td style="padding:7px 4px;text-align:right;font-variant-numeric:tabular-nums">' + soRemainHtml + '</td>';
+    html += '<td style="padding:7px 4px;text-align:right;color:#16a34a;cursor:' + (!isFg ? 'pointer' : 'default') + ';font-variant-numeric:tabular-nums" ' + (!isFg ? 'onclick="pmcOpenAdjust(\'' + escAttr(r.prd_no||'') + '\',\'\',\'mat\',' + matQty + ')"' : '') + '>' + Number(matQty).toLocaleString('zh-CN') + '</td>';
+    html += '<td style="padding:7px 4px;text-align:right;color:#16a34a;font-variant-numeric:tabular-nums" title="\u751f\u4ea7\u4ed3\u4e0d\u53ef\u8c03\u6574">' + Number(prodQty).toLocaleString('zh-CN') + '</td>';
+    html += '<td style="padding:7px 4px;text-align:right;font-variant-numeric:tabular-nums">' + wayHtml + '</td>';
+    html += '<td style="padding:7px 4px;text-align:right;font-variant-numeric:tabular-nums">' + odrHtml + '</td>';
+    html += '<td style="padding:7px 4px;text-align:right;font-weight:600;font-variant-numeric:tabular-nums">' + Number(totalStock).toLocaleString('zh-CN') + '</td>';
+    html += '<td style="padding:7px 4px;text-align:right;min-width:80px">' + gapHtml + '</td>';
+    html += '<td style="padding:7px 4px;text-align:center">' + adjBtn + '</td>';
     html += '</tr>';
   }
   html += '</tbody></table></div>';
+
+  // 说明
+  html += '<div style="margin-top:10px;font-size:11px;color:var(--sub);display:flex;gap:14px;flex-wrap:wrap">';
+  html += '<span>\u9500\u672a\u51fa=<span style="color:#6366f1;font-weight:600">\u84c9\u9500\u672a\u4ea4\u8ba1\u5355</span></span>';
+  html += '<span>\u5728\u9014=<span style="color:#f59e0b;font-weight:600">\u539f\u6750\u5728\u9014\u8ba2\u8d2d</span></span>';
+  html += '<span>\u5728\u5355=<span style="color:#8b5cf6;font-weight:600">\u539f\u6750\u5728\u5355\u8bf7\u8ba2</span></span>';
+  html += '</div>';
 
   // 生成 MPS 按钮
   if (fgRow) {

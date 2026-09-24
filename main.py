@@ -3100,6 +3100,7 @@ async def pmc_preview_mps(
     rows = [{
         "prd_no": prd_no, "qty": round(qty, 4),
         "qty_on_odr": fg_on_odr,
+        "so_remain": round(qty, 4),   # 销售未出 = qty基准
         "real_demand": round(fg_real_demand, 4),
         "mat_qty": round(fg_stock.get('mat_qty', 0), 2),
         "prod_qty": round(fg_stock.get('prod_qty', 0), 2),
