@@ -1371,7 +1371,7 @@ function renderCompletionList() {
   if (completionList.length > 0) {
     stashedHtml = `
 <div style="padding:0 12px 8px">
-  <div style="font-size:12px;font-weight:600;margin-bottom:6px;color:var(--accent)">\u6682\u5b58\u5df2\u9009\u6210\u54c1\uff08${completionList.length}\uff09</div>
+  <div style="font-size:12px;font-weight:600;margin-bottom:6px;color:var(--accent)">\u6682\u5b58\u5df2\u9009成\u54c1\uff08${completionList.length}\uff09</div>
   <div style="display:flex;flex-direction:column;gap:4px">
     ${completionList.map((item, idx) => `
     <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#EFF6FF;border-radius:8px;font-size:12px;border:1px solid #BFDBFE">
@@ -1653,7 +1653,7 @@ async function openBatchCompletionModal() {
 
     // Per-item editable fields row
     rows += '<tr style="background:#EFF6FF">'
-      + '<td colspan="2" style="padding:6px 10px;font-weight:700;font-size:13px;border-bottom:1px solid #e5e7eb">\u6210\u54c1 ' + (i+1) + '\uff1a' + fmt(item.fg_no) + '</td>'
+      + '<td colspan="2" style="padding:6px 10px;font-weight:700;font-size:13px;border-bottom:1px solid #e5e7eb">成\u54c1 ' + (i+1) + '\uff1a' + fmt(item.fg_no) + '</td>'
       + '<td style="padding:4px 6px;border-bottom:1px solid #e5e7eb"><input type="number" id="clQ_' + i + '" value="' + (item.fg_qty||1) + '" min="1" oninput="bomRecalc(' + i + ')" style="width:52px;padding:3px 4px;border:1.5px solid var(--border);border-radius:4px;font-size:12px;text-align:center"></td>'
       + '<td colspan="2" style="padding:4px 6px;border-bottom:1px solid #e5e7eb;font-size:11px;color:#888">\u6307\u4ee4\u5355\uff1a<input type="text" id="clRef_' + i + '" value="' + escAttr(item.ref||'') + '" style="width:72px;padding:3px 4px;border:1.5px solid var(--border);border-radius:4px;font-size:11px;margin-left:4px"></td>'
       + '<td style="padding:4px 6px;border-bottom:1px solid #e5e7eb;font-size:11px;color:#888">\u5ba2\u6237\uff1a<input type="text" id="clCus_' + i + '" value="' + escAttr(item.customer||'') + '" style="width:64px;padding:3px 4px;border:1.5px solid var(--border);border-radius:4px;font-size:11px;margin-left:4px"></td>'
@@ -1664,13 +1664,13 @@ async function openBatchCompletionModal() {
 
     // BOM sub-items header
     rows += '<tr style="background:#F0F4FF">'
-      + '<th style="padding:4px 8px;font-size:10px;color:#888;border-bottom:1px solid #e5e7eb;text-align:left" colspan="2">\u54c1\u53f7</th>'
+      + '<th style="padding:4px 8px;font-size:10px;color:#888;border-bottom:1px solid #e5e7eb;text-align:left" colspan="2">品号</th>'
       + '<th style="padding:4px 8px;font-size:10px;color:#888;border-bottom:1px solid #e5e7eb;text-align:right">\u914d\u6bd4</th>'
       + '<th style="padding:4px 8px;font-size:10px;color:#888;border-bottom:1px solid #e5e7eb;text-align:right">\u00d7\u6570\u91cf</th>'
       + '<th style="padding:4px 8px;font-size:10px;color:#888;border-bottom:1px solid #e5e7eb;text-align:right">\u9700\u7528\u91cf</th>'
       + '<th style="padding:4px 8px;font-size:10px;color:#888;border-bottom:1px solid #e5e7eb;text-align:right">\u53ef\u7528\u91cf</th>'
       + '<th style="padding:4px 8px;font-size:10px;color:#888;border-bottom:1px solid #e5e7eb;text-align:center">\u72b6\u6001</th>'
-      + '<th style="padding:4px 8px;font-size:10px;color:#888;border-bottom:1px solid #e5e7eb;text-align:left">\u8c03\u62e8\u5355</th>'
+      + '<th style="padding:4px 8px;font-size:10px;color:#888;border-bottom:1px solid #e5e7eb;text-align:left">调\u62e8\u5355</th>'
       + '</tr>';
 
     const bom = item.bom || [];
@@ -1704,7 +1704,7 @@ async function openBatchCompletionModal() {
   overlay.innerHTML = ''
     + '<div style="background:#fff;border-radius:14px;width:100%;max-width:800px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.25)">'
     + '<div style="padding:14px 20px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;gap:10px">'
-    + '<div style="flex:1;font-size:15px;font-weight:700">\u6279\u91cf\u5b8c\u5de5\u786e\u8ba4 \u00b7 ' + completionList.length + ' \u9879\u6210\u54c1</div>'
+    + '<div style="flex:1;font-size:15px;font-weight:700">\u6279\u91cf\u5b8c\u5de5\u786e\u8ba4 \u00b7 ' + completionList.length + ' \u9879成\u54c1</div>'
     + '<button id="cmCancelBtn" style="padding:5px 12px;border:1px solid #e5e7eb;border-radius:20px;background:#f9fafb;font-size:12px;cursor:pointer">\u53d6\u6d88</button>'
     + '<button id="cmOkBtn" style="padding:6px 16px;background:#2563eb;color:#fff;border:none;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer">\u786e\u8ba4\u5b8c\u5de5</button>'
     + '</div>'
@@ -1715,7 +1715,7 @@ async function openBatchCompletionModal() {
     + '<div style="padding:12px 16px 4px;font-size:12px;font-weight:600">\u8fd0\u8f93\u5de5\u5177</div>'
     + '<div id="cmToolArea" style="padding:4px 16px 6px"></div>'
     + '<button id="cmAddToolBtn" style="margin:0 16px 6px;padding:4px 10px;background:#f9fafb;border:1px dashed #d1d5db;border-radius:8px;font-size:11px;cursor:pointer;color:#6b7280">+ \u6dfb\u52a0\u5de5\u5177</button>'
-    + '<div style="padding:0 16px 8px;font-size:10px;color:#888">\u6210\u54c1 KND=13 \u5165\u5e93\uff0c\u6750\u6599 KND=23 \u51fa\u5e93\uff0c\u5de5\u5177 KND=13 \u5165\u5e93</div>'
+    + '<div style="padding:0 16px 8px;font-size:10px;color:#888">成\u54c1 KND=13 \u5165\u5e93\uff0c\u6750\u6599 KND=23 \u51fa\u5e93\uff0c\u5de5\u5177 KND=13 \u5165\u5e93</div>'
     + '</div></div>';
   document.body.appendChild(overlay);
 
@@ -1814,7 +1814,7 @@ async function openBatchCompletionModal() {
         body: JSON.stringify({items, fg_wh: completionList[0]?.fg_wh||'G', tool_rows: toolRows})
       });
       if (res.ok) {
-        toast('\u2705 \u5b8c\u5de5\u6210\u529f\uff08\u5165\u5e93:' + (res.ic_in||'') + ' \u51fa\u5e93:' + (res.ic_out||'') + '\uff09');
+        toast('\u2705 \u5b8c\u5de5成\u529f\uff08\u5165\u5e93:' + (res.ic_in||'') + ' \u51fa\u5e93:' + (res.ic_out||'') + '\uff09');
         overlay.remove();
         completionList = [];
         loadCompletion();
@@ -2442,7 +2442,7 @@ function renderPMCList(items, q) {
   if (!window.__pmcSelected) window.__pmcSelected = {};
   if (!items || !items.length) { el.innerHTML = '<div class="state-msg">\u6682\u65e0\u6570\u636e</div>'; return; }
   var selCount = pmcSelected.length;
-  var placeholder = "\u641c\u7d22\u8ba2\u5355/\u54c1\u53f7/\u5ba2\u6237";
+  var placeholder = "\u641c\u7d22\u8ba2\u5355/品号/\u5ba2\u6237";
   var qCus = pmcItems.map(function(t){return t.cus_name||t.CUS_NAME||t.\u5ba2\u6237||'';}).filter(function(v,i,a){return v&&a.indexOf(v)===i}).slice(0,5);
   var qRef = pmcItems.map(function(t){return t.\u6307\u4ee4\u5355\u53f7||'';}).filter(function(v,i,a){return v&&a.indexOf(v)===i}).slice(0,5);
   var cusBtns = qCus.map(function(c){return '<button onclick="window.__pmcSearchFn&&window.__pmcSearchFn(\'' + escAttr(c) + '\')" style="padding:3px 8px;border-radius:12px;border:1px solid var(--border);background:#fff;font-size:11px;cursor:pointer">' + escAttr(c) + '</button>';}).join('');
@@ -2484,7 +2484,7 @@ function renderPMCList(items, q) {
     var checkbox = '<div style="display:flex;align-items:flex-start;padding-top:2px" onclick="event.stopPropagation();pmcToggleSel(' + i + ')"><input type="checkbox" ' + (isSel?'checked':'') + ' style="width:16px;height:16px;cursor:pointer;accent-color:var(--accent)"></div>';
     return '<div class="pmc-card' + (isSel?' pmc-card-sel':'') + '">' + checkbox + cardContent + rightDiv + '</div>';
   }).join('');
-  var footer = selCount > 0 ? '<div style="position:sticky;bottom:0;padding:12px;background:rgba(255,255,255,.95);border-top:1px solid var(--border);display:flex;gap:8px;align-items:center"><div style="flex:1;display:flex;align-items:center;gap:8px"><span style="background:var(--accent);color:#fff;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:700">' + selCount + '</span><span style="font-size:13px;color:var(--text)">\u5df2\u9009</span></div><button onclick="pmcPreviewBatch()" style="background:var(--accent);color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:14px;font-weight:600;cursor:pointer">\u6279\u91cf\u9884\u89c8 (' + selCount + ')</button><button onclick="pmcSubmit()" style="background:#16a34a;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:14px;font-weight:600;cursor:pointer">\u751f\u6210 MPS</button></div>' : '';
+  var footer = selCount > 0 ? '<div style="position:sticky;bottom:0;padding:12px;background:rgba(255,255,255,.95);border-top:1px solid var(--border);display:flex;gap:8px;align-items:center"><div style="flex:1;display:flex;align-items:center;gap:8px"><span style="background:var(--accent);color:#fff;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:700">' + selCount + '</span><span style="font-size:13px;color:var(--text)">\u5df2\u9009</span></div><button onclick="pmcPreviewBatch()" style="background:var(--accent);color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:14px;font-weight:600;cursor:pointer">\u6279\u91cf\u9884\u89c8 (' + selCount + ')</button><button onclick="pmcSubmit()" style="background:#16a34a;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:14px;font-weight:600;cursor:pointer">\u751f成 MPS</button></div>' : '';
   el.innerHTML = toolbar + '<div style="padding:6px 0">' + cards + '</div>' + footer;
 }
 
@@ -2520,7 +2520,7 @@ async function pmcSubmit() {
     return;
   }
   var el = $id('content');
-  el.innerHTML = '<div class="state-msg"><div class="spinner"></div>\u751f\u6210 MPS \u4e2d\u2026</div>';
+  el.innerHTML = '<div class="state-msg"><div class="spinner"></div>\u751f成 MPS \u4e2d\u2026</div>';
   try {
     var res = await api(BASE + '/pmc/generate_mps', {
       method: 'POST',
@@ -2531,7 +2531,7 @@ async function pmcSubmit() {
     var results = res.results || (res.mps_no ? [res] : []);
     var mpsList = results.map(function(r) { return r.mps_no; }).filter(Boolean).join(' / ') || res.mps_no || '\u2014';
     var totalItm = results.reduce(function(s, r) { return s + (r.total_itm || 0); }, 0);
-    el.innerHTML = '<div style="padding:20px;text-align:center"><div style="font-size:16px;font-weight:600;color:var(--green);margin-bottom:8px">\u2713 MPS \u751f\u6210\u5b8c\u6210</div><div style="font-size:14px;word-break:break-all">' + mpsList + '</div><div style="font-size:13px;color:var(--sub);margin-top:6px">' + results.length + ' \u5f20\u5de5\u5355 \u00b7 ' + totalItm + ' \u4e2a ITM</div><div style="margin-top:16px"><button onclick="loadPMC()" style="padding:10px 20px;background:var(--accent);color:#fff;border:none;border-radius:8px;cursor:pointer">\u7ee7\u7eed\u5206\u6790</button></div></div>';
+    el.innerHTML = '<div style="padding:20px;text-align:center"><div style="font-size:16px;font-weight:600;color:var(--green);margin-bottom:8px">✓ MPS \u751f成\u5b8c成</div><div style="font-size:14px;word-break:break-all">' + mpsList + '</div><div style="font-size:13px;color:var(--sub);margin-top:6px">' + results.length + ' \u5f20\u5de5\u5355 \u00b7 ' + totalItm + ' \u4e2a ITM</div><div style="margin-top:16px"><button onclick="loadPMC()" style="padding:10px 20px;background:var(--accent);color:#fff;border:none;border-radius:8px;cursor:pointer">\u7ee7\u7eed\u5206\u6790</button></div></div>';
   } catch(e) { el.innerHTML = '<div class="error-msg">' + e.message + '</div>'; }
 }
 
@@ -2539,7 +2539,7 @@ async function pmcSubmit() {
 async function pmcPreviewBatch() {
   if (!pmcSelected || !pmcSelected.length) { alert('\u8bf7\u5148\u9009\u4e2d\u8ba1\u5355'); return; }
   var el = $id('content');
-  el.innerHTML = '<div class="state-msg"><div class="spinner"></div>\u52a0\u8f7d\u4e2d\u2026</div>';
+  el.innerHTML = '<div class="state-msg"><div class="spinner"></div>加载中\u2026</div>';
   var allRows = [];
   try {
     for (var i = 0; i < pmcSelected.length; i++) {
@@ -2547,7 +2547,7 @@ async function pmcPreviewBatch() {
       var data = await api(BASE + '/pmc/preview_mps?' + new URLSearchParams({so_no_itm: it.so_no_itm, prd_no: it.prd_no, qty: it.qty}));
       if (data.items) allRows = allRows.concat(data.items);
     }
-    renderPMCTree(allRows, pmcSelected.length + ' \u6761\u8ba1\u5355\u5408\u5e76');
+    renderPMCTree(allRows, pmcSelected.length + ' 条指令单合并');
   } catch(e) { el.innerHTML = '<div class="error-msg">' + e.message + '</div>'; }
 }
 
@@ -2559,7 +2559,7 @@ async function pmcGenerateBatch() {
 // PMC 单行分析 → BOM 树
 async function pmcAnalyzeRow(soNoItm, prdNo, qty) {
   var el = $id('content');
-  el.innerHTML = '<div class="state-msg"><div class="spinner"></div>\u52a0\u8f7d\u4e2d\u2026</div>';
+  el.innerHTML = '<div class="state-msg"><div class="spinner"></div>加载中\u2026</div>';
   try {
     var data = await api(BASE + '/pmc/preview_mps?' + new URLSearchParams({so_no_itm: soNoItm, prd_no: prdNo, qty: qty}));
     if (data.error) { el.innerHTML = '<div class="error-msg">' + data.error + '</div>'; return; }
@@ -2584,25 +2584,23 @@ function renderPMCTree(items, title) {
   for (var gi = 0; gi < items.length; gi++) { if ((items[gi].gap||0) > 0) { totalGap += items[gi].gap||0; gapCount++; } }
   var summaryTag = fgRow ? (totalGap > 0
     ? '<span style="background:#fee2e2;color:#dc2626;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:600">\u7f3a ' + totalGap.toLocaleString('zh-CN') + ' \u4ef6 \u5173 ' + gapCount + ' \u9879</span>'
-    : '<span style="background:#dcfce7;color:#16a34a;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:600">\u2713 \u5168\u90e8\u5145\u8db3</span>')
+    : '<span style="background:#dcfce7;color:#16a34a;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:600">✓ \u5168\u90e8\u5145\u8db3</span>')
     : '';
   html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap"><div style="font-size:13px;color:var(--sub)">' + (title||'') + '</div>' + summaryTag + '</div>';
 
   // BOM 表
   html += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f3f4f6">';
-  // BOM 表
-  html += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f3f4f6">';
-  html += '<th style="padding:7px 8px;text-align:left">\u54c1\u53f8</th>';
-  html += '<th style="padding:7px 4px;text-align:center">\u5c42</th>';
-  html += '<th style="padding:7px 4px;text-align:right">\u9700\u6c42</th>';
-  html += '<th style="padding:7px 4px;text-align:right">\u9500\u672a\u51fa</th>';
-  html += '<th style="padding:7px 4px;text-align:right">\u539f\u4ed3</th>';
-  html += '<th style="padding:7px 4px;text-align:right">\u751f\u4ed3</th>';
-  html += '<th style="padding:7px 4px;text-align:right">\u5728\u9014</th>';
-  html += '<th style="padding:7px 4px;text-align:right">\u5728\u5355</th>';
-  html += '<th style="padding:7px 4px;text-align:right">\u5408\u8ba1</th>';
-  html += '<th style="padding:7px 4px;text-align:right;min-width:80px">\u7f3a\u53e3</th>';
-  html += '<th style="padding:7px 4px;text-align:center">\u8c03</th>';
+  html += '<th style="padding:7px 8px;text-align:left">品号</th>';
+  html += '<th style="padding:7px 4px;text-align:center">层</th>';
+  html += '<th style="padding:7px 4px;text-align:right">需求</th>';
+  html += '<th style="padding:7px 4px;text-align:right">销未出</th>';
+  html += '<th style="padding:7px 4px;text-align:right">原仓</th>';
+  html += '<th style="padding:7px 4px;text-align:right">生仓</th>';
+  html += '<th style="padding:7px 4px;text-align:right">在途</th>';
+  html += '<th style="padding:7px 4px;text-align:right">在单请</th>';
+  html += '<th style="padding:7px 4px;text-align:right">合计</th>';
+  html += '<th style="padding:7px 4px;text-align:right;min-width:80px">缺口</th>';
+  html += '<th style="padding:7px 4px;text-align:center">调</th>';
   html += '</tr></thead><tbody>';
 
   var depthColors = ['#1d4ed8','#16a34a','#d97706','#ea580c','#dc2626'];
@@ -2621,14 +2619,14 @@ function renderPMCTree(items, title) {
     var bg = isFg ? '#dbeafe' : (gap > 0 ? '#fef9c3' : '');
     var indent = depth * 14;
     var depthColor = depthColors[Math.min(depth, depthColors.length-1)];
-    var depthLabel = isFg ? '\u6210' : 'L' + depth;
-    var adjBtn = !isFg && depth > 0 ? '<button onclick="pmcOpenAdjust(\'' + escAttr(r.prd_no||'') + '\',\'\',\'mat\',' + matQty + ')" style="padding:3px 6px;background:#f3f4f6;border:1px solid #d1d5db;border-radius:4px;font-size:11px;cursor:pointer;color:#374151">\u8c03</button>' : '';
+    var depthLabel = isFg ? '成' : 'L' + depth;
+    var adjBtn = !isFg && depth > 0 ? '<button onclick="pmcOpenAdjust(\'' + escAttr(r.prd_no||'') + '\',\'\',\'mat\',' + matQty + ')" style="padding:3px 6px;background:#f3f4f6;border:1px solid #d1d5db;border-radius:4px;font-size:11px;cursor:pointer;color:#374151">调</button>' : '';
     // 缺口进度条
     var barPct = realDemand > 0 ? Math.min(100, Math.round((totalStock/realDemand)*100)) : 0;
     var barColor = gap > 0 ? '#dc2626' : '#16a34a';
     var gapHtml = gap > 0
       ? '<div style="display:flex;align-items:center;gap:4px"><div style="flex:1;height:5px;background:#f3f4f6;border-radius:3px;overflow:hidden"><div style="width:' + barPct + '%;height:100%;background:' + barColor + ';border-radius:3px"></div></div><span style="font-weight:700;color:' + barColor + ';font-size:11px;min-width:24px;text-align:right;font-variant-numeric:tabular-nums">' + gap + '</span></div>'
-      : '<span style="color:#16a34a;font-weight:700">\u2713</span>';
+      : '<span style="color:#16a34a;font-weight:700">✓</span>';
     // 销未出 / 在途 / 在单
     var soRemainHtml = isFg && soRemain > 0 ? '<span style="color:#6366f1;font-weight:600;font-variant-numeric:tabular-nums">' + Number(soRemain).toLocaleString('zh-CN') + '</span>' : '<span style="font-variant-numeric:tabular-nums">-</span>';
     var wayHtml = wayQty > 0 ? '<span style="color:#f59e0b;font-weight:600;font-variant-numeric:tabular-nums">' + Number(wayQty).toLocaleString('zh-CN') + '</span>' : '<span style="font-variant-numeric:tabular-nums">-</span>';
@@ -2639,7 +2637,7 @@ function renderPMCTree(items, title) {
     html += '<td style="padding:7px 4px;text-align:right;font-weight:600;font-variant-numeric:tabular-nums">' + Number(realDemand).toLocaleString('zh-CN') + '</td>';
     html += '<td style="padding:7px 4px;text-align:right;font-variant-numeric:tabular-nums">' + soRemainHtml + '</td>';
     html += '<td style="padding:7px 4px;text-align:right;color:#16a34a;cursor:' + (!isFg ? 'pointer' : 'default') + ';font-variant-numeric:tabular-nums" ' + (!isFg ? 'onclick="pmcOpenAdjust(\'' + escAttr(r.prd_no||'') + '\',\'\',\'mat\',' + matQty + ')"' : '') + '>' + Number(matQty).toLocaleString('zh-CN') + '</td>';
-    html += '<td style="padding:7px 4px;text-align:right;color:#16a34a;font-variant-numeric:tabular-nums" title="\u751f\u4ea7\u4ed3\u4e0d\u53ef\u8c03\u6574">' + Number(prodQty).toLocaleString('zh-CN') + '</td>';
+    html += '<td style="padding:7px 4px;text-align:right;color:#16a34a;font-variant-numeric:tabular-nums" title="\u751f\u4ea7\u4ed3\u4e0d\u53ef调\u6574">' + Number(prodQty).toLocaleString('zh-CN') + '</td>';
     html += '<td style="padding:7px 4px;text-align:right;font-variant-numeric:tabular-nums">' + wayHtml + '</td>';
     html += '<td style="padding:7px 4px;text-align:right;font-variant-numeric:tabular-nums">' + odrHtml + '</td>';
     html += '<td style="padding:7px 4px;text-align:right;font-weight:600;font-variant-numeric:tabular-nums">' + Number(totalStock).toLocaleString('zh-CN') + '</td>';
@@ -2651,14 +2649,14 @@ function renderPMCTree(items, title) {
 
   // 说明
   html += '<div style="margin-top:10px;font-size:11px;color:var(--sub);display:flex;gap:14px;flex-wrap:wrap">';
-  html += '<span>\u9500\u672a\u51fa=<span style="color:#6366f1;font-weight:600">\u84c9\u9500\u672a\u4ea4\u8ba1\u5355</span></span>';
-  html += '<span>\u5728\u9014=<span style="color:#f59e0b;font-weight:600">\u539f\u6750\u5728\u9014\u8ba2\u8d2d</span></span>';
-  html += '<span>\u5728\u5355=<span style="color:#8b5cf6;font-weight:600">\u539f\u6750\u5728\u5355\u8bf7\u8ba2</span></span>';
+  html += '<span>销未出=<span style="color:#6366f1;font-weight:600">销售未交订单</span></span>';
+  html += '<span>在途=<span style="color:#f59e0b;font-weight:600">原材料在途购</span></span>';
+  html += '<span>在单请=<span style="color:#8b5cf6;font-weight:600">原材料在单请购</span></span>';
   html += '</div>';
 
   // 生成 MPS 按钮
   if (fgRow) {
-    html += '<div style="margin-top:16px"><button onclick="pmcSubmit()" style="background:#2563eb;color:#fff;border:none;border-radius:8px;padding:10px 24px;font-size:14px;font-weight:600;cursor:pointer">\u751f\u6210 MPS</button></div>';
+    html += '<div style="margin-top:16px"><button onclick="pmcSubmit()" style="background:#2563eb;color:#fff;border:none;border-radius:8px;padding:10px 24px;font-size:14px;font-weight:600;cursor:pointer">\u751f成 MPS</button></div>';
   }
 
   html += '</div>';
@@ -2671,7 +2669,7 @@ async function pmcOpenAdjust(prdNo, prdName, type, totalQty) {
   var bomRows = window.__pmcBomRows || [];
   var row = bomRows.find(function(r) { return r.prd_no === prdNo; });
   var matDetail = (row && row.mat_detail) ? row.mat_detail : [];
-  if (!matDetail.length) { alert('\u8be5\u54c1\u53f7\u65e0\u539f\u6750\u6599\u4ed3\u5e93\u5b58\uff0c\u65e0\u9879\u8c03\u6574'); return; }
+  if (!matDetail.length) { alert('\u8be5品号\u65e0\u539f\u6750\u6599\u4ed3\u5e93\u5b58\uff0c\u65e0\u9879调\u6574'); return; }
 
   var whOpts = matDetail.map(function(m) {
     return '<option value="' + m[0] + '">' + m[0] + ' ' + (m[1]||'') + ' (' + (m[2]||0) + ')</option>';
@@ -2680,7 +2678,7 @@ async function pmcOpenAdjust(prdNo, prdName, type, totalQty) {
   overlay.id = 'pmcAdjOverlay';
   overlay.style.cssText = 'position:fixed;inset:0;z-index:490;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center';
   overlay.innerHTML = '<div style="background:var(--card);border-radius:16px;width:90%;max-width:400px;padding:20px;font-family:inherit">' +
-    '<div style="font-size:16px;font-weight:600;margin-bottom:14px">\u8c03\u6574\u5e93\u5b58 <b>' + escHtml(prdNo) + '</b></div>' +
+    '<div style="font-size:16px;font-weight:600;margin-bottom:14px">调\u6574\u5e93\u5b58 <b>' + escHtml(prdNo) + '</b></div>' +
     '<div style="font-size:13px;color:var(--sub);margin-bottom:12px">\u539f\u6750\u6599\u4ed3\u660e\u7ec6</div>' +
     '<div style="margin-bottom:12px">' + matDetail.map(function(m) {
       return '<div style="padding:6px 8px;background:var(--bg);border-radius:6px;margin-bottom:4px;font-size:12px">' +
@@ -2688,10 +2686,10 @@ async function pmcOpenAdjust(prdNo, prdName, type, totalQty) {
     }).join('') + '</div>' +
     '<div style="margin-bottom:12px"><label style="font-size:13px;color:var(--sub);display:block;margin-bottom:4px">\u76ee\u6807\u4ed3\u5e93</label>' +
     '<select id="pmcAdjWhSelect" style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:6px;font-size:13px">' + whOpts + '</select></div>' +
-    '<div style="margin-bottom:14px"><label style="font-size:13px;color:var(--sub);display:block;margin-bottom:4px">\u8c03\u6574\u540e\u6570\u91cf</label>' +
+    '<div style="margin-bottom:14px"><label style="font-size:13px;color:var(--sub);display:block;margin-bottom:4px">调\u6574\u540e\u6570\u91cf</label>' +
     '<input id="pmcAdjQtyInput" type="number" step="0.01" min="0" value="' + (matDetail[0] ? matDetail[0][2] : totalQty) + '" style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;box-sizing:border-box"></div>' +
     '<div style="display:flex;gap:8px"><button onclick="document.getElementById(\'pmcAdjOverlay\').remove()" style="flex:1;padding:10px;background:#6b7280;color:#fff;border:none;border-radius:6px;cursor:pointer">\u53d6\u6d88</button>' +
-    '<button onclick="doPmcAdjust(\'' + escAttr(prdNo) + '\')" style="flex:1;padding:10px;background:#2563eb;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600">\u786e\u8ba4\u8c03\u6574</button></div>' +
+    '<button onclick="doPmcAdjust(\'' + escAttr(prdNo) + '\')" style="flex:1;padding:10px;background:#2563eb;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600">\u786e\u8ba4调\u6574</button></div>' +
     '</div>';
   document.body.appendChild(overlay);
 }
@@ -2711,7 +2709,7 @@ async function doPmcAdjust(prdNo) {
     // 刷新当前 BOM 树
     var p = window.__pmcPending;
     if (p) { pmcAnalyzeRow(p.soNoItm, p.prdNo, p.qty); }
-  } catch(e) { alert('\u8c03\u6574\u5931\u8d25: ' + e.message); }
+  } catch(e) { alert('调\u6574\u5931\u8d25: ' + e.message); }
 }
 
 // ── 批量调拨弹窗（来自批量升单弹窗）───────────
@@ -2730,9 +2728,9 @@ function openBatchTransferModal() {
   overlay.id = 'bomBatchOverlay';
   overlay.style.cssText = 'position:fixed;inset:0;z-index:490;background:rgba(0,0,0,.5);display:flex;align-items:flex-end;justify-content:center';
   overlay.innerHTML = '<div style="background:var(--card);border-radius:16px 16px 0 0;width:100%;max-width:960px;padding:14px 16px;font-family:inherit">' +
-    '<div style="font-size:16px;font-weight:600;margin-bottom:12px">' + n + ' \u9879\u8c03\u6295\u5355\uff0c\u7acb\u5373\u5f00\u59cb\u5f00\u5355\uff01</div>' +
+    '<div style="font-size:16px;font-weight:600;margin-bottom:12px">' + n + ' \u9879调\u6295\u5355\uff0c\u7acb\u5373\u5f00\u59cb\u5f00\u5355\uff01</div>' +
     '<button onclick="document.getElementById(\'bomBatchOverlay\').remove()" style="position:absolute;top:10px;right:10px;width:32px;height:32px;border-radius:50%;border:none;background:var(--bg);font-size:18px;cursor:pointer">×</button>' +
-    '<button onclick="confirmBatchTransfer()" style="width:100%;padding:12px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer">\u786e\u8ba4\u751f\u6210 ' + n + ' \u9879\u8c03\u6295\u5355</button></div>';
+    '<button onclick="confirmBatchTransfer()" style="width:100%;padding:12px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer">\u786e\u8ba4\u751f成 ' + n + ' \u9879调\u6295\u5355</button></div>';
   document.body.appendChild(overlay);
 }
 
