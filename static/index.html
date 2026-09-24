@@ -813,9 +813,9 @@ function renderPosUnreceived(items) {
   let h = `
     <div class="pos-un-toolbar">
       <span class="pos-un-filter-row">
-        <label>客户<input type="text" id="posUnFCustomer" value="${escAttr(posUnCustomer)}" placeholder="筛选" autocomplete="off" onkeydown="if(event.key==='Enter')applyPosUnFilters()"></label>
-        <label>供应商<input type="text" id="posUnFSupplier" value="${escAttr(posUnSupplier)}" placeholder="筛选" autocomplete="off" onkeydown="if(event.key==='Enter')applyPosUnFilters()"></label>
-        <label>指令单<input type="text" id="posUnFOrderNo" value="${escAttr(posUnOrderNo)}" placeholder="筛选" autocomplete="off" onkeydown="if(event.key==='Enter')applyPosUnFilters()"></label>
+        <input type="text" id="posUnFCustomer" value="${escAttr(posUnCustomer)}" placeholder="客户筛选…" autocomplete="off" onkeydown="if(event.key==='Enter')applyPosUnFilters()" style="flex:1;min-width:80px">
+        <input type="text" id="posUnFSupplier" value="${escAttr(posUnSupplier)}" placeholder="供应商筛选…" autocomplete="off" onkeydown="if(event.key==='Enter')applyPosUnFilters()" style="flex:1;min-width:80px">
+        <input type="text" id="posUnFOrderNo" value="${escAttr(posUnOrderNo)}" placeholder="指令单筛选…" autocomplete="off" onkeydown="if(event.key==='Enter')applyPosUnFilters()" style="flex:1;min-width:80px">
         <button class="pos-un-filter-reset" onclick="resetPosUnFilters()">清除</button>
         <button onclick="applyPosUnFilters()">筛选</button>
       </span>
