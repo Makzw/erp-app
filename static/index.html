@@ -2713,182 +2713,320 @@ async function doPmcAdjust(prdNo) {
   } catch(e) { alert('调\u6574\u5931\u8d25: ' + e.message); }
 }
 
-// ── 单条调拨弹窗（调拨 tab 仓库卡片点击）───────────
-let _tf_tool_count = 1;
 
-function openTransferModal(prdNo, whFrom, whFromName, qty) {
-  _tf_tool_count = 1;
-  var overlay = document.createElement('div');
-  overlay.id = 'transferModal';
+// ── 缺失函数补全（第二个 script 块移前，避免 onclick 时找不到）─────────────
+
+// 盘点入库弹窗
+async function openStockModal(prd_no, wh, qty) {
+  openInModal(prd_no, wh || '', wh || '', qty);
+}
+
+// ── 入库弹窗 ─────────────────────────────────────────────────────────────────
+async function openInModal(prd_no, wh, wh_name, qty) {
+  const whOpts = (window.__allWarehouses||[]).map(w => `<option value="${w.code}">${w.code} ${w.name||''}</option>`).join('');
+  const overlay = document.createElement('div');
+  overlay.id = 'inModal';
   overlay.style.cssText = 'position:fixed;inset:0;z-index:490;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center';
+
+  // 渲染弹窗内容，mode: 'in' | 'out'
+  function renderBody(mode) {
+    const isIn = mode === 'in';
+    const label = isIn ? '入库' : '出库';
+    const qtyLabel = isIn ? '入库数量' : '出库数量';
+    const btnColor = isIn ? '#16a34a' : '#2563eb';
+    const btnText = isIn ? '✓ 确认入库' : '✓ 确认出库';
+    const whLabel = isIn ? '目标仓库' : '源仓库';
+    const showWh = wh && !isIn ? false : true; // 出库时仓库固定？暂时都可选
+
+    // 出库时预填当前仓库，入库时预填当前仓库（可改）
+    const fixedWh = wh && !isIn ? wh : '';
+    const fixedWhName = wh && !isIn ? (wh_name || wh) : '';
+
+    return `
+    <div style="background:var(--card);border-radius:16px;width:90%;max-width:480px;padding:20px;animation:fadeIn .15s;font-family:inherit">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="font-size:16px;font-weight:600">📦 库存操作</div>
+        </div>
+        <button onclick="this.closest('[id=inModal]').remove()" style="width:32px;height:32px;border-radius:50%;border:none;background:var(--bg);font-size:18px;cursor:pointer;color:var(--sub)">×</button>
+      </div>
+      <div style="display:flex;gap:6px;margin-bottom:14px">
+        <button id="inModeIn" onclick="switchInMode('in')" style="flex:1;padding:8px;border-radius:10px;border:1.5px solid var(--border);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;background:var(--bg)">📥 入库</button>
+        <button id="inModeOut" onclick="switchInMode('out')" style="flex:1;padding:8px;border-radius:10px;border:1.5px solid var(--border);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;background:var(--bg)">📤 出库</button>
+      </div>
+      <style>
+        #inModeIn.active  {background:#dcfce7;color:#16a34a;border-color:#16a34a}
+        #inModeOut.active {background:#dbeafe;color:#2563eb;border-color:#2563eb}
+      </style>
+      <div style="display:grid;gap:10px">
+        <div style="padding:10px;background:var(--bg);border-radius:8px">
+          <div style="font-size:14px;font-weight:600">${fmt(prd_no)}</div>
+          <div style="font-size:12px;color:var(--sub);margin-top:2px">${fmt((stockData||{}).prd_name||'')}</div>
+          ${wh && qty > 0 ? `<div style="font-size:12px;color:var(--sub);margin-top:2px">当前仓库 <b>${fmt(wh_name||wh)}</b> 库存 <b style="color:var(--green)">${fmtNum(qty)}</b> 件</div>` : ''}
+        </div>
+        <label style="font-size:12px;color:var(--sub)">
+          ${whLabel} <span style="color:red">*</span>
+          ${wh ? `<div style="padding:8px 10px;background:var(--bg);border-radius:8px;font-size:13px;color:var(--text)">${fmt(wh_name||wh)} (${fmt(wh)})</div>
+               <input type="hidden" id="in_wh" value="${wh}">` : `<input type="text" id="in_wh" list="in_wh_opts" placeholder="选择或输入仓库代码"
+            style="display:block;width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card)">
+          <datalist id="in_wh_opts">${whOpts}</datalist>`}
+        </label>
+        <label style="font-size:12px;color:var(--sub)">
+          ${qtyLabel} <span style="color:red">*</span>
+          <input type="number" id="in_qty" value="${qty > 0 ? qty : ''}" min="0" step="1" placeholder="输入数量"
+            style="display:block;width:100%;margin-top:4px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card)">
+        </label>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <label style="font-size:12px;color:var(--sub)">
+            指令单号
+            <input type="text" id="in_ref" placeholder="指令单号"
+              style="display:block;width:100%;margin-top:4px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card)">
+          </label>
+          <label style="font-size:12px;color:var(--sub)">
+            ${isIn ? '供应商名称' : '客户代号'}
+            <input type="text" id="in_sup" placeholder="${isIn ? '供应商名称' : '客户代号'}"
+              style="display:block;width:100%;margin-top:4px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card)">
+          </label>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <label style="font-size:12px;color:var(--sub)">
+            外发计划号
+            <input type="text" id="in_ddjh" placeholder="外发计划"
+              style="display:block;width:100%;margin-top:4px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card)">
+          </label>
+          <label style="font-size:12px;color:var(--sub)">
+            单重(g)
+            <input type="number" id="in_dz" step="0.001" min="0" placeholder="0"
+              style="display:block;width:100%;margin-top:4px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card)">
+          </label>
+        </div>
+        <div style="font-size:12px;color:var(--sub)">
+          净重(kg) <span id="in_jz_val" style="margin-left:8px;font-weight:600;color:var(--text)">—</span>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:16px">
+        <button onclick="this.closest('[id=inModal]').remove()" style="flex:1;padding:12px;background:var(--card);color:var(--text);border:1.5px solid var(--border);border-radius:12px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">取消</button>
+        <button id="inConfirmBtn" onclick="doInOut('${prd_no}','${wh}','${mode}')" style="flex:2;padding:12px;background:${btnColor};color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">${btnText}</button>
+      </div>
+    </div>
+    <style>@keyframes fadeIn{from{opacity:0;transform:scale(.95)}}</style>`;
+  }
+
+  overlay.innerHTML = renderBody('in');
   document.body.appendChild(overlay);
 
-  var prdName = (stockData && stockData.prd_name) ? stockData.prd_name : '';
-  var whOpts = '';
-  var allWh = window.__allWarehouses || [];
-  for (var i = 0; i < allWh.length; i++) {
-    var w = allWh[i];
-    var code = w.code || w.wh || w.WH || '';
-    var name = w.name || w.display || '';
-    whOpts = whOpts + '<option value="' + code + '">' + name + ' (' + code + ')</option>';
+  // 切换模式
+  window.switchInMode = function(mode) {
+    const m = $id('inModal');
+    if (!m) return;
+    m.querySelector('div').outerHTML = renderBody(mode).replace(/^<div style="background:var/, '<div style="background:var');
+  };
+
+  // 初始激活状态
+  $id('inModeIn').classList.add('active');
+  $id('in_qty').addEventListener('input', calcInJZ);
+  $id('in_dz').addEventListener('input', calcInJZ);
+  function calcInJZ() {
+    const q = parseFloat($id('in_qty').value) || 0;
+    const d = parseFloat($id('in_dz').value) || 0;
+    const el = $id('in_jz_val');
+    if (el) el.textContent = q > 0 && d > 0 ? (q * d / 1000).toFixed(3) + ' kg' : '—';
   }
-
-  var tools = [
-    {code:'0300202105', name:'胶框1.05KG'},
-    {code:'0300202135', name:'胶框1.35KG'},
-    {code:'030020216',  name:'胶框1.6KG'},
-    {code:'030020220',  name:'黄框2.0KG'},
-    {code:'030020222',  name:'蓝色2.2KG'},
-    {code:'030020223',  name:'蓝色3.0KG'},
-    {code:'0300020110010011', name:'木垫板'},
-    {code:'030020224',  name:'木箱'},
-    {code:'tietong-1',  name:'铁桶'},
-  ];
-  var toolOpts = '';
-  for (var j = 0; j < tools.length; j++) {
-    toolOpts = toolOpts + '<option value="' + tools[j].code + '">' + tools[j].name + '</option>';
-  }
-
-  var modalHtml = '<div style="background:var(--card);border-radius:12px;width:100%;max-width:480px;padding:20px;font-family:inherit">' +
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">' +
-    '<div style="font-size:18px;font-weight:700">🔄 调拨</div>' +
-    '<button onclick="closeTransferModal()" style="width:32px;height:32px;border-radius:50%;border:none;background:var(--bg);font-size:18px;cursor:pointer">×</button></div>' +
-
-    '<div style="font-size:14px;font-weight:600;margin-bottom:8px">' + escHtml(prdNo) + '</div>' +
-    '<div style="font-size:12px;color:var(--sub);margin-bottom:16px">' + escHtml(prdName) + ' · 库存 ' + qty + ' 件 · FROM ' + escHtml(whFromName||whFrom) + '</div>' +
-
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">' +
-    '<div>' +
-    '<div style="font-size:11px;color:var(--sub);margin-bottom:4px">收货仓 <span style="color:var(--red)">*</span></div>' +
-    '<select id="tf_wh2" style="width:100%;padding:8px;border-radius:6px;border:1.5px solid var(--border);font-size:13px">' +
-    '<option value="">-- 选择仓库 --</option>' + whOpts + '</select></div>' +
-    '<div>' +
-    '<div style="font-size:11px;color:var(--sub);margin-bottom:4px">调拨数量 <span style="color:var(--red)">*</span></div>' +
-    '<input type="number" id="tf_qty" value="' + qty + '" min="0.001" step="0.001" style="width:100%;padding:8px;border-radius:6px;border:1.5px solid var(--border);font-size:13px"></div></div>' +
-
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">' +
-    '<div>' +
-    '<div style="font-size:11px;color:var(--sub);margin-bottom:4px">指令单号</div>' +
-    '<input type="text" id="tf_ddjh" placeholder="指令单号…" style="width:100%;padding:8px;border-radius:6px;border:1.5px solid var(--border);font-size:13px"></div>' +
-    '<div>' +
-    '<div style="font-size:11px;color:var(--sub);margin-bottom:4px">外发计划号</div>' +
-    '<input type="text" id="tf_ref" placeholder="外发计划号…" style="width:100%;padding:8px;border-radius:6px;border:1.5px solid var(--border);font-size:13px"></div></div>' +
-
-    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">' +
-    '<div>' +
-    '<div style="font-size:11px;color:var(--sub);margin-bottom:4px">客户代号</div>' +
-    '<input type="text" id="tf_cus" placeholder="客户代号…" style="width:100%;padding:8px;border-radius:6px;border:1.5px solid var(--border);font-size:13px"></div>' +
-    '<div>' +
-    '<div style="font-size:11px;color:var(--sub);margin-bottom:4px">单重(g)</div>' +
-    '<input type="number" id="tf_dz" value="0" min="0" step="1" style="width:100%;padding:8px;border-radius:6px;border:1.5px solid var(--border);font-size:13px"></div>' +
-    '<div>' +
-    '<div style="font-size:11px;color:var(--sub);margin-bottom:4px">净重(kg)</div>' +
-    '<div id="tf_jz_val" style="padding:8px;border-radius:6px;border:1.5px solid var(--border);font-size:13px;background:var(--bg);color:var(--sub)">—</div></div></div>' +
-
-    '<div style="margin-bottom:12px">' +
-    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">' +
-    '<div style="font-size:12px;font-weight:600">🚚 运输工具</div>' +
-    '<button onclick="tfAddTool()" style="padding:4px 10px;border-radius:14px;border:1px solid var(--accent);background:#fff;color:var(--accent);font-size:12px;cursor:pointer">+ 添加</button></div>' +
-    '<div id="tf_tool_rows"></div></div>' +
-
-    '<div style="display:flex;gap:10px;margin-top:16px">' +
-    '<button onclick="closeTransferModal()" style="flex:1;padding:10px;border-radius:8px;border:1px solid var(--border);background:#fff;font-size:14px;cursor:pointer">取消</button>' +
-    '<button onclick="doTransfer(\'' + escJs(prdNo) + '\',\'' + escJs(whFrom) + '\',\'' + escJs(whFromName) + '\',' + qty + ')" style="flex:2;padding:10px;border-radius:8px;border:none;background:var(--accent);color:#fff;font-size:14px;font-weight:600;cursor:pointer">✓ 确认调拨</button></div></div>';
-
-  overlay.innerHTML = modalHtml;
-
-  // 自动计算净重
-  var qtyInput = document.getElementById('tf_qty');
-  var dzInput = document.getElementById('tf_dz');
-  var jzVal = document.getElementById('tf_jz_val');
-  function calcJZ() {
-    var q = parseFloat(qtyInput && qtyInput.value) || 0;
-    var d = parseFloat(dzInput && dzInput.value) || 0;
-    if (q > 0 && d > 0) {
-      jzVal.textContent = (q * d / 1000).toFixed(3) + ' kg';
-    } else {
-      jzVal.textContent = '—';
-    }
-  }
-  if (qtyInput) qtyInput.addEventListener('input', calcJZ);
-  if (dzInput) dzInput.addEventListener('input', calcJZ);
 }
 
-function tfAddTool() {
-  var tools = [
-    {code:'0300202105', name:'胶框1.05KG'},
-    {code:'0300202135', name:'胶框1.35KG'},
-    {code:'030020216',  name:'胶框1.6KG'},
-    {code:'030020220',  name:'黄框2.0KG'},
-    {code:'030020222',  name:'蓝色2.2KG'},
-    {code:'030020223',  name:'蓝色3.0KG'},
-    {code:'0300020110010011', name:'木垫板'},
-    {code:'030020224',  name:'木箱'},
-    {code:'tietong-1',  name:'铁桶'},
-  ];
-  var toolOpts = '';
-  for (var i = 0; i < tools.length; i++) {
-    toolOpts = toolOpts + '<option value="' + tools[i].code + '">' + tools[i].name + '</option>';
-  }
-  var container = document.getElementById('tf_tool_rows');
-  if (!container) return;
-  var idx = _tf_tool_count++;
-  var div = document.createElement('div');
-  div.style.cssText = 'display:grid;grid-template-columns:2fr 1fr 26px;gap:6px;margin-bottom:6px';
-  div.innerHTML = '<select id="tf_tool_' + idx + '" style="padding:6px;border-radius:6px;border:1.5px solid var(--border);font-size:12px"><option value="">— 选择 —</option>' + toolOpts + '</select>' +
-    '<input type="number" id="tf_tool_qty_' + idx + '" value="1" min="1" style="padding:6px;border-radius:6px;border:1.5px solid var(--border);font-size:12px">' +
-    '<button onclick="this.parentNode.remove()" style="border:none;background:none;color:var(--sub);font-size:16px;cursor:pointer;padding:0">×</button>';
-  container.appendChild(div);
-}
+// 统一的入库/出库提交
+async function doInOut(prd_no, wh, mode) {
+  const isIn = mode === 'in';
+  const wh1 = isIn ? (($id('in_wh')||{value:''}).value.trim() || wh) : wh;
+  const wh2 = isIn ? '' : (($id('in_wh')||{value:''}).value.trim() || wh);
+  const inQty = parseFloat(($id('in_qty')||{value:'0'}).value) || 0;
+  if (isIn && !wh1) { toast('⚠️ 请选择仓库'); return; }
+  if (inQty <= 0) { toast('⚠️ 数量必须大于 0'); return; }
 
-function closeTransferModal() {
-  var m = document.getElementById('transferModal');
-  if (m) m.remove();
-}
-
-async function doTransfer(prdNo, whFrom, whFromName, qty) {
-  var wh2 = (document.getElementById('tf_wh2') || {value:''}).value.trim();
-  var tfQty = parseFloat((document.getElementById('tf_qty') || {value:'0'}).value) || 0;
-  if (!wh2) { toast('⚠️ 请选择收货仓'); return; }
-  if (tfQty <= 0) { toast('⚠️ 数量必须大于 0'); return; }
-
-  var tool_rows = [];
-  for (var i = 0; i < _tf_tool_count; i++) {
-    var codeEl = document.getElementById('tf_tool_' + i);
-    var qtyEl = document.getElementById('tf_tool_qty_' + i);
-    var code = codeEl ? codeEl.value.trim() : '';
-    var tqty = parseInt(qtyEl ? qtyEl.value : '1') || 1;
-    if (code) tool_rows.push({ code: code, qty: tqty });
-  }
-
-  var rows = [{
-    prd_no: prdNo,
-    qty: tfQty,
-    wh: whFrom,
-    wh2: wh2,
-    ref_itm: (document.getElementById('tf_ref') || {value:''}).value.trim(),
-    ddjh: (document.getElementById('tf_ddjh') || {value:''}).value.trim(),
-    cus_no: (document.getElementById('tf_cus') || {value:''}).value.trim(),
-    danzhong: parseFloat((document.getElementById('tf_dz') || {value:'0'}).value) || 0,
+  const row = {
+    prd_no, qty: inQty, wh: isIn ? wh1 : wh2,
+    ref_itm: ($id('in_ref')||{value:''}).value.trim(),
+    ddjh: ($id('in_ddjh')||{value:''}).value.trim(),
+    sup_name: ($id('in_sup')||{value:''}).value.trim(),
+    danzhong: parseFloat(($id('in_dz')||{value:'0'}).value) || 0,
     jingzhong: 0,
-  }];
+  };
 
-  var modal = document.getElementById('transferModal');
-  var btn = modal ? modal.querySelector('button:last-child') : null;
+  const modal = $id('inModal');
+  const btn = modal ? modal.querySelector('button:last-child') : null;
   if (btn) { btn.disabled = true; btn.textContent = '提交中…'; }
 
   try {
-    var res = await api(BASE + '/stock/transfer', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({items: rows, tool_rows: tool_rows}),
+    const apiPath = isIn ? '/stock/in' : '/stock/out';
+    const res = await api(BASE + apiPath, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify([row]),
     });
-    if (res.ok || (res.ic_no)) {
-      toast('✅ 调拨成功 ' + (res.ic_no || ''));
-    } else {
-      toast('❌ ' + JSON.stringify(res));
-    }
-    closeTransferModal();
+    const icNo = res.items ? res.items[0].ic_no : res.ic_no || '';
+    toast(`✅ ${isIn ? '入库' : '出库'}成功 ${icNo}`);
+    if (modal) modal.remove();
+    if (stockData && stockData.prd_no) stockSearchByPRD(stockData.prd_no);
+  } catch(e) {
+    toast('❌ ' + (isIn ? '入库' : '出库') + '失败: ' + e.message);
+    if (btn) { btn.disabled = false; btn.textContent = isIn ? '✓ 确认入库' : '✓ 确认出库'; }
+  }
+}
+
+// ── 调拨弹窗 ─────────────────────────────────────────────────────────────────
+async function openTransferModal(prd_no, wh, wh_name, qty) {
+  const tools = [
+    {code:'0300202105', name:'胶框1.05KG'},
+    {code:'0300202135', name:'胶框1.35KG'},
+    {code:'030020216',  name:'胶框1.6KG'},
+    {code:'030020220',  name:'黄框2.0KG'},
+    {code:'030020222',  name:'蓝色2.2KG'},
+    {code:'030020223',  name:'蓝色3.0KG'},
+    {code:'0300020110010011', name:'木垫板'},
+    {code:'030020224',  name:'木箱'},
+    {code:'tietong-1',  name:'铁桶'},
+  ];
+  const toolOpts = `<option value=""></option>` + tools.map(t => `<option value="${t.code}">${t.code} ${t.name}</option>`).join('');
+  const whOpts = (window.__allWarehouses||[]).map(w => `<option value="${w.code}">${w.code} ${w.name||''}</option>`).join('');
+  const overlay = document.createElement('div');
+  overlay.id = 'transferModal';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:490;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center';
+  overlay.innerHTML = `
+    <div style="background:var(--card);border-radius:16px;width:90%;max-width:480px;padding:20px;animation:fadeIn .15s;font-family:inherit">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <div style="font-size:16px;font-weight:600">🔄 调拨</div>
+        <button onclick="this.closest('[id=transferModal]').remove()" style="width:32px;height:32px;border-radius:50%;border:none;background:var(--bg);font-size:18px;cursor:pointer;color:var(--sub)">×</button>
+      </div>
+      <div style="display:grid;gap:10px">
+        <div style="padding:10px;background:var(--bg);border-radius:8px">
+          <div style="font-size:14px;font-weight:600">${fmt(prd_no)}</div>
+          <div style="font-size:12px;color:var(--sub);margin-top:2px">${fmt((stockData||{}).prd_name||'')}</div>
+          <div style="font-size:12px;color:var(--sub)">库存 <b>${fmtNum(qty)}</b> 件 · <b>${fmt(wh_name||wh)}</b></div>
+        </div>
+        <label style="font-size:12px;color:var(--sub)">
+          收货仓 <span style="color:red">*</span>
+          <input type="text" id="tf_wh2" list="tf_wh2_opts" placeholder="选择或输入收货仓库"
+            style="display:block;width:100%;margin-top:4px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card)">
+          <datalist id="tf_wh2_opts">${whOpts}</datalist>
+        </label>
+        <label style="font-size:12px;color:var(--sub)">
+          调拨数量 <span style="color:red">*</span>
+          <input type="number" id="tf_qty" value="${qty > 0 ? qty : ''}" min="0" step="1"
+            style="display:block;width:100%;margin-top:4px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card)">
+        </label>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <label style="font-size:12px;color:var(--sub)">
+            指令单号
+            <input type="text" id="tf_ref" placeholder="指令单号"
+              style="display:block;width:100%;margin-top:4px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card)">
+          </label>
+          <label style="font-size:12px;color:var(--sub)">
+            外发计划号
+            <input type="text" id="tf_ddjh" placeholder="外发计划"
+              style="display:block;width:100%;margin-top:4px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card)">
+          </label>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <label style="font-size:12px;color:var(--sub)">
+            客户代号
+            <input type="text" id="tf_cus" placeholder="客户代号"
+              style="display:block;width:100%;margin-top:4px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card)">
+          </label>
+          <label style="font-size:12px;color:var(--sub)">
+            单重(g)
+            <input type="number" id="tf_dz" step="0.001" min="0" placeholder="0"
+              style="display:block;width:100%;margin-top:4px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card)">
+          </label>
+        </div>
+        <div style="font-size:12px;color:var(--sub)">
+          净重(kg) <span id="tf_jz_val" style="margin-left:8px;font-weight:600;color:var(--text)">—</span>
+        </div>
+        <div style="border-top:1px solid var(--border);padding-top:10px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+            <div style="font-size:12px;font-weight:600;color:var(--text)">🚚 运输工具</div>
+            <button onclick="tfAddTool()" style="padding:3px 10px;background:var(--accent);color:#fff;border:none;border-radius:20px;font-size:11px;cursor:pointer">+ 添加</button>
+          </div>
+          <div id="tf_tool_rows">
+            <div style="display:grid;grid-template-columns:2fr 1fr 26px;gap:6px;margin-bottom:6px">
+              <select id="tf_tool_0" style="padding:6px 8px;border:1px solid var(--border);border-radius:5px;font-size:12px;font-family:inherit;background:var(--card)">${toolOpts}
+              </select>
+              <input type="number" id="tf_tool_qty_0" value="1" min="1" placeholder="数量"
+                style="padding:6px 8px;border:1px solid var(--border);border-radius:5px;font-size:12px;font-family:inherit;background:var(--card)">
+              <div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:16px">
+        <button onclick="this.closest('[id=transferModal]').remove()" style="flex:1;padding:12px;background:var(--card);color:var(--text);border:1.5px solid var(--border);border-radius:12px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">取消</button>
+        <button onclick="doTransfer('${prd_no}','${wh}','${wh_name}',${qty})" style="flex:2;padding:12px;background:var(--accent);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">✓ 确认调拨</button>
+      </div>
+    </div>
+    <style>@keyframes fadeIn{from{opacity:0;transform:scale(.95)}}</style>`;
+  document.body.appendChild(overlay);
+  $id('tf_qty').addEventListener('input', calcTFJZ);
+  $id('tf_dz').addEventListener('input', calcTFJZ);
+  function calcTFJZ() {
+    const q = parseFloat($id('tf_qty').value) || 0;
+    const d = parseFloat($id('tf_dz').value) || 0;
+    const el = $id('tf_jz_val');
+    if (el) el.textContent = q > 0 && d > 0 ? (q * d / 1000).toFixed(3) + ' kg' : '—';
+  }
+}
+
+let _tf_tool_count = 1;
+function tfAddTool() {
+  const tools = [
+    {code:'0300202105', name:'胶框1.05KG'},
+    {code:'0300202135', name:'胶框1.35KG'},
+    {code:'030020216',  name:'胶框1.6KG'},
+    {code:'030020220',  name:'黄框2.0KG'},
+    {code:'030020222',  name:'蓝色2.2KG'},
+    {code:'030020223',  name:'蓝色3.0KG'},
+    {code:'0300020110010011', name:'木垫板'},
+    {code:'030020224',  name:'木箱'},
+    {code:'tietong-1',  name:'铁桶'},
+  ];
+  const toolOpts = tools.map(t => `<option value="${t.code}">${t.code} ${t.name}</option>`).join('');
+  const container = $id('tf_tool_rows');
+  if (!container) return;
+  const i = _tf_tool_count++;
+  const div = document.createElement('div');
+  div.style.cssText = 'display:grid;grid-template-columns:2fr 1fr 26px;gap:6px;margin-bottom:6px';
+  div.innerHTML = `<select id="tf_tool_${i}" style="padding:6px 8px;border:1px solid var(--border);border-radius:5px;font-size:12px;font-family:inherit;background:var(--card)">${toolOpts}</select>
+    <input type="number" id="tf_tool_qty_${i}" value="1" min="1" placeholder="数量" style="padding:6px 8px;border:1px solid var(--border);border-radius:5px;font-size:12px;font-family:inherit;background:var(--card)">
+    <button onclick="this.parentElement.remove()" style="width:26px;height:26px;border-radius:50%;border:none;background:#FEE2E2;color:#DC2626;font-size:14px;cursor:pointer">×</button>`;
+  container.appendChild(div);
+}
+
+async function doTransfer(prd_no, wh, wh_name, qty) {
+  const wh2 = ($id('tf_wh2')||{value:''}).value.trim();
+  const tfQty = parseFloat(($id('tf_qty')||{value:'0'}).value) || 0;
+  if (!wh2) { toast('⚠️ 请选择收货仓'); return; }
+  if (tfQty <= 0) { toast('⚠️ 数量必须大于 0'); return; }
+  const tool_rows = [];
+  for (let i = 0; i < _tf_tool_count; i++) {
+    const code = ($id('tf_tool_' + i)||{value:''}).value.trim();
+    const tqty = parseInt(($id('tf_tool_qty_' + i)||{value:'1'}).value) || 1;
+    if (code) tool_rows.push({ code, qty: tqty });
+  }
+  const rows = [{
+    prd_no, qty: tfQty, wh, wh2,
+    ref_itm: ($id('tf_ref')||{value:''}).value.trim(),
+    ddjh: ($id('tf_ddjh')||{value:''}).value.trim(),
+    cus_no: ($id('tf_cus')||{value:''}).value.trim(),
+    danzhong: parseFloat(($id('tf_dz')||{value:'0'}).value) || 0,
+    jingzhong: 0,
+  }];
+  const modal = $id('transferModal');
+  const btn = modal ? modal.querySelector('button:last-child') : null;
+  if (btn) { btn.disabled = true; btn.textContent = '提交中…'; }
+  try {
+    const res = await api(BASE + '/stock/transfer', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({items: rows, tool_rows}),
+    });
+    toast(`✅ 调拨成功 ${res.ic_no}`);
+    if (modal) modal.remove();
     if (stockData && stockData.prd_no) stockSearchByPRD(stockData.prd_no);
   } catch(e) {
     toast('❌ 调拨失败: ' + e.message);
@@ -2896,188 +3034,270 @@ async function doTransfer(prdNo, whFrom, whFromName, qty) {
   }
 }
 
-// ── 批量调拨弹窗（来自批量升单弹窗）───────────
+
+async function renderPMCAnalysis() {
+  var p = window.__pmcPending;
+  var el = $id('content');
+  if (!el) return;
+  if (!p) { loadPMC(); return; }
+  el.innerHTML = '<div class="state-msg"><div class="spinner"></div>\u52a0\u8f7d\u4e2d\u2026</div>';
+  try {
+    var data = await api(BASE + '/pmc/preview_mps?' + new URLSearchParams({so_no_itm:p.soNoItm, prd_no:p.prdNo, qty:p.qty}));
+    var rows = data.rows || [];
+    var fgRow = rows.find(function(r) { return r.depth === 0; });
+    var bomRows = rows.filter(function(r) { return r.depth > 0; });
+    window.__pmcBomRows = bomRows;
+    var gapRows = bomRows.filter(function(r) { return (r.gap||0) > 0; });
+    var fgHtml = '<div style="padding:12px"><div style="margin-bottom:12px"><button onclick="window.__pmcPending=null;window.curTab=\'pmc\';renderCurrentTab()" style="background:#6b7280;color:#fff;border:none;border-radius:6px;padding:6px 14px;cursor:pointer;font-size:13px">\u2190 \u8fd4\u56de\u5217\u8868</button></div><div style="background:#eff6ff;border:1.5px solid #3b82f6;border-radius:10px;padding:14px 16px;margin-bottom:16px"><div style="font-weight:700;font-size:16px;margin-bottom:6px">' + escAttr(p.prdNo) + ' ' + escAttr(p.prdName||'') + '</div><div style="font-size:13px;color:#374151">\u8ba2\u5355: ' + escAttr(p.osNo) + ' \u00b7 \u6570\u91cf: ' + p.qty + ' \u4ef6</div>';
+    if (fgRow) {
+      fgHtml += '<div style="font-size:13px;color:#374151;margin-top:4px">\u6210\u54c1\u5e93\u5b58: \u539f\u6599\u4ed3 <b style="color:#16a34a">' + (fgRow.mat_qty||0) + '</b> + \u751f\u4ea7\u4ed3 <b style="color:#16a34a">' + (fgRow.prod_qty||0) + '</b> = \u5408\u8ba1 <b style="color:#16a34a">' + (fgRow.total_stock||0) + '</b></div>';
+      fgHtml += '<div style="font-size:13px;color:#374151;margin-top:4px">\u7f3a\u53e3: <b style="color:' + (fgRow.gap>0?'#dc2626':'#16a34a') + '">' + (fgRow.gap||0) + '</b></div>';
+    }
+    fgHtml += '</div>';
+    if (!bomRows.length) { el.innerHTML = fgHtml + '<div class="state-msg">\u65e0 BOM \u6570\u636e</div></div>'; return; }
+    var bomTH = '<div style="margin-bottom:12px;font-size:13px;color:#374151;font-weight:600">BOM \u5b50\u4ef6\uff08\u7f3a\u53e3=' + gapRows.length + '\u9879\u6709\u6599\uff09</div><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f9fafb"><th style="padding:7px 10px;text-align:left;font-size:11px;color:#666;border-bottom:1px solid #e5e7eb">\u54c1\u53f7</th><th style="padding:7px 8px;text-align:right;font-size:11px;color:#666;border-bottom:1px solid #e5e7eb">\u7ea7</th><th style="padding:7px 8px;text-align:right;font-size:11px;color:#666;border-bottom:1px solid #e5e7eb">BOM\u91cf</th><th style="padding:7px 8px;text-align:right;font-size:11px;color:#666;border-bottom:1px solid #e5e7eb">\u539f\u6599\u4ed3</th><th style="padding:7px 8px;text-align:right;font-size:11px;color:#666;border-bottom:1px solid #e5e7eb">\u751f\u4ea7\u4ed3</th><th style="padding:7px 8px;text-align:right;font-size:11px;color:#666;border-bottom:1px solid #e5e7eb">\u5408\u8ba1</th><th style="padding:7px 8px;text-align:right;font-size:11px;color:#666;border-bottom:1px solid #e5e7eb">\u7f3a\u53e3</th></tr></thead><tbody>';
+    var bomTRs = bomRows.map(function(r) {
+      var hasGap = (r.gap||0) > 0;
+      var gap = r.gap||0;
+      var indent = (r.depth||1)-1;
+      var gapColor = gap > 0 ? '#dc2626' : '#16a34a';
+      var bg = hasGap ? '#fef9c3' : '';
+      return '<tr style="border-bottom:1px solid #f3f4f6;background:' + bg + '"><td style="padding:7px 10px"><span style="display:inline-block;margin-left:' + (indent*14) + 'px">' + escAttr(r.prd_no||'') + '</span></td><td style="padding:7px 8px;text-align:right;font-size:11px;color:#9ca3af">' + (r.depth||1) + '</td><td style="padding:7px 8px;text-align:right">' + (r.qty||0) + '</td><td style="padding:7px 8px;text-align:right;color:#16a34a;cursor:pointer" onclick="pmcOpenAdjust(\'' + escAttr(r.prd_no||'') + '\',\'\',\'mat\',' + (r.mat_qty||0) + ')" title="\u70b9\u51fb\u8c03\u6574\u539f\u6750\u6599\u4ed3">' + (r.mat_qty||0) + '</td><td style="padding:7px 8px;text-align:right;color:#16a34a;cursor:not-allowed" title="\u751f\u4ea7\u4ed3\u4e0d\u53ef\u8c03\u6574">' + (r.prod_qty||0) + '</td><td style="padding:7px 8px;text-align:right;font-weight:600">' + (r.total_stock||0) + '</td><td style="padding:7px 8px;text-align:right;font-weight:700;color:' + gapColor + '">' + gap + '</td></tr>';
+    }).join('');
+    var btnHtml = gapRows.length > 0
+      ? '<div style="margin-top:16px"><button onclick="generateMPS(\'' + escAttr(p.soNoItm) + '\',\'' + escAttr(p.prdNo) + '\',' + p.qty + ')" style="background:#2563eb;color:#fff;border:none;border-radius:8px;padding:10px 24px;font-size:14px;font-weight:600;cursor:pointer">\u751f\u6210 MPS\uff08MO+QD\uff09\uff08' + gapRows.length + '\u9879\u6709\u6599\uff09</button></div>'
+      : '<div style="margin-top:16px;padding:12px;background:#dcfce7;border-radius:8px;font-size:13px;color:#16a34a">\u2713 \u5e93\u5b58\u5145\u8db3\uff0c\u65e0\u9700\u751f\u6210\u5de5\u5355</div>';
+    el.innerHTML = fgHtml + bomTH + bomTRs + '</tbody></table></div>' + btnHtml + '</div>';
+  } catch(e) { el.innerHTML = '<div class="error-msg">\u52a0\u8f7d\u5931\u8d25: ' + escAttr(e.message) + '</div>'; }
+}
+
+
+// ── 批量调拨弹窗 ────────────────────────────────────────────
 function openBatchTransferModal() {
-  var bomItems = [];
-  Object.entries(bomSelectedByProduct).forEach(function(entry) {
-    Object.values(entry[1]).forEach(function(r) {
-      bomItems.push({
-        prd_no: r.prd_no,
-        qty: r.qty,
-        wh: r.wh,
-        wh_name: r.wh_name,
-        parentPrd: r.parentPrd || entry[0],
-        parentName: r.parentName || entry[0],
-      });
+  const bomItems = [];
+  Object.entries(bomSelectedByProduct).forEach(([parentPrd, rows]) => {
+    Object.values(rows).forEach(r => {
+      bomItems.push({ ...r, parentPrd, parentName: r.parentPrdName || parentPrd });
     });
   });
-  var stockItems = stockBatchList.filter(function(i) { return i.direction === 'transfer'; });
-  var allItems = bomItems.concat(stockItems);
+  const stockItems = stockBatchList.filter(i => i.direction === 'transfer');
+  const allItems = [...bomItems, ...stockItems];
   if (!allItems.length) { toast('⚠️ 请先勾选 BOM 行或加入升单列表'); return; }
-  var n = allItems.length;
-
-  var overlay = document.createElement('div');
+  const n = allItems.length;
+  const allWhs = window.__allWarehouses || [];
+  const whOpts = allWhs.map(w => `<option value="${w.code}">${w.code} ${w.name||''}</option>`).join('');
+  window.__transferTools = [
+    {code:'0300202105', name:'胶框1.05KG'},
+    {code:'0300202135', name:'胶框1.35KG'},
+    {code:'030020216',  name:'胶框1.6KG'},
+    {code:'030020220',  name:'黄框2.0KG'},
+    {code:'030020222',  name:'蓝色2.2KG'},
+    {code:'030020223',  name:'蓝色3.0KG'},
+    {code:'0300020110010011', name:'木垫板'},
+    {code:'030020224',  name:'木箱'},
+    {code:'tietong-1',  name:'铁桶'},
+  ];
+  const toolOpts = `<option value=""></option>` + window.__transferTools.map(t => `<option value="${t.code}">${t.code} ${t.name}</option>`).join('');
+  const overlay = document.createElement('div');
   overlay.id = 'bomBatchOverlay';
   overlay.style.cssText = 'position:fixed;inset:0;z-index:490;background:rgba(0,0,0,.5);display:flex;align-items:flex-end;justify-content:center';
+  overlay.innerHTML = `
+    <div style="background:var(--card);border-radius:16px 16px 0 0;width:100%;max-width:960px;max-height:90vh;display:flex;flex-direction:column;animation:slideUp .2s;font-family:inherit">
+      <div style="padding:14px 16px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--border)">
+        <div style="font-size:16px;font-weight:600;flex:1">📋 批量调拨 &nbsp;<span style="font-size:13px;color:var(--sub)">(${n} 项)</span></div>
+        <button onclick="bomBatchOverlayRemove()" style="width:32px;height:32px;border-radius:50%;border:none;background:var(--bg);font-size:18px;cursor:pointer;color:var(--sub)">×</button>
+      </div>
+      <div style="padding:8px 16px;background:var(--bg);border-bottom:1px solid var(--border);flex-shrink:0;display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <label style="font-size:12px;color:var(--sub)">
+          TO仓 ★ <span style="color:red">*</span>
+          <input type="text" id="bt_to_wh" list="bt_to_wh_opts" placeholder="选择或输入 TO 仓库"
+            style="display:block;width:100%;padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card)">
+          <datalist id="bt_to_wh_opts">${whOpts}</datalist>
+        </label>
+        <div style="display:flex;align-items:flex-end;gap:6px">
+          <div style="flex:1">
+            <div style="font-size:12px;color:var(--sub);margin-bottom:4px">🚚 运输工具</div>
+            <div style="display:flex;gap:4px;flex-wrap:wrap" id="bt_tools_area">
+              <button onclick="addBatchToolRow()" style="padding:5px 10px;background:var(--accent);color:#fff;border:none;border-radius:20px;font-size:11px;cursor:pointer">+ 添加</button>
+              <div id="batchToolRows">${renderStockBatchTools()}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="batchScroll" style="flex:1;overflow-y:auto;padding:0;max-height:45vh">
+        <div id="batchTableBody"></div>
+      </div>
+      <div style="padding:12px 16px;display:flex;gap:8px;flex-shrink:0;background:var(--card);border-top:1px solid var(--border)">
+        <button onclick="bomBatchOverlayRemove()" style="flex:1;padding:13px;background:var(--card);color:var(--text);border:1.5px solid var(--border);border-radius:12px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">取消</button>
+        <button id="batchConfirmBtn" onclick="bomBatchConfirm()" style="flex:2;padding:13px;background:var(--accent);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">✓ 确认调拨</button>
+      </div>
+    </div>
+    <style>@keyframes slideUp{from{transform:translateY(100%)}}</style>`;
   document.body.appendChild(overlay);
-  overlay.addEventListener('click', function(e) { if (e.target === overlay) closeBatchTransferModal(); });
-
-  var whOpts = '';
-  var allWh = window.__allWarehouses || [];
-  for (var i = 0; i < allWh.length; i++) {
-    var w = allWh[i];
-    var code = w.code || w.wh || w.WH || '';
-    var name = w.name || w.display || '';
-    whOpts = whOpts + '<option value="' + code + '">' + name + ' (' + code + ')</option>';
-  }
-
-  var tools = [
-    {code:'0300202105', name:'胶框1.05KG'},
-    {code:'0300202135', name:'胶框1.35KG'},
-    {code:'030020216',  name:'胶框1.6KG'},
-    {code:'030020220',  name:'黄框2.0KG'},
-    {code:'030020222',  name:'蓝色2.2KG'},
-    {code:'030020223',  name:'蓝色3.0KG'},
-    {code:'0300020110010011', name:'木垫板'},
-    {code:'030020224',  name:'木箱'},
-    {code:'tietong-1',  name:'铁桶'},
-  ];
-  var toolOpts = '';
-  for (var j = 0; j < tools.length; j++) {
-    toolOpts = toolOpts + '<option value="' + tools[j].code + '">' + tools[j].name + '</option>';
-  }
-
-  var tableRows = '';
-  for (var k = 0; k < allItems.length; k++) {
-    var item = allItems[k];
-    tableRows = tableRows + '<tr style="font-size:12px">' +
-      '<td style="padding:6px 8px;border-bottom:1px solid var(--border)">' + escHtml(item.prd_no) + '</td>' +
-      '<td style="padding:6px 8px;border-bottom:1px solid var(--border);color:var(--sub)">' + escHtml(item.wh_name||item.wh) + '</td>' +
-      '<td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right">' + item.qty + '</td></tr>';
-  }
-
-  var modalHtml =
-    '<div style="background:var(--card);border-radius:16px 16px 0 0;width:100%;max-width:640px;padding:20px;font-family:inherit">' +
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">' +
-    '<div style="font-size:16px;font-weight:700">🔄 批量调拨 ' + n + ' 项</div>' +
-    '<button onclick="closeBatchTransferModal()" style="width:32px;height:32px;border-radius:50%;border:none;background:var(--bg);font-size:18px;cursor:pointer">×</button></div>' +
-
-    '<div style="margin-bottom:16px">' +
-    '<div style="font-size:11px;color:var(--sub);margin-bottom:6px">TO 目标仓库 <span style="color:var(--red)">*</span></div>' +
-    '<select id="batchToWh" style="width:100%;padding:8px;border-radius:6px;border:1.5px solid var(--border);font-size:13px;margin-bottom:12px">' +
-    '<option value="">-- 选择目标仓库 --</option>' + whOpts + '</select></div>' +
-
-    '<div style="margin-bottom:16px">' +
-    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">' +
-    '<div style="font-size:12px;font-weight:600">🚚 运输工具（可选）</div>' +
-    '<button onclick="btfAddTool()" style="padding:4px 10px;border-radius:14px;border:1px solid var(--accent);background:#fff;color:var(--accent);font-size:12px;cursor:pointer">+ 添加</button></div>' +
-    '<div id="btf_tool_rows"></div></div>' +
-
-    '<div style="font-size:11px;color:var(--sub);margin-bottom:6px">待调拨物料</div>' +
-    '<div style="max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;margin-bottom:16px">' +
-    '<table style="width:100%;border-collapse:collapse">' +
-    '<thead><tr style="background:var(--bg);font-size:11px;color:var(--sub)">' +
-    '<th style="padding:6px 8px;text-align:left">品号</th>' +
-    '<th style="padding:6px 8px;text-align:left">FROM仓</th>' +
-    '<th style="padding:6px 8px;text-align:right">数量</th></tr></thead>' +
-    '<tbody>' + tableRows + '</tbody></table></div>' +
-
-    '<div style="display:flex;gap:10px">' +
-    '<button onclick="closeBatchTransferModal()" style="flex:1;padding:10px;border-radius:8px;border:1px solid var(--border);background:#fff;font-size:14px;cursor:pointer">取消</button>' +
-    '<button onclick="doBatchTransfer()" style="flex:2;padding:10px;border-radius:8px;border:none;background:var(--accent);color:#fff;font-size:14px;font-weight:600;cursor:pointer">确认调拨 ' + n + ' 项</button></div></div>';
-
-  overlay.innerHTML = modalHtml;
+  _setupOverlayClose();
+  renderBatchTable(allItems, allWhs, whOpts);
 }
 
-var _btf_tool_count = 1;
-
-function btfAddTool() {
-  var tools = [
-    {code:'0300202105', name:'胶框1.05KG'},
-    {code:'0300202135', name:'胶框1.35KG'},
-    {code:'030020216',  name:'胶框1.6KG'},
-    {code:'030020220',  name:'黄框2.0KG'},
-    {code:'030020222',  name:'蓝色2.2KG'},
-    {code:'030020223',  name:'蓝色3.0KG'},
-    {code:'0300020110010011', name:'木垫板'},
-    {code:'030020224',  name:'木箱'},
-    {code:'tietong-1',  name:'铁桶'},
-  ];
-  var toolOpts = '';
-  for (var i = 0; i < tools.length; i++) {
-    toolOpts = toolOpts + '<option value="' + tools[i].code + '">' + tools[i].name + '</option>';
-  }
-  var container = document.getElementById('btf_tool_rows');
-  if (!container) return;
-  var idx = _btf_tool_count++;
-  var div = document.createElement('div');
-  div.style.cssText = 'display:grid;grid-template-columns:2fr 1fr 26px;gap:6px;margin-bottom:6px';
-  div.innerHTML = '<select id="btf_tool_' + idx + '" style="padding:6px;border-radius:6px;border:1.5px solid var(--border);font-size:12px"><option value="">— 选择 —</option>' + toolOpts + '</select>' +
-    '<input type="number" id="btf_tool_qty_' + idx + '" value="1" min="1" style="padding:6px;border-radius:6px;border:1.5px solid var(--border);font-size:12px">' +
-    '<button onclick="this.parentNode.remove()" style="border:none;background:none;color:var(--sub);font-size:16px;cursor:pointer;padding:0">×</button>';
-  container.appendChild(div);
+function bomBatchOverlayRemove() {
+  const el = $id('bomBatchOverlay');
+  if (el) el.remove();
 }
 
-function closeBatchTransferModal() {
-  var o = document.getElementById('bomBatchOverlay');
-  if (o) o.remove();
+function _setupOverlayClose() {
+  document.addEventListener('keydown', function escHandler(e) {
+    if (e.key === 'Escape') {
+      bomBatchOverlayRemove();
+      document.removeEventListener('keydown', escHandler);
+    }
+  });
 }
 
-async function doBatchTransfer() {
-  var whTo = (document.getElementById('batchToWh') || {value:''}).value.trim();
-  if (!whTo) { toast('⚠️ 请选择目标仓库'); return; }
+function renderBatchTable(allItems, allWhs, whOpts) {
+  const body = $id('batchTableBody');
+  if (!body) return;
+  if (!allItems.length) { body.innerHTML = '<div style="padding:20px;text-align:center;color:var(--sub)">无数据</div>'; return; }
+  let html = '<table style="width:100%;border-collapse:collapse;font-size:12px">';
+  html += '<tr style="background:var(--bg)">';
+  ['品号','品名','数量','FROM仓'].forEach(h => {
+    html += `<th style="padding:8px 5px;text-align:left;font-weight:600;border-bottom:1px solid var(--border);white-space:nowrap">${h}</th>`;
+  });
+  ['指令单号','外发计划号','客户代号','单重(g)','净重(kg)','备注'].forEach(h => {
+    html += `<th style="padding:8px 5px;text-align:left;font-weight:600;border-bottom:1px solid var(--border);white-space:nowrap">${h}</th>`;
+  });
+  html += '</tr>';
+  allItems.forEach((item, idx) => {
+    const prdNo = item.prd_no || item.PRD_NO || '';
+    const prdName = item.prd_name || item.PRD_NAME || '';
+    const qty = item.qty || item.QTY || '';
+    const ref = item.ref_itm || item.REF_ITM || item.指令单号 || '';
+    const ddjh = item.ddjh || item.DDJH || item.外发计划号 || '';
+    const cus = item.cus_no || item.CUS_NO || item.客户代号 || '';
+    const dz = item.danzhong || item.单重 || '';
+    const rem = item.rem || item.REM || item.备注 || '';
+    html += `<tr style="border-bottom:1px solid var(--border)">`;
+    html += `<td style="padding:6px 5px;font-weight:600">${fmt(prdNo)}</td>`;
+    html += `<td style="padding:6px 5px;color:var(--sub);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${fmt(prdName)}</td>`;
+    html += `<td style="padding:6px 5px"><input type="number" class="batch-qty" data-idx="${idx}" value="${qty}" min="0" step="1" style="width:60px;padding:3px 5px;border:1px solid var(--border);border-radius:4px;font-size:11px;font-family:inherit;background:var(--card)"></td>`;
+    html += `<td style="padding:6px 5px"><select class="batch-wh-from" data-idx="${idx}" style="padding:4px 4px;border:1px solid var(--border);border-radius:4px;font-size:11px;background:var(--card)">${whOpts}</select></td>`;
+    html += `<td style="padding:6px 5px"><input type="text" class="batch-ref" data-idx="${idx}" value="${escAttr(ref)}" placeholder="指令单号" style="width:70px;padding:3px 5px;border:1px solid var(--border);border-radius:4px;font-size:11px;font-family:inherit;background:var(--card)"></td>`;
+    html += `<td style="padding:6px 5px"><input type="text" class="batch-ddjh" data-idx="${idx}" value="${escAttr(ddjh)}" placeholder="外发" style="width:60px;padding:3px 5px;border:1px solid var(--border);border-radius:4px;font-size:11px;font-family:inherit;background:var(--card)"></td>`;
+    html += `<td style="padding:6px 5px"><input type="text" class="batch-cus" data-idx="${idx}" value="${escAttr(cus)}" placeholder="客户" style="width:60px;padding:3px 5px;border:1px solid var(--border);border-radius:4px;font-size:11px;font-family:inherit;background:var(--card)"></td>`;
+    html += `<td style="padding:6px 5px"><input type="number" class="batch-dz" data-idx="${idx}" value="${dz}" step="0.001" min="0" placeholder="0" style="width:55px;padding:3px 5px;border:1px solid var(--border);border-radius:4px;font-size:11px;font-family:inherit;background:var(--card)" oninput="calcBatchJZ(this)"></td>`;
+    html += `<td style="padding:6px 5px"><span class="batch-jz" data-idx="${idx}" style="font-size:11px;color:var(--text);min-width:50px;display:inline-block">—</span></td>`;
+    html += `<td style="padding:6px 5px"><input type="text" class="batch-rem" data-idx="${idx}" value="${escAttr(rem)}" placeholder="备注" style="width:70px;padding:3px 5px;border:1px solid var(--border);border-radius:4px;font-size:11px;font-family:inherit;background:var(--card)"></td>`;
+    html += '</tr>';
+  });
+  html += '</table>';
+  body.innerHTML = html;
+  // 回填 FROM 仓默认值 + 净重自动计算
+  allItems.forEach((item, idx) => {
+    const fromEl = document.querySelector(`.batch-wh-from[data-idx="${idx}"]`);
+    if (fromEl) fromEl.value = item.wh || item.WH || '';
+    const dzEl = document.querySelector(`.batch-dz[data-idx="${idx}"]`);
+    const qtyEl = document.querySelector(`.batch-qty[data-idx="${idx}"]`);
+    if (dzEl && qtyEl) {
+      const q = parseFloat(qtyEl.value) || 0;
+      const d = parseFloat(dzEl.value) || 0;
+      if (q > 0 && d > 0) {
+        const jzEl = document.querySelector(`.batch-jz[data-idx="${idx}"]`);
+        if (jzEl) jzEl.textContent = (q * d / 1000).toFixed(3);
+      }
+    }
+  });
+}
 
-  var bomItems = [];
-  Object.entries(bomSelectedByProduct).forEach(function(entry) {
-    Object.values(entry[1]).forEach(function(r) {
-      bomItems.push({
-        prd_no: r.prd_no,
-        qty: r.qty,
-        wh: r.wh,
-        wh2: whTo,
-      });
+function calcBatchJZ(dzInput) {
+  const idx = dzInput.getAttribute('data-idx');
+  const qtyEl = document.querySelector(`.batch-qty[data-idx="${idx}"]`);
+  const jzEl = document.querySelector(`.batch-jz[data-idx="${idx}"]`);
+  if (!qtyEl || !jzEl) return;
+  const q = parseFloat(qtyEl.value) || 0;
+  const d = parseFloat(dzInput.value) || 0;
+  jzEl.textContent = (q > 0 && d > 0) ? (q * d / 1000).toFixed(3) + ' kg' : '—';
+}
+
+async function bomBatchConfirm() {
+  const wh2 = ($id('bt_to_wh')||{value:''}).value.trim();
+  if (!wh2) { toast('⚠️ 请先选择 TO 仓库'); return; }
+  const rows = [];
+  const qtys = document.querySelectorAll('.batch-qty');
+  const froms = document.querySelectorAll('.batch-wh-from');
+  const refs = document.querySelectorAll('.batch-ref');
+  const ddjhs = document.querySelectorAll('.batch-ddjh');
+  const cuss = document.querySelectorAll('.batch-cus');
+  const dzs = document.querySelectorAll('.batch-dz');
+  const rems = document.querySelectorAll('.batch-rem');
+  const allItems = [];
+  Object.values(bomSelectedByProduct).forEach(rows => {
+    Object.values(rows).forEach(r => allItems.push(r));
+  });
+  allItems.forEach((item, i) => {
+    const wh = froms[i] ? froms[i].value : (item.wh || item.WH || '');
+    const dz = parseFloat(dzs[i] ? dzs[i].value : '0') || 0;
+    const qty = parseFloat(qtys[i] ? qtys[i].value : '0') || (item.qty || item.QTY || 0);
+    rows.push({
+      prd_no: item.prd_no || item.PRD_NO || '',
+      qty: qty,
+      wh: wh,
+      wh2: wh2,
+      ref_itm: refs[i] ? refs[i].value.trim() : '',
+      ddjh: ddjhs[i] ? ddjhs[i].value.trim() : '',
+      cus_no: cuss[i] ? cuss[i].value.trim() : '',
+      danzhong: dz,
+      jingzhong: dz,
+      rem: rems[i] ? rems[i].value.trim() : '',
     });
   });
-  var stockItems = stockBatchList.filter(function(i) { return i.direction === 'transfer'; })
-    .map(function(i) { return {prd_no: i.prd_no, qty: i.qty, wh: i.wh, wh2: whTo}; });
-  var allItems = bomItems.concat(stockItems);
-  if (!allItems.length) { toast('⚠️ 无调拨项'); return; }
-
-  var tool_rows = [];
-  for (var i = 0; i < _btf_tool_count; i++) {
-    var codeEl = document.getElementById('btf_tool_' + i);
-    var qtyEl = document.getElementById('btf_tool_qty_' + i);
-    var code = codeEl ? codeEl.value.trim() : '';
-    var tqty = parseInt(qtyEl ? qtyEl.value : '1') || 1;
-    if (code) tool_rows.push({ code: code, qty: tqty });
-  }
-
-  var btn = document.querySelector('#bomBatchOverlay button:last-child');
+  if (!rows.length) { toast('⚠️ 无有效调拨项'); return; }
+  const btn = $id('batchConfirmBtn');
   if (btn) { btn.disabled = true; btn.textContent = '提交中…'; }
-
   try {
-    var res = await api(BASE + '/stock/transfer', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({items: allItems, tool_rows: tool_rows}),
+    const res = await api(BASE + '/stock/transfer', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({items: rows, tool_rows: stockBatchTools}),
     });
-    if (res.ok || res.ic_no) {
-      toast('✅ 批量调拨成功 ' + allItems.length + ' 项' + (res.ic_no ? ' ' + res.ic_no : ''));
-    } else {
-      toast('❌ ' + JSON.stringify(res));
-    }
-    closeBatchTransferModal();
-    bomSelectedByProduct = {};
-    window.__curStockPrdNo = null;
-    updateBOMSelected();
-    var inp = document.getElementById('searchInput');
-    if (inp && inp.value) stockSearchByPRD(inp.value);
+    toast(`✅ 批量调拨成功 ${res.ic_no}`);
+    bomBatchOverlayRemove();
+    if (stockData && stockData.prd_no) stockSearchByPRD(stockData.prd_no);
   } catch(e) {
-    toast('❌ ' + e.message);
-    if (btn) { btn.disabled = false; btn.textContent = '确认调拨 ' + allItems.length + ' 项'; }
+    toast('❌ 批量调拨失败: ' + e.message);
+    if (btn) { btn.disabled = false; btn.textContent = '✓ 确认调拨'; }
   }
 }
 
+function addBatchToolRow() {
+  stockBatchTools = stockBatchTools || [];
+  stockBatchTools.push({ code: '', qty: 1 });
+  const container = $id('batchToolRows');
+  if (container) container.innerHTML = renderStockBatchTools();
+}
+
+function removeBatchTool(i) {
+  stockBatchTools.splice(i, 1);
+  const container = $id('batchToolRows');
+  if (container) container.innerHTML = renderStockBatchTools();
+}
+
+function renderStockBatchTools() {
+  if (!stockBatchTools || !stockBatchTools.length) {
+    return '<div style="font-size:11px;color:var(--sub);padding:4px 0">暂无运输工具，点击上方 + 添加</div>';
+  }
+  const tools = window.__transferTools || [];
+  const toolOpts = `<option value=""></option>` + tools.map(t => `<option value="${t.code}">${t.code} ${t.name}</option>`).join('');
+  return stockBatchTools.map((t, i) => `
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:5px">
+      <input type="text" class="batch-tool-code" list="btc_${i}" placeholder="工具编号"
+        value="${escAttr(t.code||'')}"
+        style="flex:2;padding:5px 8px;border:1px solid var(--border);border-radius:5px;font-size:12px;font-family:inherit;background:var(--card)"
+        oninput="stockBatchTools[${i}].code=this.value">
+        <datalist id="btc_${i}">${toolOpts}</datalist>
+      <input type="number" class="batch-tool-qty" min="1" placeholder="数量"
+        value="${t.qty||1}"
+        style="flex:1;padding:5px 8px;border:1px solid var(--border);border-radius:5px;font-size:12px;font-family:inherit;background:var(--card)"
+        oninput="stockBatchTools[${i}].qty=parseInt(this.value)||1">
+      <button onclick="removeBatchTool(${i})" style="width:26px;height:26px;border-radius:50%;border:none;background:#FEE2E2;color:#DC2626;font-size:14px;cursor:pointer">×</button>
+    </div>`).join('');
+}
 </script>
 </body>
 </html>
