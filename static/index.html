@@ -2251,7 +2251,7 @@ function renderStock(d) {
       const transferCls = curTab === 'transfer' ? ' transfer-wh-card' : '';
       const e = s => String(s||'').replace(/'/g, "\\'");
       const openFn = curTab === 'transfer' ? 'openTransferModal' : 'openInModal';
-      const onClick = openFn + "('" + e(d.prd_no) + "','" + e(w.wh) + "','" + e(fmt(w.wh_name)) + "',0)";
+      const onClick = openFn + "('" + e(d.prd_no) + "','" + e(w.wh) + "','" + e(w.wh_name) + "',0)";
       html += `
         <div class="stock-wh-card${transferCls}" onclick="${onClick}">
           <div class="stock-wh-icon" style="background:rgba(249,115,22,.12);color:var(--orange)">📦</div>
