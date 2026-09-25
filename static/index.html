@@ -1704,8 +1704,12 @@ async function openBatchCompletionModal() {
   overlay.style.cssText = 'position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:16px;font-family:inherit';
   overlay.innerHTML = ''
     + '<div style="background:#fff;border-radius:14px;width:100%;max-width:800px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.25)">'
-    + '<div style="padding:14px 20px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;gap:10px">'
-    + '<div style="flex:1;font-size:15px;font-weight:700">\u6279\u91cf\u5b8c\u5de5\u786e\u8ba4 \u00b7 ' + completionList.length + ' \u9879成\u54c1</div>'
+    + '<div style="padding:14px 20px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
+    + '<div style="flex:1;font-size:15px;font-weight:700">\u6279\u91cf\u5b8c\u5de5\u786e\u8ba4 \u00b7 ' + completionList.length + ' \u9879\u6210\u54c1</div>'
+    + '<label style="font-size:12px;color:#6b7280;display:flex;align-items:center;gap:6px">'
+    + '\u5165\u5e93\u4ed3 <input type="text" id="cm_wh_in" list="cm_wh_in_opts" value="G" placeholder="\u9009\u62e9\u4ed3" style="padding:4px 8px;border:1.5px solid #d1d5db;border-radius:6px;font-size:12px;min-width:100px">'
+    + '<datalist id="cm_wh_in_opts"></datalist>'
+    + '</label>'
     + '<button id="cmCancelBtn" style="padding:5px 12px;border:1px solid #e5e7eb;border-radius:20px;background:#f9fafb;font-size:12px;cursor:pointer">\u53d6\u6d88</button>'
     + '<button id="cmOkBtn" style="padding:6px 16px;background:#2563eb;color:#fff;border:none;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer">\u786e\u8ba4\u5b8c\u5de5</button>'
     + '</div>'
@@ -1719,6 +1723,13 @@ async function openBatchCompletionModal() {
     + '<div style="padding:0 16px 8px;font-size:10px;color:#888">成\u54c1 KND=13 \u5165\u5e93\uff0c\u6750\u6599 KND=23 \u51fa\u5e93\uff0c\u5de5\u5177 KND=13 \u5165\u5e93</div>'
     + '</div></div>';
   document.body.appendChild(overlay);
+
+  // 填充入库仓库 datalist
+  var whOpts = (window.__allWarehouses||[]).map(w => '<option value="'+w.code+'">'+w.code+' '+escHtml(w.name||'')+'</option>').join('');
+  var dl = document.getElementById('cm_wh_in_opts');
+  if (dl) dl.innerHTML = whOpts;
+  var whIn = document.getElementById('cm_wh_in');
+  if (whIn && completionList[0]?.fg_wh) whIn.value = completionList[0].fg_wh;
 
   document.getElementById('cmCancelBtn').onclick = () => overlay.remove();
 
@@ -1812,7 +1823,7 @@ async function openBatchCompletionModal() {
     try {
       const res = await api(BASE + '/completion/batch', {
         method: 'POST', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({items, fg_wh: completionList[0]?.fg_wh||'G', tool_rows: toolRows})
+        body: JSON.stringify({items, fg_wh: (document.getElementById('cm_wh_in')||{value:'G'}).value.trim() || 'G', tool_rows: toolRows})
       });
       if (res.ok) {
         toast('\u2705 \u5b8c\u5de5成\u529f\uff08\u5165\u5e93:' + (res.ic_in||'') + ' \u51fa\u5e93:' + (res.ic_out||'') + '\uff09');
