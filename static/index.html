@@ -2900,10 +2900,14 @@ async function openTransferModal(prd_no, wh, wh_name, qty) {
         <div style="padding:10px;background:var(--bg);border-radius:8px">
           <div style="font-size:14px;font-weight:600">${fmt(prd_no)}</div>
           <div style="font-size:12px;color:var(--sub);margin-top:2px">${fmt((stockData||{}).prd_name||'')}</div>
-          <div style="font-size:12px;color:var(--sub)">库存 <b>${fmtNum(qty)}</b> 件 · <b>${fmt(wh_name||wh)}</b></div>
-        </div>
+          <div style="font-size:12px;color:var(--sub)">
+            FROM仓 <span style="color:var(--sub);font-size:11px">(当前仓库)</span>
+            <input type="text" id="tf_wh" list="tf_wh_opts" value="${escAttr(wh)}" placeholder="选择或输入 FROM 仓库"
+              style="display:block;width:100%;margin-top:4px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card)">
+            <datalist id="tf_wh_opts">${whOpts}</datalist>
+          </div>
         <label style="font-size:12px;color:var(--sub)">
-          收货仓 <span style="color:red">*</span>
+          TO收货仓 <span style="color:red">*</span>
           <input type="text" id="tf_wh2" list="tf_wh2_opts" placeholder="选择或输入收货仓库"
             style="display:block;width:100%;margin-top:4px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card)">
           <datalist id="tf_wh2_opts">${whOpts}</datalist>
@@ -2958,7 +2962,7 @@ async function openTransferModal(prd_no, wh, wh_name, qty) {
       </div>
       <div style="display:flex;gap:8px;margin-top:16px">
         <button onclick="this.closest('[id=transferModal]').remove()" style="flex:1;padding:12px;background:var(--card);color:var(--text);border:1.5px solid var(--border);border-radius:12px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">取消</button>
-        <button onclick="doTransfer('${prd_no}','${wh}','${wh_name}',${qty})" style="flex:2;padding:12px;background:var(--accent);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">✓ 确认调拨</button>
+        <button onclick="doTransfer('${escAttr(prd_no)}','${escAttr(wh)}','${escAttr(wh_name)}',${qty})" style="flex:2;padding:12px;background:var(--accent);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">✓ 确认调拨</button>
       </div>
     </div>
     <style>@keyframes fadeIn{from{opacity:0;transform:scale(.95)}}</style>`;
@@ -2999,6 +3003,7 @@ function tfAddTool() {
 }
 
 async function doTransfer(prd_no, wh, wh_name, qty) {
+  const wh1 = ($id('tf_wh')||{value:wh}).value.trim() || wh;
   const wh2 = ($id('tf_wh2')||{value:''}).value.trim();
   const tfQty = parseFloat(($id('tf_qty')||{value:'0'}).value) || 0;
   if (!wh2) { toast('⚠️ 请选择收货仓'); return; }
@@ -3010,7 +3015,7 @@ async function doTransfer(prd_no, wh, wh_name, qty) {
     if (code) tool_rows.push({ code, qty: tqty });
   }
   const rows = [{
-    prd_no, qty: tfQty, wh, wh2,
+    prd_no, qty: tfQty, wh: wh1, wh2,
     ref_itm: ($id('tf_ref')||{value:''}).value.trim(),
     ddjh: ($id('tf_ddjh')||{value:''}).value.trim(),
     cus_no: ($id('tf_cus')||{value:''}).value.trim(),
