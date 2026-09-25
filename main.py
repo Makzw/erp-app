@@ -659,11 +659,11 @@ async def stock_out(
         cur.execute("""
             INSERT INTO IC (IC_NO,IC_DD,IC_KND,PRD_NO,PRD_NAME,QTY,UT,WH2,WH2NAME,
                             USR,USABLE,ITM,REM,
-                            指令单号,客户,CUSNAME,DDJH,单重,净重)
-            VALUES (%s,%s,23,%s,%s,%s,%s,%s,%s,'phone',1,%s,%s,%s,%s,%s,%s,%s,%s)
+                            指令单号,客户,单重,净重)
+            VALUES (%s,%s,23,%s,%s,%s,%s,%s,%s,'phone',1,%s,%s,%s,%s,%s,%s)
         """, (ic_no, now_str,
               prd_no, prd_name, qty, ut, wh2, wh2_name,
-              itm, rem, ref_itm, cus_no, sup_name, ddjh,
+              itm, rem, ref_itm, cus_no,
               float(item.get("danzhong", 0) or 0),
               float(item.get("jingzhong", 0) or 0)))
         results.append({"ic_no": ic_no, "prd_no": prd_no, "wh": wh2, "qty": qty, "itm": itm})
@@ -729,10 +729,10 @@ async def stock_in(
         cur.execute("""
             INSERT INTO IC (IC_NO,IC_DD,IC_KND,PRD_NO,PRD_NAME,QTY,UT,WH1,WH1NAME,
                             USR,USABLE,ITM,REM,
-                            指令单号,客户,CUSNAME,DDJH,单重,净重)
-            VALUES (%s,%s,13,%s,%s,%s,%s,%s,%s,'phone',1,%s,%s,%s,%s,%s,%s,%s,%s)
+                            指令单号,客户,单重,净重)
+            VALUES (%s,%s,13,%s,%s,%s,%s,%s,%s,'phone',1,%s,%s,%s,%s,%s,%s)
         """, (ic_no, now_str, prd_no, prd_name, qty, ut, wh1, wh1_name,
-              itm, rem, ref_itm, cus_no, sup_name, ddjh,
+              itm, rem, ref_itm, cus_no,
               float(item.get("danzhong", 0) or 0),
               float(item.get("jingzhong", 0) or 0)))
         results.append({"ic_no": ic_no, "prd_no": prd_no, "wh": wh1, "qty": qty, "itm": itm})
