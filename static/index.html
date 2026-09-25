@@ -1724,12 +1724,21 @@ async function openBatchCompletionModal() {
     + '</div></div>';
   document.body.appendChild(overlay);
 
-  // 填充入库仓库 datalist
-  var whOpts = (window.__allWarehouses||[]).map(w => '<option value="'+w.code+'">'+w.code+' '+escHtml(w.name||'')+'</option>').join('');
-  var dl = document.getElementById('cm_wh_in_opts');
-  if (dl) dl.innerHTML = whOpts;
-  var whIn = document.getElementById('cm_wh_in');
-  if (whIn && completionList[0]?.fg_wh) whIn.value = completionList[0].fg_wh;
+  // 填充入库仓库 datalist（确保 __allWarehouses 已加载）
+  async function fillWhOpts() {
+    if (!window.__allWarehouses || !window.__allWarehouses.length) {
+      try {
+        const whRes = await api(BASE + '/warehouses/all');
+        window.__allWarehouses = whRes.warehouses || whRes.items || whRes || [];
+      } catch(e) { window.__allWarehouses = []; }
+    }
+    var whOpts = (window.__allWarehouses||[]).map(w => '<option value="'+w.code+'">'+w.code+' '+escHtml(w.name||'')+'</option>').join('');
+    var dl = document.getElementById('cm_wh_in_opts');
+    if (dl) dl.innerHTML = whOpts;
+    var whIn = document.getElementById('cm_wh_in');
+    if (whIn && completionList[0]?.fg_wh) whIn.value = completionList[0].fg_wh;
+  }
+  fillWhOpts();
 
   document.getElementById('cmCancelBtn').onclick = () => overlay.remove();
 
