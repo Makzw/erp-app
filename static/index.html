@@ -2741,117 +2741,86 @@ async function openStockModal(prd_no, wh, qty) {
   openInModal(prd_no, wh || '', wh || '', qty);
 }
 
-// ── 入库弹窗 ─────────────────────────────────────────────────────────────────
-async function openInModal(prd_no, wh, wh_name, qty) {
-  const whOpts = (window.__allWarehouses||[]).map(w => `<option value="${w.code}">${w.code} ${w.name||''}</option>`).join('');
-  const overlay = document.createElement('div');
-  overlay.id = 'inModal';
-  overlay.style.cssText = 'position:fixed;inset:0;z-index:490;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center';
+// 入库/出库模式切换（全局）
+window.switchInMode = function(mode, prd_no, wh, wh_name, qty) {
+  var m = $id('inModal');
+  if (!m) return;
+  var whOpts = (window.__allWarehouses||[]).map(w => '<option value="'+w.code+'">'+w.code+' '+(w.name||'')+'</option>').join('');
+  var isIn = mode === 'in';
+  var qtyLabel = isIn ? '\u5165\u5e93\u6570\u91cf' : '\u51fa\u5e93\u6570\u91cf';
+  var btnColor = isIn ? '#16a34a' : '#2563eb';
+  var btnText = isIn ? '\u2713 \u786e\u8ba4\u5165\u5e93' : '\u2713 \u786e\u8ba4\u51fa\u5e93';
+  var whLabel = isIn ? '\u76ee\u6807\u4ed3\u5e93' : '\u6e90\u4ed3\u5e93';
 
-  // 渲染弹窗内容，mode: 'in' | 'out'
-  function renderBody(mode) {
-    const isIn = mode === 'in';
-    const label = isIn ? '入库' : '出库';
-    const qtyLabel = isIn ? '入库数量' : '出库数量';
-    const btnColor = isIn ? '#16a34a' : '#2563eb';
-    const btnText = isIn ? '✓ 确认入库' : '✓ 确认出库';
-    const whLabel = isIn ? '目标仓库' : '源仓库';
-    const showWh = wh && !isIn ? false : true; // 出库时仓库固定？暂时都可选
+  var whInput = wh
+    ? '<div style="padding:8px 10px;background:var(--bg);border-radius:8px;font-size:13px;color:var(--text)">'+fmt(wh_name||wh)+' ('+fmt(wh)+')</div><input type="hidden" id="in_wh" value="'+escAttr(wh)+'">'
+    : '<input type="text" id="in_wh" list="in_wh_opts" placeholder="\u9009\u62e9\u4ed3" style="display:block;width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card)"><datalist id="in_wh_opts">'+whOpts+'</datalist>';
+  var supLabel = isIn ? '\u4f9b\u5e94\u5546\u540d\u79f0' : '\u5ba2\u6237\u4ee3\u53f7';
 
-    // 出库时预填当前仓库，入库时预填当前仓库（可改）
-    const fixedWh = wh && !isIn ? wh : '';
-    const fixedWhName = wh && !isIn ? (wh_name || wh) : '';
+  var html = '<div style="background:var(--card);border-radius:16px;width:90%;max-width:480px;padding:20px;animation:fadeIn .15s;font-family:inherit">' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">' +
+    '<div style="display:flex;align-items:center;gap:10px"><div style="font-size:16px;font-weight:600">\ud83d\udce6 \u5e93\u5b58\u64cd\u4f5c</div></div>' +
+    '<button onclick="document.getElementById(\'inModal\').remove()" style="width:32px;height:32px;border-radius:50%;border:none;background:var(--bg);font-size:18px;cursor:pointer;color:var(--sub)">\u00d7</button></div>' +
+    '<div style="display:flex;gap:6px;margin-bottom:14px">' +
+    '<button id="inModeIn" onclick="switchInMode(\'in\',\''+escAttr(prd_no)+'\',\''+escAttr(wh)+'\',\''+escAttr(wh_name)+'\','+qty+')" style="flex:1;padding:8px;border-radius:10px;border:1.5px solid var(--border);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;background:'+(isIn?'#dcfce7':'var(--bg)')+';color:'+(isIn?'#16a34a':'var(--text)')+';border-color:'+(isIn?'#16a34a':'var(--border)')+'">\ud83d\udce9 \u5165\u5e93</button>' +
+    '<button id="inModeOut" onclick="switchInMode(\'out\',\''+escAttr(prd_no)+'\',\''+escAttr(wh)+'\',\''+escAttr(wh_name)+'\','+qty+')" style="flex:1;padding:8px;border-radius:10px;border:1.5px solid var(--border);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;background:'+(!isIn?'#dbeafe':'var(--bg)')+';color:'+(!isIn?'#2563eb':'var(--text)')+';border-color:'+(!isIn?'#2563eb':'var(--border)')+'">\ud83d\udce8 \u51fa\u5e93</button>' +
+    '</div>' +
+    '<div style="display:grid;gap:10px">' +
+    '<div style="padding:10px;background:var(--bg);border-radius:8px">' +
+    '<div style="font-size:14px;font-weight:600">'+fmt(prd_no)+'</div>' +
+    '<div style="font-size:12px;color:var(--sub);margin-top:2px">'+fmt((stockData||{}).prd_name||'')+'</div>' +
+    (wh && qty > 0 ? '<div style="font-size:12px;color:var(--sub);margin-top:2px">\u5f53\u524d\u4ed3\u5e93 <b>'+fmt(wh_name||wh)+'</b> \u5e93\u5b58 <b style="color:var(--green)">'+fmtNum(qty)+'</b> \u4ef6</div>' : '') +
+    '</div>' +
+    '<div style="font-size:12px;color:var(--sub);margin-bottom:4px">'+whLabel+' <span style="color:red">*</span></div>' + whInput +
+    '<div style="font-size:12px;color:var(--sub);margin-bottom:4px">'+qtyLabel+' <span style="color:red">*</span></div>' +
+    '<input type="number" id="in_qty" value="'+(qty>0?qty:'')+'" min="0" step="1" placeholder="\u8f93\u5165\u6570\u91cf" style="width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card);box-sizing:border-box">' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">' +
+    '<div><div style="font-size:12px;color:var(--sub);margin-bottom:4px">\u6307\u4ee4\u5355\u53f7</div><input type="text" id="in_ref" placeholder="\u6307\u4ee4\u5355\u53f7" style="width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card);box-sizing:border-box"></div>' +
+    '<div><div style="font-size:12px;color:var(--sub);margin-bottom:4px">'+supLabel+'</div><input type="text" id="in_sup" placeholder="'+supLabel+'" style="width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card);box-sizing:border-box"></div>' +
+    '</div>' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">' +
+    '<div><div style="font-size:12px;color:var(--sub);margin-bottom:4px">\u5916\u53d1\u8ba1\u5212\u53f7</div><input type="text" id="in_ddjh" placeholder="\u5916\u53d1\u8ba1\u5212" style="width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card);box-sizing:border-box"></div>' +
+    '<div><div style="font-size:12px;color:var(--sub);margin-bottom:4px">\u5355\u91cd(g)</div><input type="number" id="in_dz" step="0.001" min="0" placeholder="0" style="width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card);box-sizing:border-box"></div>' +
+    '</div>' +
+    '<div style="font-size:12px;color:var(--sub)">\u51c0\u91cd(kg) <span id="in_jz_val" style="margin-left:8px;font-weight:600;color:var(--text)">\u2014</span></div>' +
+    '</div>' +
+    '<div style="display:flex;gap:8px;margin-top:16px">' +
+    '<button onclick="document.getElementById(\'inModal\').remove()" style="flex:1;padding:12px;background:var(--card);color:var(--text);border:1.5px solid var(--border);border-radius:12px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">\u53d6\u6d88</button>' +
+    '<button id="inConfirmBtn" onclick="doInOut(\''+escAttr(prd_no)+'\',\''+escAttr(wh)+'\',\''+mode+'\')" style="flex:2;padding:12px;background:'+btnColor+';color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+btnText+'</button>' +
+    '</div></div>' +
+    '<style>@keyframes fadeIn{from{opacity:0;transform:scale(.95)}}</style>';
 
-    return `
-    <div style="background:var(--card);border-radius:16px;width:90%;max-width:480px;padding:20px;animation:fadeIn .15s;font-family:inherit">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-        <div style="display:flex;align-items:center;gap:10px">
-          <div style="font-size:16px;font-weight:600">📦 库存操作</div>
-        </div>
-        <button onclick="this.closest('[id=inModal]').remove()" style="width:32px;height:32px;border-radius:50%;border:none;background:var(--bg);font-size:18px;cursor:pointer;color:var(--sub)">×</button>
-      </div>
-      <div style="display:flex;gap:6px;margin-bottom:14px">
-        <button id="inModeIn" onclick="switchInMode('in')" style="flex:1;padding:8px;border-radius:10px;border:1.5px solid var(--border);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;background:var(--bg)">📥 入库</button>
-        <button id="inModeOut" onclick="switchInMode('out')" style="flex:1;padding:8px;border-radius:10px;border:1.5px solid var(--border);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;background:var(--bg)">📤 出库</button>
-      </div>
-      <style>
-        #inModeIn.active  {background:#dcfce7;color:#16a34a;border-color:#16a34a}
-        #inModeOut.active {background:#dbeafe;color:#2563eb;border-color:#2563eb}
-      </style>
-      <div style="display:grid;gap:10px">
-        <div style="padding:10px;background:var(--bg);border-radius:8px">
-          <div style="font-size:14px;font-weight:600">${fmt(prd_no)}</div>
-          <div style="font-size:12px;color:var(--sub);margin-top:2px">${fmt((stockData||{}).prd_name||'')}</div>
-          ${wh && qty > 0 ? `<div style="font-size:12px;color:var(--sub);margin-top:2px">当前仓库 <b>${fmt(wh_name||wh)}</b> 库存 <b style="color:var(--green)">${fmtNum(qty)}</b> 件</div>` : ''}
-        </div>
-        <label style="font-size:12px;color:var(--sub)">
-          ${whLabel} <span style="color:red">*</span>
-          ${wh ? `<div style="padding:8px 10px;background:var(--bg);border-radius:8px;font-size:13px;color:var(--text)">${fmt(wh_name||wh)} (${fmt(wh)})</div>
-               <input type="hidden" id="in_wh" value="${wh}">` : `<input type="text" id="in_wh" list="in_wh_opts" placeholder="选择或输入仓库代码"
-            style="display:block;width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card)">
-          <datalist id="in_wh_opts">${whOpts}</datalist>`}
-        </label>
-        <label style="font-size:12px;color:var(--sub)">
-          ${qtyLabel} <span style="color:red">*</span>
-          <input type="number" id="in_qty" value="${qty > 0 ? qty : ''}" min="0" step="1" placeholder="输入数量"
-            style="display:block;width:100%;margin-top:4px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card)">
-        </label>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-          <label style="font-size:12px;color:var(--sub)">
-            指令单号
-            <input type="text" id="in_ref" placeholder="指令单号"
-              style="display:block;width:100%;margin-top:4px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card)">
-          </label>
-          <label style="font-size:12px;color:var(--sub)">
-            ${isIn ? '供应商名称' : '客户代号'}
-            <input type="text" id="in_sup" placeholder="${isIn ? '供应商名称' : '客户代号'}"
-              style="display:block;width:100%;margin-top:4px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card)">
-          </label>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-          <label style="font-size:12px;color:var(--sub)">
-            外发计划号
-            <input type="text" id="in_ddjh" placeholder="外发计划"
-              style="display:block;width:100%;margin-top:4px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card)">
-          </label>
-          <label style="font-size:12px;color:var(--sub)">
-            单重(g)
-            <input type="number" id="in_dz" step="0.001" min="0" placeholder="0"
-              style="display:block;width:100%;margin-top:4px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card)">
-          </label>
-        </div>
-        <div style="font-size:12px;color:var(--sub)">
-          净重(kg) <span id="in_jz_val" style="margin-left:8px;font-weight:600;color:var(--text)">—</span>
-        </div>
-      </div>
-      <div style="display:flex;gap:8px;margin-top:16px">
-        <button onclick="this.closest('[id=inModal]').remove()" style="flex:1;padding:12px;background:var(--card);color:var(--text);border:1.5px solid var(--border);border-radius:12px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">取消</button>
-        <button id="inConfirmBtn" onclick="doInOut('${prd_no}','${wh}','${mode}')" style="flex:2;padding:12px;background:${btnColor};color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">${btnText}</button>
-      </div>
-    </div>
-    <style>@keyframes fadeIn{from{opacity:0;transform:scale(.95)}}</style>`;
-  }
+  m.innerHTML = html;
 
-  overlay.innerHTML = renderBody('in');
-  document.body.appendChild(overlay);
-
-  // 切换模式
-  window.switchInMode = function(mode) {
-    const m = $id('inModal');
-    if (!m) return;
-    m.querySelector('div').outerHTML = renderBody(mode).replace(/^<div style="background:var/, '<div style="background:var');
-  };
-
-  // 初始激活状态
-  $id('inModeIn').classList.add('active');
+  // 重新绑定净重计算事件
   $id('in_qty').addEventListener('input', calcInJZ);
   $id('in_dz').addEventListener('input', calcInJZ);
-  function calcInJZ() {
-    const q = parseFloat($id('in_qty').value) || 0;
-    const d = parseFloat($id('in_dz').value) || 0;
-    const el = $id('in_jz_val');
-    if (el) el.textContent = q > 0 && d > 0 ? (q * d / 1000).toFixed(3) + ' kg' : '—';
+}
+
+function calcInJZ() {
+  var q = parseFloat($id('in_qty').value) || 0;
+  var d = parseFloat($id('in_dz').value) || 0;
+  var el = $id('in_jz_val');
+  if (el) el.textContent = q > 0 && d > 0 ? (q * d / 1000).toFixed(3) + ' kg' : '\u2014';
+}
+
+// ── 入库弹窗 ─────────────────────────────────────────────────────────────────
+async function openInModal(prd_no, wh, wh_name, qty) {
+  // 先确保 __allWarehouses 已加载
+  if (!window.__allWarehouses || !window.__allWarehouses.length) {
+    try {
+      const whRes = await api(BASE + '/warehouses/all');
+      window.__allWarehouses = whRes.warehouses || whRes.items || whRes || [];
+    } catch(e) { window.__allWarehouses = []; }
   }
+
+  var overlay = document.createElement('div');
+  overlay.id = 'inModal';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:490;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center';
+  document.body.appendChild(overlay);
+
+  // 用 switchInMode 渲染初始模式
+  window.switchInMode('in', prd_no, wh, wh_name, qty);
 }
 
 // 统一的入库/出库提交
