@@ -814,7 +814,7 @@ async def stock_transfer(
                 'USR','USABLE','ITM','REM','FLD1',
                 '指令单号','DDJH','客户','单重','净重']
         VALS = [ic_no, now_str, knd, prd_no, prd_name, qty, ut,
-                 wh2, wh, wh2_name, wh1_name,
+                 wh, wh2, wh1_name, wh2_name,
                  'phone', 1, i + 1, rem, ic_no,
                  ref_itm, ddjh_v, cus_no, dzhw, jzhw]
         assert len(COLS) == len(VALS), f"列{len(COLS)}!=值{len(VALS)}"
@@ -1771,8 +1771,8 @@ async def completion_batch(
                               'USR','USABLE','ITM','REM','FLD1','指令单号','DDJH','客户','单重','净重']
             MAT_OUT_VALS = [ic_out, now_str, 23, prd_no, prd_name_gbk, comp_qty, '',
                              fg_wh, twh1, fg_wh_name, twh1_name,
-                             'phone', 1, out_itm + 1, f"完工出库({fg_no}\u00d7{fg_qty})",
-                             tic, item_ddjh, '', item_cus, item_dz, item_jz]
+                             'phone', 1, out_itm + 1, f"完工出库({fg_no}×{fg_qty})",
+                             tic, '', item_ddjh, item_cus, item_dz, item_jz]
             out_itm += 1
             sql = f"INSERT INTO IC ({','.join(MAT_OUT_COLS)}) VALUES ({','.join(['%s']*len(MAT_OUT_COLS))})"
             cur.execute(sql, MAT_OUT_VALS)
