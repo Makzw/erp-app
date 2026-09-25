@@ -814,7 +814,7 @@ async def stock_transfer(
                 'USR','USABLE','ITM','REM','FLD1',
                 '指令单号','DDJH','客户','单重','净重']
         VALS = [ic_no, now_str, knd, prd_no, prd_name, qty, ut,
-                 wh, wh2, wh1_name, wh2_name,
+                 wh2, wh, wh2_name, wh1_name,
                  'phone', 1, i + 1, rem, ic_no,
                  ref_itm, ddjh_v, cus_no, dzhw, jzhw]
         assert len(COLS) == len(VALS), f"列{len(COLS)}!=值{len(VALS)}"
@@ -1766,11 +1766,11 @@ async def completion_batch(
             r_wh = cur.fetchone()
             twh1_name = r_wh[0] if r_wh else twh1
 
-            # ②a 子件行（WH1=生产仓(减少来源)，WH2=原料仓(增加)，带调拨单字段）
-            MAT_OUT_COLS = ['IC_NO','IC_DD','IC_KND','PRD_NO','PRD_NAME','QTY','UT','WH1','WH2','WH1NAME','WH2NAME',
-                              'USR','USABLE','ITM','REM','FLD1','指令单号','DDJH','客户','单重','净重']
+            # ②a 子件行（WH2=原料仓(源仓)，WH1留空）
+            MAT_OUT_COLS = ['IC_NO','IC_DD','IC_KND','PRD_NO','PRD_NAME','QTY','UT','WH2','WH2NAME',
+                            'USR','USABLE','ITM','REM','FLD1','指令单号','DDJH','客户','单重','净重']
             MAT_OUT_VALS = [ic_out, now_str, 23, prd_no, prd_name_gbk, comp_qty, '',
-                             fg_wh, twh1, fg_wh_name, twh1_name,
+                             twh1, twh1_name,
                              'phone', 1, out_itm + 1, f"完工出库({fg_no}×{fg_qty})",
                              tic, '', item_ddjh, item_cus, item_dz, item_jz]
             out_itm += 1
