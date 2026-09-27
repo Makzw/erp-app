@@ -1516,7 +1516,7 @@ async function openCompletionModal(icNo, prdNo) {
     <div style="background:var(--card);border-radius:16px 16px 0 0;width:100%;max-width:640px;max-height:85vh;display:flex;flex-direction:column;animation:slideUp .2s;font-family:inherit">
       <div style="padding:12px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px">
         <div style="flex:1">
-          <div style="font-size:11px;color:var(--sub)">调拨单 ${t.ic_no} — 材料 ${fmt(matPrd)}</div>
+          <div style="font-size:11px;color:var(--sub)">调拨单 ${fmt(icNo)} — 材料 ${fmt(matPrd)}</div>
           <div style="font-size:13px;font-weight:600">点击成品加入完工列表</div>
         </div>
         <button onclick="document.getElementById('cmOverlay').remove()" style="width:28px;height:28px;border-radius:50%;border:none;background:var(--bg);font-size:16px;cursor:pointer">×</button>
