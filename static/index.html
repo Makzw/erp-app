@@ -1551,7 +1551,7 @@ async function openCompletionModal(icNo, prdNo) {
             onclick="event.stopPropagation()"
             style="width:56px;padding:5px 4px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;text-align:center">
           <span style="font-size:10px;color:var(--sub)">件</span>
-          <button style="padding:5px 10px;background:${allOk ? 'var(--green)' : 'var(--orange)'};color:#fff;border:none;border-radius:16px;font-size:12px;font-weight:600;cursor:pointer" onclick="event.stopPropagation();completionAddFgDetail('${escAttr(d.fg_no)}','${escAttr(icNo)}','fgQty_${idx}')">${allOk ? '+ 加入' : '+ 加入(缺料)'}</button>
+          <button style="padding:5px 10px;background:${allOk ? 'var(--green)' : 'var(--orange)'};color:#fff;border:none;border-radius:16px;font-size:12px;font-weight:600;cursor:pointer" onclick="event.stopPropagation();completionAddFgDetail('${escAttr(d.fg_no)}','${escAttr(icNo)}','${escAttr(matPrd)}','fgQty_${idx}')">${allOk ? '+ 加入' : '+ 加入(缺料)'}</button>
         </div>
       </div>
       <div style="padding:6px 8px;background:var(--bg);border-radius:6px;font-size:10px">
@@ -1565,17 +1565,17 @@ async function openCompletionModal(icNo, prdNo) {
           </div>`;
         }).join('')}
       </div>`;
-    card.onclick = () => completionAddFgDetail(d.fg_no, icNo, 'fgQty_' + idx);
+    card.onclick = () => completionAddFgDetail(d.fg_no, icNo, matPrd, 'fgQty_' + idx);
     listEl.appendChild(card);
   });
 }
 
 // 加入完工列表：查 BOM materials + 调拨单字段，再暂存
-async function completionAddFgDetail(fgNo, icNo, qtyInputId) {
+async function completionAddFgDetail(fgNo, icNo, prdNo, qtyInputId) {
   if (completionList.some(x => x.fg_no === fgNo)) { toast('\u26a0\ufe0f \u5df2\u6dfb\u52a0'); return; }
   const fgQty = parseInt(document.getElementById(qtyInputId)?.value) || 1;
-  // 从调拨单获取指令单号/客户/单重/净重
-  const tRec = completionData.find(x => x.ic_no === icNo) || {};
+  // 从调拨单获取指令单号/客户/单重/净重（必须同时匹配 ic_no 和 prd_no）
+  const tRec = completionData.find(x => x.ic_no === icNo && x.prd_no === prdNo) || {};
   const ref = tRec.ref || '';
   const customer = tRec.cus || '';
   const ddjh = tRec.ddjh || '';
