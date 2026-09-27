@@ -869,7 +869,7 @@ async def completion_transfer_list(
     conn = get_conn(db=db_name)
     cur = conn.cursor()
 
-    where = "WHERE t.IC_KND = 30 AND t.USABLE = 1 AND ISNULL(t.删除, 0) = 0 AND LEFT(t.PRD_NO, 5) <> '03002'"
+    where = "WHERE t.IC_KND = 30 AND t.USABLE = 1 AND ISNULL(t.删除, 0) = 0 AND LEFT(t.PRD_NO, 5) NOT IN ('03002','03000')"
     args = []
     if prd_no:
         where += " AND t.PRD_NO LIKE %s"
@@ -978,6 +978,11 @@ async def completion_fg_detail(fg_no: str = Query(...), db: str = Query(default=
     conn = get_conn(db=db_name)
     cur = conn.cursor()
 
+    # 查成品名称
+    cur.execute("SELECT NAME FROM PRDT WITH(NOLOCK) WHERE PRD_NO=%s AND USABLE=1", (fg_no,))
+    prd_row = cur.fetchone()
+    fg_name = g(prd_row[0]) if prd_row else ''
+
     # 查 BOM LEV=1 材料
     cur.execute("""
         SELECT c.PRD_NO, p.NAME, c.QTY
@@ -1048,6 +1053,7 @@ async def completion_fg_detail(fg_no: str = Query(...), db: str = Query(default=
     conn.close()
     return {
         "fg_no": fg_no,
+        "fg_name": fg_name,
         "all_fulfilled": all_fulfilled,
         "materials": materials,
     }
@@ -1094,33 +1100,52 @@ async def smo_bom_stock(fg_no: str = Query(...), db: str = Query(default="c041")
     prd_to_root = {r[1]: r[0] for r in cur.fetchall()}  # prd_no → LEV=0 GUID
 
     cur.execute("""
-        SELECT c.GUID, c.PRD_NO, p.NAME, c.LEV, c.IDX, c.QTY, c.KND,
+        SELECT c.GUID, c.PRD_NO, c.LEV, c.IDX, c.QTY, c.KND,
                c.UPGUID, h.PRD_NO AS parent_prd
         FROM BOM c WITH(NOLOCK)
         JOIN BOM h WITH(NOLOCK) ON c.UPGUID = h.GUID AND h.LEV=0
-        LEFT JOIN PRDT p WITH(NOLOCK) ON p.PRD_NO = c.PRD_NO
         WHERE ISNULL(c.删除,0)=0
     """)
-    # 结构: GUID, PRD_NO, NAME, LEV, IDX, QTY, KND, UPGUID, parent_prd
+    # 结构: GUID, PRD_NO, LEV, IDX, QTY, KND, UPGUID, parent_prd
     edges = cur.fetchall()  # 所有 LEV=1 边
 
-    # 建立 prd → (name, knd) 字典，避免递归内重复扫描 edges
+    # 建立 prd → (name, knd) 字典
+    # 先从 BOM 的 LEV=0 根获取成品名（GUID=PRD_NO 时）
     prd_info = {}   # prd_no → (name_str, knd)
     for e in edges:
-        guid, prd, name, lev, idx, qty, knd, upguid, parent_prd = e
+        guid, prd, lev, idx, qty, knd, upguid, parent_prd = e
         if prd not in prd_info:
-            prd_info[prd] = (g(name), knd)
+            prd_info[prd] = ('', knd)  # 名字待后面批量查 PRDT 填充
+
+    # 成品根不在 prd_info 里，补充一下
+    if fg_no not in prd_info:
+        prd_info[fg_no] = ('', None)
+
+    # 批量查 PRDT 名称（分批 fetchone 避免全表 fetchall 触发 UTF-8 解码错误）
+    all_bom_prds = list(set(list(prd_info.keys()) + [fg_no]))
+    if all_bom_prds:
+        ph = ','.join(['%s'] * len(all_bom_prds))
+        cur.execute(f"SELECT PRD_NO, NAME FROM PRDT WITH(NOLOCK) WHERE PRD_NO IN ({ph})", tuple(all_bom_prds))
+        while True:
+            try:
+                row = cur.fetchone()
+                if row is None:
+                    break
+                prd_no = row[0]
+                name_raw = row[1]
+                if prd_no in prd_info:
+                    info = prd_info[prd_no]
+                    prd_info[prd_no] = (g(name_raw), info[1])
+            except UnicodeDecodeError:
+                # 跳过无法解码的行
+                continue
 
     # child_map: parent → [(child_prd, qty_per_unit, knd, guid, upguid)]
     # edges 里: prd=子件, parent_prd=父件
     child_map = {}
     for e in edges:
-        guid, prd, name, lev, idx, qty, knd, upguid, parent_prd = e
+        guid, prd, lev, idx, qty, knd, upguid, parent_prd = e
         child_map.setdefault(parent_prd, []).append((prd, f(qty) or 1, knd, guid, upguid))
-
-    # 成品根不在 prd_info 里（没 JOIN），补充一下
-    if fg_no not in prd_info:
-        prd_info[fg_no] = (fg_name, None)
 
     # 成品没有 BOM 根
     if fg_no not in prd_to_root:
@@ -1229,12 +1254,12 @@ async def smo_bom_stock(fg_no: str = Query(...), db: str = Query(default="c041")
     # 建立 parent_prd → [child_nodes] 反查（同一子件在不同父下出现时各有独立 entry）
     parent_children = {}   # parent_prd → [child_prd list]
     for e in edges:
-        guid, prd, name, lev, idx, qty, knd, upguid, parent_prd = e
+        guid, prd, lev, idx, qty, knd, upguid, parent_prd = e
         parent_children.setdefault(parent_prd, []).append(prd)
 
     # 把子件挂到父节点的 children 里（同名节点在各父下独立显示）
     for e in edges:
-        guid, child_prd, name, lev, idx, qty, knd, upguid, parent_prd = e
+        guid, child_prd, lev, idx, qty, knd, upguid, parent_prd = e
         parent_node = node_map.get(parent_prd)
         child_node  = node_map.get(child_prd)
         if parent_node and child_node:
@@ -2859,9 +2884,9 @@ def _mps_bom_tree(fg_no, db_conn, qty=1, depth=0, parent=None, _seen=None):
             # KND=4 原料：直接返回
             result.append((child_prd, child_name, demand_qty, child_knd, fg_no, depth+1, bom_ratio))
         else:
-            # KND=3 中间件：先加入自身，再递归展开子件
+            # KND=2 组件 / KND=3 中间件：先加入自身，再递归展开子件
             result.append((child_prd, child_name, demand_qty, child_knd, fg_no, depth+1, bom_ratio))
-            if str(child_knd) == '3':
+            if str(child_knd) in ('2', '3'):
                 sub = _mps_bom_tree(child_prd, db_conn, qty=demand_qty, depth=depth+1,
                                      parent=child_prd, _seen=_seen.copy())
                 if sub:
@@ -3794,4 +3819,7 @@ async def pmc_adjust_stock(
     }
 
 
-# ── 运行 ──────────────────────────────────────────────────────────────────────
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8001)
+
