@@ -667,13 +667,6 @@ function renderCurrentTab() {
   else if (curTab === 'pmc') loadPMC();
 }
 
-function renderFiltered(items, q) {
-  switch (curTab) {
-    case 'qts':   renderQts(items, q); break;
-    case 'smo-mm': renderDispatch(dispatchData, q); break;
-  }
-}
-
 // ── Tab / Filter ────────────────────────────────────────────────────────────
 // Main tab bar only (not smoTabBar)
 const mainTabBar = document.querySelector('.tab-bar');
@@ -883,46 +876,6 @@ function resetPosUnFilters() {
   loadPosUnreceived();
 }
 
-async function showQtDetail(qt_no) {
-  const el = $id('content');
-  el.innerHTML = '<div class="state-msg"><div class="spinner"></div></div>';
-  try {
-    const d = await api(BASE + '/qts/' + encodeURIComponent(qt_no));
-    if (d.error) { el.innerHTML='<div class="error-msg">'+d.error+'</div>'; return; }
-    let h = `<div class="list">
-      <div class="qts-detail-card">
-        <div class="qts-header">
-          <div class="qts-no">${fmt(d.qt_no)}</div>
-          <div class="qts-dt">${fmt(d.qt_dd)} ${d.cls_id?'<span class="qts-status closed">已结案</span>':'<span class="qts-status open">未结案</span>'}</div>
-        </div>
-        <div class="qts-divider"></div>
-        <dl class="detail-info" style="font-size:13px;line-height:1.8">
-          <dt>制单人</dt><dd>${fmt(d.usr)||'—'}</dd>
-          <dt>审核人</dt><dd>${fmt(d.chk_man)||'—'}</dd>
-          <dt>供应商</dt><dd>${fmt(d.cus_name)||'—'}</dd>
-          <dt>备注</dt><dd>${fmt(d.rem)||'—'}</dd>
-        </dl>
-      </div>
-      <h3 style="font-size:13px;color:var(--sub);padding:8px 0">明细行（${(d.items||[]).length} 条）</h3>`;
-    for (const item of d.items||[]) {
-      h += `<div class="qts-detail-row">
-        <div class="qts-header">
-          <div class="qts-no">${fmt(item.prd_no)}</div>
-          <div class="qts-dt">${fmt(item.prd_name)||'—'}</div>
-        </div>
-        <div class="qts-footer">
-          <div class="qts-meta">
-            <span>¥${Number(item.up||0).toFixed(2)} × ${fmtNum(item.qty)}${fmt(item.ut)}</span>
-            <span>= ¥${Number(item.amt||0).toLocaleString('zh-CN',{minimumFractionDigits:2})}</span>
-            ${item.est_dd?'<span>交期 '+fmtDate(item.est_dd)+'</span>':''}
-          </div>
-        </div>
-      </div>`;
-    }
-    el.innerHTML = h + '</div><div style="padding:16px"><button class="btn-cancel" onclick="loadQts()">← 返回</button></div>';
-  } catch(e) { el.innerHTML = '<div class="error-msg">'+e.message+'</div>'; }
-}
-
 // ── 派工单 SMO ─────────────────────────────────────────────────────────────
 let smoFullData = []; // SMO tab 新版不使用（派工单发料改到其他Tab）
 async function loadSmo() {
@@ -1090,15 +1043,6 @@ function renderBomStock(d) {
 }
 
 // 折叠/展开树节点
-function treeToggle(el) {
-  const children = el.nextElementSibling;
-  if (!children) return;
-  const isHidden = children.style.display === 'none';
-  children.style.display = isHidden ? '' : 'none';
-  const caret = el.querySelector('.tree-caret');
-  if (caret) caret.textContent = isHidden ? '▼' : '▶';
-}
-
 // 一键展开/收起全部 BOM 树
 function expandAllTree() {
   document.querySelectorAll('.tree-children').forEach(el => el.style.display = '');
@@ -1488,11 +1432,6 @@ function updateBatchBtnCount() {
   if (btn) btn.textContent = '\u6279\u91cf\u5b8c\u5de5 (' + completionList.length + ')';
 }
 
-function completionRemove(idx) {
-  completionList.splice(idx, 1);
-  renderCompletionList();
-}
-
 // 点击调拨单（材料）→ 查哪些成品用了它，显示材料状态，可加到完工列表
 async function openCompletionModal(icNo, prdNo) {
   const matPrd = prdNo;
@@ -1864,156 +1803,6 @@ async function openBatchCompletionModal() {
 
 
 // 选成品 → 显示全部 BOM 子件，每行可选调拨单
-async function selectFgCompletion(fgNo, fgName) {
-  const overlay = document.getElementById('cmOverlay');
-  document.querySelectorAll('#cmFgList .smo-card').forEach(el => el.style.borderColor = '');
-  const card = document.getElementById('cmFg_' + fgNo);
-  if (card) card.style.borderColor = 'var(--accent)';
-
-  // 加载 BOM 子件 + 该成品可用的调拨单（并行）
-  let bomRes, trRes;
-  try {
-    [bomRes, trRes] = await Promise.all([
-      api(BASE + '/completion/bom_components?' + new URLSearchParams({fg_no: fgNo})),
-      api(BASE + '/completion/transfer_by_fg?' + new URLSearchParams({fg_no: fgNo})),
-    ]);
-  } catch(e) { toast('加载失败: ' + e.message); return; }
-
-  const bomItems = bomRes.items || [];
-  const transferList = trRes.items || [];
-
-  // 按调拨单品号建索引
-  const byPrd = {};
-  transferList.forEach(t => {
-    if (!byPrd[t.prd_no]) byPrd[t.prd_no] = [];
-    byPrd[t.prd_no].push(t);
-  });
-
-  // 初始分配：自动匹配 bomItems → transferList（按品号一一对应）
-  const initAssignments = () => {
-    const asn = {}; // prd_no → transfer item
-    bomItems.forEach(b => {
-      const pool = byPrd[b.prd_no] || [];
-      asn[b.prd_no] = pool.find(t => t.ic_no === window.__cmAssignments[b.prd_no]?.ic_no) || pool[0] || null;
-    });
-    return asn;
-  };
-  if (!window.__cmAssignments) window.__cmAssignments = {};
-  const asn = initAssignments();
-
-  // 计算最小可完工
-  const calcMin = () => {
-    let min = Infinity;
-    bomItems.forEach(b => {
-      const t = asn[b.prd_no];
-      if (!t) return;
-      const available = t.remaining_qty / b.qty_per_unit;
-      if (available < min) min = available;
-    });
-    return min === Infinity ? 0 : Math.floor(min);
-  };
-
-  const qtyInput = document.getElementById('cmQtyInput');
-  const dzhwInput = document.getElementById('cmDzhwInput');
-  // 自动计算净重：数量×单重(g)/1000=净重(kg)
-  const calcJzhw = () => {
-    const q = parseFloat(qtyInput?.value) || 0;
-    const dz = parseFloat(dzhwInput?.value) || 0;
-    if (q > 0 && dz > 0) {
-      const jzhwInput = document.getElementById('cmJzhwInput');
-      if (jzhwInput) jzhwInput.value = (q * dz / 1000).toFixed(3);
-    }
-  };
-  qtyInput?.addEventListener('input', calcJzhw);
-  dzhwInput?.addEventListener('input', calcJzhw);
-  const setQty = () => {
-    const m = calcMin();
-    if (m > 0) qtyInput.value = Math.min(m, parseInt(qtyInput.max) || m);
-    updateConfirmBtn();
-  };
-
-  // 更新确认按钮状态
-  const updateConfirmBtn = () => {
-    const btn = document.getElementById('cmConfirmBtn');
-    if (!btn) return;
-    const allAssigned = bomItems.every(b => asn[b.prd_no]);
-    const qty = parseFloat(qtyInput?.value) || 0;
-    btn.disabled = !allAssigned || qty <= 0;
-  };
-
-  // 渲染 BOM 行
-  const bomRows = document.getElementById('cmBomRows');
-  const renderRows = () => {
-    if (!bomRows) return;
-    const fgQty = parseFloat(qtyInput?.value) || 0;
-    bomRows.innerHTML = bomItems.map(b => {
-      const pool = byPrd[b.prd_no] || [];
-      const assigned = asn[b.prd_no];
-      const need = Math.ceil(b.qty_per_unit * fgQty * 100) / 100;
-      const hasStock = !!assigned;
-      return `<div style="display:flex;align-items:center;gap:6px;padding:8px;background:${hasStock ? 'var(--bg)' : 'rgba(255,80,80,0.1)'};border-radius:8px;margin-bottom:6px;border:1.5px solid ${hasStock ? 'transparent' : 'var(--red)'}">
-        <div style="flex:1;min-width:0">
-          <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${fmt(b.prd_no)}</div>
-          <div style="font-size:11px;color:var(--sub)">${fmt(b.prd_name||'').substring(0,22)}</div>
-        </div>
-        <div style="font-size:12px;color:var(--sub);white-space:nowrap">×${b.qty_per_unit} → <b style="color:${hasStock?'var(--green)':'var(--red)'}">${need}</b></div>
-        <select class="cmTrSel" data-prd="${b.prd_no}"
-          style="padding:5px 6px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;min-width:120px"
-          ${!pool.length ? 'disabled' : ''}>
-          ${!pool.length ? `<option value="">⚠️ 无调拨单</option>` : ''}
-          ${pool.map(t => `<option value="${t.ic_no}" ${assigned?.ic_no===t.ic_no?'selected':''}>${t.ic_no} (剩${t.remaining_qty})</option>`).join('')}
-        </select>
-      </div>`;
-    }).join('');
-
-    bomRows.querySelectorAll('.cmTrSel').forEach(sel => {
-      sel.addEventListener('change', () => {
-        const prd = sel.dataset.prd;
-        const pool = byPrd[prd] || [];
-        asn[prd] = pool.find(t => t.ic_no === sel.value) || null;
-        window.__cmAssignments[prd] = asn[prd];
-        setQty();
-        renderRows();
-      });
-    });
-  };
-
-  // BOM 区域显示
-  const bomSection = document.getElementById('cmBomSection');
-  if (bomSection) bomSection.style.display = 'block';
-
-  // 仓库下拉
-  const whSel = document.getElementById('cmWhSelect');
-  if (whSel && (!window.__allWarehouses || !window.__allWarehouses.length)) {
-    try {
-      const whRes = await api(BASE + '/warehouses/all');
-      window.__allWarehouses = whRes.warehouses || whRes.items || [];
-    } catch(e) { window.__allWarehouses = []; }
-  }
-  if (whSel) {
-    const allWh = window.__allWarehouses || [];
-    whSel.innerHTML = allWh.map(w => `<option value="${w.code}"${w.code==='G'?' selected':''}>${w.name}(${w.code})</option>`).join('');
-  }
-
-  renderRows();
-  setQty();
-
-  // 保存成品信息到 window
-  window.__cmFg = {fg_no: fgNo, fg_name: fgName, bomItems, asn, transferList, byPrd};
-
-  // 完工数量变更时重新算
-  qtyInput?.addEventListener('input', renderRows);
-
-  // 确认按钮
-  if (overlay) {
-    const confirmBtn = overlay.querySelector('#cmConfirmBtn');
-    if (confirmBtn) {
-      confirmBtn.replaceWith(confirmBtn.cloneNode(true));
-      overlay.querySelector('#cmConfirmBtn').addEventListener('click', () => submitCompletion(fgNo));
-    }
-  }
-}
-
 // 完工确认
 async function submitCompletion(fgNo) {
   const fgQty = parseFloat(document.getElementById('cmQtyInput')?.value);
@@ -2590,10 +2379,6 @@ async function pmcPreviewBatch() {
 }
 
 // PMC 批量生成
-async function pmcGenerateBatch() {
-  await pmcSubmit();
-}
-
 // PMC 单行分析 → BOM 树
 async function pmcAnalyzeRow(soNoItm, prdNo, qty) {
   var el = $id('content');
@@ -3046,42 +2831,6 @@ async function doTransfer(prd_no, wh, wh_name, qty) {
   }
 }
 
-
-async function renderPMCAnalysis() {
-  var p = window.__pmcPending;
-  var el = $id('content');
-  if (!el) return;
-  if (!p) { loadPMC(); return; }
-  el.innerHTML = '<div class="state-msg"><div class="spinner"></div>\u52a0\u8f7d\u4e2d\u2026</div>';
-  try {
-    var data = await api(BASE + '/pmc/preview_mps?' + new URLSearchParams({so_no_itm:p.soNoItm, prd_no:p.prdNo, qty:p.qty}));
-    var rows = data.rows || [];
-    var fgRow = rows.find(function(r) { return r.depth === 0; });
-    var bomRows = rows.filter(function(r) { return r.depth > 0; });
-    window.__pmcBomRows = bomRows;
-    var gapRows = bomRows.filter(function(r) { return (r.gap||0) > 0; });
-    var fgHtml = '<div style="padding:12px"><div style="margin-bottom:12px"><button onclick="window.__pmcPending=null;window.curTab=\'pmc\';renderCurrentTab()" style="background:#6b7280;color:#fff;border:none;border-radius:6px;padding:6px 14px;cursor:pointer;font-size:13px">\u2190 \u8fd4\u56de\u5217\u8868</button></div><div style="background:#eff6ff;border:1.5px solid #3b82f6;border-radius:10px;padding:14px 16px;margin-bottom:16px"><div style="font-weight:700;font-size:16px;margin-bottom:6px">' + escAttr(p.prdNo) + ' ' + escAttr(p.prdName||'') + '</div><div style="font-size:13px;color:#374151">\u8ba2\u5355: ' + escAttr(p.osNo) + ' \u00b7 \u6570\u91cf: ' + p.qty + ' \u4ef6</div>';
-    if (fgRow) {
-      fgHtml += '<div style="font-size:13px;color:#374151;margin-top:4px">\u6210\u54c1\u5e93\u5b58: \u539f\u6599\u4ed3 <b style="color:#16a34a">' + (fgRow.mat_qty||0) + '</b> + \u751f\u4ea7\u4ed3 <b style="color:#16a34a">' + (fgRow.prod_qty||0) + '</b> = \u5408\u8ba1 <b style="color:#16a34a">' + (fgRow.total_stock||0) + '</b></div>';
-      fgHtml += '<div style="font-size:13px;color:#374151;margin-top:4px">\u7f3a\u53e3: <b style="color:' + (fgRow.gap>0?'#dc2626':'#16a34a') + '">' + (fgRow.gap||0) + '</b></div>';
-    }
-    fgHtml += '</div>';
-    if (!bomRows.length) { el.innerHTML = fgHtml + '<div class="state-msg">\u65e0 BOM \u6570\u636e</div></div>'; return; }
-    var bomTH = '<div style="margin-bottom:12px;font-size:13px;color:#374151;font-weight:600">BOM \u5b50\u4ef6\uff08\u7f3a\u53e3=' + gapRows.length + '\u9879\u6709\u6599\uff09</div><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f9fafb"><th style="padding:7px 10px;text-align:left;font-size:11px;color:#666;border-bottom:1px solid #e5e7eb">\u54c1\u53f7</th><th style="padding:7px 8px;text-align:right;font-size:11px;color:#666;border-bottom:1px solid #e5e7eb">\u7ea7</th><th style="padding:7px 8px;text-align:right;font-size:11px;color:#666;border-bottom:1px solid #e5e7eb">BOM\u91cf</th><th style="padding:7px 8px;text-align:right;font-size:11px;color:#666;border-bottom:1px solid #e5e7eb">\u539f\u6599\u4ed3</th><th style="padding:7px 8px;text-align:right;font-size:11px;color:#666;border-bottom:1px solid #e5e7eb">\u751f\u4ea7\u4ed3</th><th style="padding:7px 8px;text-align:right;font-size:11px;color:#666;border-bottom:1px solid #e5e7eb">\u5408\u8ba1</th><th style="padding:7px 8px;text-align:right;font-size:11px;color:#666;border-bottom:1px solid #e5e7eb">\u7f3a\u53e3</th></tr></thead><tbody>';
-    var bomTRs = bomRows.map(function(r) {
-      var hasGap = (r.gap||0) > 0;
-      var gap = r.gap||0;
-      var indent = (r.depth||1)-1;
-      var gapColor = gap > 0 ? '#dc2626' : '#16a34a';
-      var bg = hasGap ? '#fef9c3' : '';
-      return '<tr style="border-bottom:1px solid #f3f4f6;background:' + bg + '"><td style="padding:7px 10px"><span style="display:inline-block;margin-left:' + (indent*14) + 'px">' + escAttr(r.prd_no||'') + '</span></td><td style="padding:7px 8px;text-align:right;font-size:11px;color:#9ca3af">' + (r.depth||1) + '</td><td style="padding:7px 8px;text-align:right">' + (r.qty||0) + '</td><td style="padding:7px 8px;text-align:right;color:#16a34a;cursor:pointer" onclick="pmcOpenAdjust(\'' + escAttr(r.prd_no||'') + '\',\'\',\'mat\',' + (r.mat_qty||0) + ')" title="\u70b9\u51fb\u8c03\u6574\u539f\u6750\u6599\u4ed3">' + (r.mat_qty||0) + '</td><td style="padding:7px 8px;text-align:right;color:#16a34a;cursor:not-allowed" title="\u751f\u4ea7\u4ed3\u4e0d\u53ef\u8c03\u6574">' + (r.prod_qty||0) + '</td><td style="padding:7px 8px;text-align:right;font-weight:600">' + (r.total_stock||0) + '</td><td style="padding:7px 8px;text-align:right;font-weight:700;color:' + gapColor + '">' + gap + '</td></tr>';
-    }).join('');
-    var btnHtml = gapRows.length > 0
-      ? '<div style="margin-top:16px"><button onclick="generateMPS(\'' + escAttr(p.soNoItm) + '\',\'' + escAttr(p.prdNo) + '\',' + p.qty + ')" style="background:#2563eb;color:#fff;border:none;border-radius:8px;padding:10px 24px;font-size:14px;font-weight:600;cursor:pointer">\u751f\u6210 MPS\uff08MO+QD\uff09\uff08' + gapRows.length + '\u9879\u6709\u6599\uff09</button></div>'
-      : '<div style="margin-top:16px;padding:12px;background:#dcfce7;border-radius:8px;font-size:13px;color:#16a34a">\u2713 \u5e93\u5b58\u5145\u8db3\uff0c\u65e0\u9700\u751f\u6210\u5de5\u5355</div>';
-    el.innerHTML = fgHtml + bomTH + bomTRs + '</tbody></table></div>' + btnHtml + '</div>';
-  } catch(e) { el.innerHTML = '<div class="error-msg">\u52a0\u8f7d\u5931\u8d25: ' + escAttr(e.message) + '</div>'; }
-}
 
 
 // ── 批量调拨弹窗 ────────────────────────────────────────────
