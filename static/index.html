@@ -1579,8 +1579,9 @@ async function completionAddFgDetail(fgNo, icNo, prdNo, qtyInputId) {
   const ref = tRec.ref || '';
   const customer = tRec.cus || '';
   const ddjh = tRec.ddjh || '';
-  const danzhong = tRec.danzhong || 0;
-  const jingzhong = tRec.jingzhong || 0;
+  const danzhong = tRec.dzhw || 0;
+  const jingzhong = tRec.jzhw || 0;
+  const fg_wh = tRec.wh1 || 'G';
   let bomData;
   try {
     bomData = await api(BASE + '/completion/fg_detail?' + new URLSearchParams({fg_no: fgNo}));
@@ -1592,7 +1593,6 @@ async function completionAddFgDetail(fgNo, icNo, prdNo, qtyInputId) {
     transfers: m.transfers||[],
   }));
   const whs = [...new Set(materials.flatMap(m => (m.transfers||[]).map(t => t.wh1_name||t.wh1||'')).filter(Boolean))];
-  const fg_wh = whs[0] || 'G';
   completionList.push({
     fg_no: fgNo,
     fg_name: bomData.fg_name||'',

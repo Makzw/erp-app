@@ -1746,7 +1746,12 @@ async def completion_batch(
         FG_IN_COLS = ['IC_NO','IC_DD','IC_KND','PRD_NO','PRD_NAME','QTY','UT','WH1','WH1NAME','WH2',
                        'USR','USABLE','ITM','REM','FLD1','指令单号','客户','单重','净重']
         FG_IN_VALS = [ic_in, now_str, 13, fg_no, fg_name_gbk, fg_qty, fg_ut, fg_wh, fg_wh_name, '',
-                       'phone', 1, prod_itm + 1, '完工入库', ic_out, all_ddjh, all_customer, dzhw, jzhw]
+                       'phone', 1, prod_itm + 1,
+                       f"完工入库{'; 外发:'+all_ddjh if all_ddjh else ''}",
+                       ic_out,
+                       item.get("ref") or all_ddjh,   # 指令单号←指令单号字段(优先)，无则用外发计划兜底
+                       item.get("customer") or all_customer,  # 客户
+                       dzhw, jzhw]
         prod_itm += 1
         sql = f"INSERT INTO IC ({','.join(FG_IN_COLS)}) VALUES ({','.join(['%s']*len(FG_IN_COLS))})"
         cur.execute(sql, FG_IN_VALS)
@@ -1793,11 +1798,14 @@ async def completion_batch(
 
             # ②a 子件行（WH2=原料仓(源仓)，WH1留空）
             MAT_OUT_COLS = ['IC_NO','IC_DD','IC_KND','PRD_NO','PRD_NAME','QTY','UT','WH2','WH2NAME',
-                            'USR','USABLE','ITM','REM','FLD1','指令单号','DDJH','客户','单重','净重']
+                            'USR','USABLE','ITM','REM','FLD1','指令单号','客户','单重','净重']
             MAT_OUT_VALS = [ic_out, now_str, 23, prd_no, prd_name_gbk, comp_qty, '',
                              twh1, twh1_name,
                              'phone', 1, out_itm + 1, f"完工出库({fg_no}×{fg_qty})",
-                             tic, '', item_ddjh, item_cus, item_dz, item_jz]
+                             tic,
+                             item_ddjh,     # 指令单号（外发计划）
+                             item_cus,      # 客户
+                             item_dz, item_jz]
             out_itm += 1
             sql = f"INSERT INTO IC ({','.join(MAT_OUT_COLS)}) VALUES ({','.join(['%s']*len(MAT_OUT_COLS))})"
             cur.execute(sql, MAT_OUT_VALS)
