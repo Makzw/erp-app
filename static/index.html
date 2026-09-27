@@ -1403,7 +1403,7 @@ function renderCompletionList() {
     const remain = t.remaining_qty || (total - done);
     const pct = total > 0 ? Math.round(done / total * 100) : 0;
     const bg = i % 2 === 0 ? 'background:var(--card)' : 'background:var(--bg)';
-    return `<tr style="cursor:pointer;${bg};border-bottom:1px solid var(--border)" onclick="openCompletionModal('${e(t.ic_no)}','${e(t.prd_no)}')">
+    return `<tr style="cursor:pointer;${bg};border-bottom:1px solid var(--border)" onclick="openCompletionModal('${escJs(t.ic_no)}','${escJs(t.prd_no)}')">
       <td style="padding:8px 10px;font-size:12px;color:var(--sub)">${i+1}</td>
       <td style="padding:8px 10px;font-size:12px;font-weight:600">${fmt(t.ic_no)}</td>
       <td style="padding:8px 10px;font-size:12px">${fmt(t.prd_no)}</td>
