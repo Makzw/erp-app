@@ -1744,14 +1744,16 @@ async def completion_batch(
 
         # ①a FG 成品行（WH1=生产仓(增加)，WH2=''）
         FG_IN_COLS = ['IC_NO','IC_DD','IC_KND','PRD_NO','PRD_NAME','QTY','UT','WH1','WH1NAME','WH2',
-                       'USR','USABLE','ITM','REM','FLD1','指令单号','客户','单重','净重']
+                       'USR','USABLE','ITM','REM','FLD1','指令单号','客户','DDJH','单重','净重']
         FG_IN_VALS = [ic_in, now_str, 13, fg_no, fg_name_gbk, fg_qty, fg_ut, fg_wh, fg_wh_name, '',
                        'phone', 1, prod_itm + 1,
                        f"完工入库{'; 外发:'+all_ddjh if all_ddjh else ''}",
                        ic_out,
-                       item.get("ref") or all_ddjh,   # 指令单号←指令单号字段(优先)，无则用外发计划兜底
+                       item.get("ref") or all_ddjh,   # 指令单号
                        item.get("customer") or all_customer,  # 客户
-                       dzhw, jzhw]
+                       all_ddjh,                          # DDJH ← 外发计划
+                       item.get("dzhw") or 0,           # 单重
+                       item.get("jzhw") or 0]            # 净重
         prod_itm += 1
         sql = f"INSERT INTO IC ({','.join(FG_IN_COLS)}) VALUES ({','.join(['%s']*len(FG_IN_COLS))})"
         cur.execute(sql, FG_IN_VALS)
