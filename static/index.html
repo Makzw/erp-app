@@ -590,11 +590,6 @@ function escAttr(v) { return v.replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 function escHtml(v) { return v == null ? '' : String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function escJs(v) { return String(v||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'\\"'); }
 function fmtNum(v) { return v == null ? '' : Number(v).toLocaleString('zh-CN'); }
-function fmtDate(v) {
-  if (!v) return '';
-  const d = new Date(v);
-  return isNaN(d) ? v : d.toLocaleDateString('zh-CN');
-}
 function toast(msg, dur = 2500) {
   const el = document.getElementById('toast');
   el.textContent = msg; el.classList.add('show');
@@ -657,14 +652,6 @@ function clearSearch() {
   $id('searchClear').classList.remove('show');
   curSearch = '';
   handleSearch('');
-}
-
-function renderCurrentTab() {
-  if (curTab === 'qts') renderQts(rawData, '');
-  else if (curTab === 'pos-unreceived') loadPosUnreceived();
-  else if (curTab === 'completion') loadCompletion();
-  else if (curTab === 'smo-mm') renderDispatch(dispatchData, '');
-  else if (curTab === 'pmc') loadPMC();
 }
 
 // ── Tab / Filter ────────────────────────────────────────────────────────────
@@ -1804,69 +1791,6 @@ async function openBatchCompletionModal() {
 
 // 选成品 → 显示全部 BOM 子件，每行可选调拨单
 // 完工确认
-async function submitCompletion(fgNo) {
-  const fgQty = parseFloat(document.getElementById('cmQtyInput')?.value);
-  const fgWh = document.getElementById('cmWhSelect')?.value || 'G';
-  const cm = window.__cmFg;
-  if (!cm) { toast('⚠️ 状态异常'); return; }
-  if (!fgQty || fgQty <= 0) { toast('⚠️ 完工数量无效'); return; }
-
-  // 收集所有组件（每个BOM行 × 分配到的调拨单）
-  const rows = document.querySelectorAll('#cmBomRows > div');
-  const components = [];
-  let allAssigned = true;
-  rows.forEach(row => {
-    const sel = row.querySelector('.cmTrSel');
-    const prdNo = sel?.dataset.prd;
-    const tr = cm.byPrd[prdNo]?.find(t => t.ic_no === sel?.value);
-    if (!tr) { allAssigned = false; return; }
-    const inp = row.querySelector('.cmCompQty, input[type="number"]');
-    const qty = parseFloat(inp?.value) || 0;
-    if (qty > 0) {
-      components.push({
-        prd_no: prdNo,
-        qty,
-        transfer_ic_no: tr.ic_no,
-        transfer_wh1: tr.wh1,
-      });
-    }
-  });
-  if (!allAssigned) { toast('⚠️ 每个子件都要分配调拨单'); return; }
-  if (!components.length) { toast('⚠️ 子件数量为 0'); return; }
-
-  const btn = document.getElementById('cmConfirmBtn');
-  if (btn) { btn.disabled = true; btn.textContent = '处理中…'; }
-
-  try {
-    const res = await api(BASE + '/completion/confirm', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({
-        fg_no: fgNo,
-        fg_qty: fgQty,
-        fg_wh: fgWh,
-        danzhong: parseFloat(document.getElementById('cmDzhwInput')?.value) || 0,
-        jingzhong: parseFloat(document.getElementById('cmJzhwInput')?.value) || 0,
-        rem: document.getElementById('cmToolInput')?.value || '',
-        components,
-      }),
-    });
-    if (res.ok) {
-      toast(`✅ 完工成功\n入库: ${res.ic_in}\n出库: ${res.ic_out}\n出库行: ${res.ic_items}行`);
-      document.getElementById('cmOverlay')?.remove();
-      window.__cmAssignments = null;
-      loadCompletion();
-    } else {
-      toast('❌ 失败: ' + (res.error || JSON.stringify(res)));
-    }
-  } catch(e) {
-    toast('❌ 网络错误: ' + e.message);
-  } finally {
-    const b = document.getElementById('cmConfirmBtn');
-    if (b) { b.disabled = false; b.textContent = '确认完工'; }
-  }
-}
-
 
 
 // ── 调拨 tab ────────────────────────────────────────────────
