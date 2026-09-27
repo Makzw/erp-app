@@ -498,7 +498,6 @@
   <div class="tab-btn active" data-tab="qts">请购单</div>
   <div class="tab-btn" data-tab="pos-unreceived">采购未回</div>
   <div class="tab-btn" data-tab="smo">齐料列表</div>
-  <div class="tab-btn" data-tab="smo-mm">🎯 派工单</div>
   <div class="tab-btn" data-tab="stock">📦 盘点</div>
   <div class="tab-btn" data-tab="transfer">🔄 调拨</div>
   <div class="tab-btn" data-tab="completion">🏭 完工</div>
@@ -512,51 +511,7 @@
   <button class="search-clear" id="searchClear" onclick="clearSearch()">✕</button>
 </div>
 
-<div id="smoTabBar" class="tab-bar" style="display:none"></div>
-
 <div id="content"><div class="state-msg"><div class="spinner"></div>加载中…</div></div>
-
-<!-- FAB -->
-<div class="fab" id="fabIssue" onclick="openIssueModal()">+</div>
-<div class="fab" id="fabMm" onclick="openMmModal()" style="bottom:170px">📦+</div>
-
-<!-- Issue Modal -->
-<div class="modal-overlay" id="issueModal">
-  <div class="modal">
-    <div class="modal-head">
-      <h2>发料</h2>
-      <button class="modal-close" onclick="closeIssueModal()">✕</button>
-    </div>
-    <div class="modal-tabs" id="modalTabs" style="display:flex">
-      <div class="modal-tab active" data-type="prod" onclick="switchTab('prod')">🏭 生产领料</div>
-      <div class="modal-tab" data-type="sub" onclick="switchTab('sub')">🔧 外发加工领料</div>
-    </div>
-    <div class="modal-body" id="modalBody">
-      <div class="state-msg"><div class="spinner"></div>加载中…</div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn-cancel" onclick="closeIssueModal()">取消</button>
-      <button class="btn-confirm" id="btnConfirm" onclick="confirmIssue()">确认发料</button>
-    </div>
-  </div>
-</div>
-
-<!-- MM 完工入库弹窗 -->
-<div class="modal-overlay" id="mmModal">
-  <div class="modal">
-    <div class="modal-head">
-      <h2>开工发料</h2>
-      <button class="modal-close" onclick="closeMmModal()">✕</button>
-    </div>
-    <div class="modal-body" id="mmModalBody">
-      <div class="state-msg"><div class="spinner"></div>加载中…</div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn-cancel" onclick="closeMmModal()">取消</button>
-      <button class="btn-confirm" id="btnMmConfirm" onclick="confirmMm()">确认入库</button>
-    </div>
-  </div>
-</div>
 
 <!-- Toast -->
 <div class="toast" id="toast"></div>
@@ -621,10 +576,6 @@ function handleSearch(v) {
     case 'stock':
       if (!q) { loadStock(); break; }
       loadStockSuggestions(q); break;
-    case 'smo-mm':
-      curMmSearch = q;
-      if (!q) { renderDispatch(dispatchData, q); break; }
-      renderDispatch(dispatchData.filter(r => JSON.stringify(r).toLowerCase().includes(q.toLowerCase())), q); break;
     case 'completion':
       if (!q) { loadCompletion(); break; }
       if (!completionData.length) { loadCompletion(); break; }
@@ -655,7 +606,7 @@ function clearSearch() {
 }
 
 // ── Tab / Filter ────────────────────────────────────────────────────────────
-// Main tab bar only (not smoTabBar)
+// Main tab bar
 const mainTabBar = document.querySelector('.tab-bar');
 mainTabBar.addEventListener('click', e => {
     const btn = e.target.closest('.tab-btn');
@@ -666,7 +617,6 @@ mainTabBar.addEventListener('click', e => {
     if (btn.dataset.tab) {
       // Main tab
       curTab = btn.dataset.tab;
-      $id('smoTabBar').style.display = 'none';
       // 切换时清除盘点tab的autocomplete残留
       if (typeof dismissSuggestions === 'function') dismissSuggestions();
       stockSuggestions = [];
@@ -674,19 +624,14 @@ mainTabBar.addEventListener('click', e => {
       $id('searchInput').value = '';
       $id('searchClear').classList.remove('show');
       curSearch = '';
-      // FAB 只在完工单(smo-mm)tab显示
-      $id('fabIssue').style.display = 'none';
       if (curTab === 'pos-unreceived') {
         posUnSearch = ''; posUnQ = '';
         posUnCustomer = ''; posUnSupplier = ''; posUnOrderNo = '';
       }
-      else if (curTab === 'smo-mm') curMmSearch = '';
       if (curTab === 'smo') {
         loadSmo();
       } else if (curTab === 'pos-unreceived') {
         loadPosUnreceived();
-      } else if (curTab === 'smo-mm') {
-        loadSmoMm();
       } else if (curTab === 'stock') {
         loadStock();
       } else if (curTab === 'transfer') {
