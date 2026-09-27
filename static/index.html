@@ -1804,7 +1804,7 @@ function renderStock(d) {
       </div>`;
   }
 
-  // BOM 子件（仅调拨 tab；默认收起，点「展开」才加载 → toggleTransferBom / loadTransferBom）
+  // BOM 子件（仅调拨 tab；搜完自动加载 → loadTransferBom）
   if (curTab === 'transfer') {
   window.__curStockPrdNo = d.prd_no;
   window.__curStockPrdName = d.prd_name || '';
@@ -1815,16 +1815,16 @@ function renderStock(d) {
         <span id="bomBatchCountWrap" style="display:none;font-size:12px;color:var(--accent);font-weight:600">
           已选 <span id="bomBatchCount">0</span> 项
         </span>
-        <button id="bomToggleBtn" onclick="toggleTransferBom()" style="padding:3px 10px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:20px;font-size:11px;cursor:pointer">展开 ▾</button>
         <button onclick="clearAllBOMStaging()" style="padding:3px 10px;background:var(--orange);color:#fff;border:none;border-radius:20px;font-size:11px;cursor:pointer">清除全部</button>
         <button onclick="openBatchTransferModal()" style="padding:5px 12px;background:var(--accent);color:#fff;border:none;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer">批量调拨</button>
       </div>
     </div>
-    <div id="bomChildrenOfTransfer"><div style="padding:10px 12px;font-size:12px;color:var(--sub)">点击「展开」查看 BOM 结构（勾选后可批量调拨）</div></div>
+    <div id="bomChildrenOfTransfer"></div>
   </div>`;
   }
 
   el.innerHTML = html + '</div>';
+  if (curTab === 'transfer') loadTransferBom(d.prd_no);   // C3: 搜完自动出树（盘点 tab 无 BOM 区 → 不触发）
 
 
 
@@ -1833,10 +1833,6 @@ function renderStock(d) {
 // ── 调拨 BOM 懒加载（C 步）──────────────────────────────────
 // 缓存 prd_no → nested_tree；提交成功后失效（见 doInOut/doTransfer/bomBatchConfirm）
 let bomTreeCache = {};
-
-function bomTreePlaceholderHtml() {
-  return '<div style="padding:10px 12px;font-size:12px;color:var(--sub)">点击「展开」查看 BOM 结构（勾选后可批量调拨）</div>';
-}
 
 // ponytail: 表头与表体列宽一致，品号列收窄
 function bomTreeHeaderHtml() {
@@ -1850,33 +1846,18 @@ function bomTreeHeaderHtml() {
       </div>`;
 }
 
-// 「展开 ▾ / 收起 ▴」：收起只清 DOM（缓存 + 勾选都保留）；展开未命中缓存才发请求
-function toggleTransferBom() {
-  const area = $id('bomChildrenOfTransfer');
-  const btn = $id('bomToggleBtn');
-  if (!area) return;
-  if (area.dataset.expanded === '1') {
-    area.dataset.expanded = '0';
-    area.innerHTML = bomTreePlaceholderHtml();
-    if (btn) btn.textContent = '展开 ▾';
-    return;
-  }
-  area.dataset.expanded = '1';
-  if (btn) btn.textContent = '收起 ▴';
-  const prdNo = window.__curStockPrdNo;
-  if (prdNo in bomTreeCache) {   // 命中缓存：0 请求直接画
-    const tree = bomTreeCache[prdNo];
-    area.innerHTML = tree
-      ? bomTreeHeaderHtml() + renderTransferBomTree(tree)
-      : '<div style="padding:12px;font-size:12px;color:var(--sub)">无 BOM 结构</div>';
-    return;
-  }
-  loadTransferBom(prdNo);
-}
-
+// 加载/重画调拨 BOM 树：命中缓存 0 请求直接画；未命中才请求（C3 起由 renderStock 搜完自动调用）
 async function loadTransferBom(prdNo) {
   const area = $id('bomChildrenOfTransfer');
   if (!area) return;
+  if (prdNo in bomTreeCache) {   // 命中缓存：0 请求直接画（提交后重画也走这里）
+    const t = bomTreeCache[prdNo];
+    area.innerHTML = t
+      ? bomTreeHeaderHtml() + renderTransferBomTree(t)
+      : '<div style="padding:12px;font-size:12px;color:var(--sub)">无 BOM 结构</div>';
+    updateBOMSelected();   // 重画不触发 change 事件 → 手动刷新「已选 N 项」
+    return;
+  }
   area.innerHTML = '<div style="padding:8px 12px;font-size:12px;color:var(--sub)">加载 BOM…</div>';
   try {
     const bd = await api(BASE + '/smo/bom_stock?' + new URLSearchParams({fg_no: prdNo, include_tree: '1'}));
@@ -1886,8 +1867,9 @@ async function loadTransferBom(prdNo) {
     if (!area2) return;
     if (!tree) { area2.innerHTML = '<div style="padding:12px;font-size:12px;color:var(--sub)">无 BOM 结构</div>'; return; }
     area2.innerHTML = bomTreeHeaderHtml() + renderTransferBomTree(tree);
+    updateBOMSelected();   // 重画不触发 change 事件 → 手动刷新「已选 N 项」
   } catch(e) {
-    // ponytail: 失败不写缓存，下次展开会重试
+    // ponytail: 失败不写缓存，下次搜索会重试
     const area3 = $id('bomChildrenOfTransfer');
     if (area3) area3.innerHTML = '<div style="padding:12px;font-size:12px;color:var(--red)">加载 BOM 失败</div>';
   }
@@ -2422,7 +2404,6 @@ async function doInOut(prd_no, wh, mode) {
     const icNo = res.items ? res.items[0].ic_no : res.ic_no || '';
     toast(`✅ ${isIn ? '入库' : '出库'}成功 ${icNo}`);
     if (modal) modal.remove();
-    if (stockData && stockData.prd_no) delete bomTreeCache[stockData.prd_no];   // C: 提交后失效 → 展开时重新请求最新库存
     if (stockData && stockData.prd_no) stockSearchByPRD(stockData.prd_no);
   } catch(e) {
     toast('❌ ' + (isIn ? '入库' : '出库') + '失败: ' + e.message);
@@ -2590,7 +2571,6 @@ async function doTransfer(prd_no, wh, wh_name, qty) {
     });
     toast(`✅ 调拨成功 ${res.ic_no}`);
     if (modal) modal.remove();
-    delete bomTreeCache[prd_no];   // C: 提交后失效 → 展开时重新请求最新库存
     if (stockData && stockData.prd_no) stockSearchByPRD(stockData.prd_no);
   } catch(e) {
     toast('❌ 调拨失败: ' + e.message);
@@ -2783,7 +2763,6 @@ async function bomBatchConfirm() {
     });
     toast(`✅ 批量调拨成功 ${res.ic_no}`);
     bomBatchOverlayRemove();
-    bomTreeCache = {};   // C: 批量调拨涉及多个成品 → 全清
     if (stockData && stockData.prd_no) stockSearchByPRD(stockData.prd_no);
   } catch(e) {
     toast('❌ 批量调拨失败: ' + e.message);
