@@ -2,6 +2,7 @@
 安而固 ERP — 请购单手机端
 FastAPI 后端 + 响应式 SPA
 """
+import os
 import pymssql
 import re
 import time
@@ -14,12 +15,20 @@ from typing import Optional, List
 from datetime import datetime
 
 # ── DB 连接 ──────────────────────────────────────────────────────────────────
-def get_conn(db: str = "C041"):
+_REQUIRED_ENV = ("ERP_DB_HOST", "ERP_DB_USER", "ERP_DB_PASSWORD")
+
+def get_conn(db: str = None):
+    missing = [k for k in _REQUIRED_ENV if not os.environ.get(k)]
+    if missing:
+        raise RuntimeError(
+            "缺少数据库环境变量: " + ", ".join(missing) +
+            " —— 请参照 .env.example 配置 .env 后重启服务"
+        )
     return pymssql.connect(
-        server="39.108.237.63:11039",
-        user="Hermes",
-        password="aeg123456",
-        database=db,
+        server=os.environ["ERP_DB_HOST"],
+        user=os.environ["ERP_DB_USER"],
+        password=os.environ["ERP_DB_PASSWORD"],
+        database=db or os.environ.get("ERP_DB_NAME") or "C041",
         charset="utf8",
     )
 

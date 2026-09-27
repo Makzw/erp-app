@@ -13,3 +13,8 @@ dist/
 build/
 .pytest_cache/
 .mypy_cache/
+backups/
+*.py.bak
+main_before_*.py
+bom_0073_qtybas_fix.py
+bom_qtybas_full_fix.py
