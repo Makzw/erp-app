@@ -483,6 +483,8 @@
       text-align:center; font-size:18px; color:var(--accent);
       font-weight:700; padding:2px 0; line-height:1;
     }
+    /* 单价显示开关：状态记在 body[data-price-locked]，重渲染后依然生效 */
+    body:not([data-price-locked="1"]) .price-val { display: none; }
   </style>
 </head>
 <body>
@@ -643,6 +645,13 @@ function handleSearch(v) {
   }
 }
 
+// 单价显示开关（👁 按钮）：切换 .price-val 的 display，状态记在 body[data-price-locked]
+function togglePriceLock() {
+  const on = document.body.dataset.priceLocked !== '1';
+  document.body.dataset.priceLocked = on ? '1' : '0';
+  document.querySelectorAll('.price-val').forEach(el => el.style.display = on ? 'inline' : 'none');
+}
+
 function clearSearch() {
   $id('searchInput').value = '';
   $id('searchClear').classList.remove('show');
@@ -768,7 +777,7 @@ function renderQts(items, q) {
         </div>
         <div class="qts-row-foot">
           <span>数量: <b>${r.qty} ${fmt(r.ut)}</b></span>
-          <span>上次单价: <b class="price-val" style="display:none">${r.last_up ? '¥'+Number(r.last_up).toFixed(4) : '—'}</b><span class="price-lock-icon">🔒</span></span>
+          <span>上次单价: <b class="price-val">${r.last_up ? '¥'+Number(r.last_up).toFixed(4) : '—'}</b><span class="price-lock-icon">🔒</span></span>
         </div>
       </div>
       <div class="qts-row-meta">
