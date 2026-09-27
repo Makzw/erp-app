@@ -1120,7 +1120,7 @@ async def smo_bom_stock(fg_no: str = Query(...), db: str = Query(default="c041")
 
     # 建立 prd → (name, knd) 字典
     # 先从 BOM 的 LEV=0 根获取成品名（GUID=PRD_NO 时）
-    prd_info = {}   # prd_no → (name_str, knd)
+    prd_info = {}   # prd_no → (_, knd)：A 步后只需 knd，名字在建树后按 all_prds 查
     for e in edges:
         guid, prd, lev, idx, qty, knd, upguid, parent_prd = e
         if prd not in prd_info:
@@ -1129,25 +1129,6 @@ async def smo_bom_stock(fg_no: str = Query(...), db: str = Query(default="c041")
     # 成品根不在 prd_info 里，补充一下
     if fg_no not in prd_info:
         prd_info[fg_no] = ('', None)
-
-    # 批量查 PRDT 名称（分批 fetchone 避免全表 fetchall 触发 UTF-8 解码错误）
-    all_bom_prds = list(set(list(prd_info.keys()) + [fg_no]))
-    if all_bom_prds:
-        ph = ','.join(['%s'] * len(all_bom_prds))
-        cur.execute(f"SELECT PRD_NO, NAME FROM PRDT WITH(NOLOCK) WHERE PRD_NO IN ({ph})", tuple(all_bom_prds))
-        while True:
-            try:
-                row = cur.fetchone()
-                if row is None:
-                    break
-                prd_no = row[0]
-                name_raw = row[1]
-                if prd_no in prd_info:
-                    info = prd_info[prd_no]
-                    prd_info[prd_no] = (g(name_raw), info[1])
-            except UnicodeDecodeError:
-                # 跳过无法解码的行
-                continue
 
     # child_map: parent → [(child_prd, qty_per_unit, knd, guid, upguid)]
     # edges 里: prd=子件, parent_prd=父件
@@ -1176,14 +1157,14 @@ async def smo_bom_stock(fg_no: str = Query(...), db: str = Query(default="c041")
             return
         visited_edges.add(key)
 
-        info = prd_info.get(prd, ('', None))
-        name_str, knd = info
+        # A 步：只取 knd（来自 edges，不花 SQL）；名字建树后只查这棵树用到的品号
+        knd = prd_info.get(prd, (None, None))[1]
         qty_this = qty_from_parent
         max_depth = max(max_depth, depth)
 
         tree_nodes.append({
             "prd_no":       prd,
-            "name":         name_str,
+            "name":         "",   # A 步：建树后按 all_prds 批量补名字
             "knd":          knd,
             "qty_per_unit": qty_this,
             "depth":        depth,
@@ -1206,10 +1187,25 @@ async def smo_bom_stock(fg_no: str = Query(...), db: str = Query(default="c041")
         return {"fg_no": fg_no, "fg_name": fg_name, "items": [], "tree": [],
                 "node_count": 0, "max_depth": 0, "ready_count": 0, "shortage_count": 0}
 
-    # ── 3. 批量查 V2 库存（GBK bytes 匹配）────────────────────────────
+    # ── 3. 名称 + V2 库存：都只查这棵树用到的品号（all_prds）─────────────
     all_prds = list(set(n["prd_no"] for n in tree_nodes))
     if all_prds:
         ph = ','.join(['%s'] * len(all_prds))
+        # A 步：名字只查这棵树用到的品号（原来查全库 7645 个 = 2.3s）
+        # 逐行 fetchone 避免 fetchall 触发 UTF-8 解码错误
+        cur.execute(f"SELECT PRD_NO, NAME FROM PRDT WITH(NOLOCK) WHERE PRD_NO IN ({ph})", tuple(all_prds))
+        name_map = {}
+        while True:
+            try:
+                row = cur.fetchone()
+                if row is None:
+                    break
+                name_map[row[0]] = g(row[1])
+            except UnicodeDecodeError:
+                # 跳过无法解码的行（该品号名字留空）
+                continue
+        for n in tree_nodes:
+            n["name"] = name_map.get(n["prd_no"], '')
         # 直接 string 查询（V2 PRD_NO 是 VARCHAR，存 ASCII 品号）
         cur.execute(f"""
             SELECT PRD_NO, SUM(QTY_WH) AS stock
