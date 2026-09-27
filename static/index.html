@@ -1403,7 +1403,7 @@ function renderCompletionList() {
     const remain = t.remaining_qty || (total - done);
     const pct = total > 0 ? Math.round(done / total * 100) : 0;
     const bg = i % 2 === 0 ? 'background:var(--card)' : 'background:var(--bg)';
-    return `<tr style="cursor:pointer;${bg};border-bottom:1px solid var(--border)" onclick="openCompletionModal('${t.ic_no}')">
+    return `<tr style="cursor:pointer;${bg};border-bottom:1px solid var(--border)" onclick="openCompletionModal('${e(t.ic_no)}','${e(t.prd_no)}')">
       <td style="padding:8px 10px;font-size:12px;color:var(--sub)">${i+1}</td>
       <td style="padding:8px 10px;font-size:12px;font-weight:600">${fmt(t.ic_no)}</td>
       <td style="padding:8px 10px;font-size:12px">${fmt(t.prd_no)}</td>
@@ -1485,10 +1485,8 @@ function completionRemove(idx) {
 }
 
 // 点击调拨单（材料）→ 查哪些成品用了它，显示材料状态，可加到完工列表
-async function openCompletionModal(icNo) {
-  const t = completionData.find(x => x.ic_no === icNo);
-  if (!t) return;
-  const matPrd = t.prd_no;
+async function openCompletionModal(icNo, prdNo) {
+  const matPrd = prdNo;
   toast('查询成品…');
 
   // 查 bom_match：哪些成品用了这个材料
