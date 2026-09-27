@@ -1551,7 +1551,7 @@ async function openCompletionModal(icNo, prdNo) {
             onclick="event.stopPropagation()"
             style="width:56px;padding:5px 4px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;text-align:center">
           <span style="font-size:10px;color:var(--sub)">件</span>
-          <button style="padding:5px 10px;background:${allOk ? 'var(--green)' : 'var(--orange)'};color:#fff;border:none;border-radius:16px;font-size:12px;font-weight:600;cursor:pointer" onclick="event.stopPropagation();completionAddFgDetail('${escAttr(d.fg_no)}','${escAttr(icNo)}','${escAttr(matPrd)}','fgQty_${idx}')">${allOk ? '+ 加入' : '+ 加入(缺料)'}</button>
+          <button style="padding:5px 10px;background:${allOk ? 'var(--green)' : 'var(--orange)'};color:#fff;border:none;border-radius:16px;font-size:12px;font-weight:600;cursor:pointer" onclick="event.stopPropagation();completionAddFgDetail('${escAttr(d.fg_no)}','${escAttr(icNo)}','${escAttr(matPrd)}','${'fgQty_' + idx}')">${allOk ? '+ 加入' : '+ 加入(缺料)'}</button>
         </div>
       </div>
       <div style="padding:6px 8px;background:var(--bg);border-radius:6px;font-size:10px">
@@ -1681,7 +1681,7 @@ async function openBatchCompletionModal() {
         const ratio = m.qty_per_unit || 0;
         const fgQty = item.fg_qty || 1;
         const need = Math.ceil(ratio * fgQty);
-        const tRow = (m.transfers||[]).find(t => (t.wh1_name||t.wh1||'') === wh);
+        const tRow = (m.transfers||[]).find(t => (t.wh1||t.wh1_name||'') === wh);
         const avail = tRow ? (tRow.available || 0) : 0;
         const ok = avail >= need;
         rows += '<tr style="border-bottom:1px solid #f3f4f6" data-item-idx="' + i + '" data-prd="' + m.prd_no + '">'
@@ -1779,7 +1779,7 @@ async function openBatchCompletionModal() {
       const wh = item.fg_wh || 'G';
       for (const m of (item.bom || [])) {
         const need = Math.ceil((m.qty_per_unit || 0) * fgQty);
-        const tRow = (m.transfers||[]).find(t => (t.wh1_name||t.wh1||'') === wh);
+        const tRow = (m.transfers||[]).find(t => (t.wh1||t.wh1_name||'') === wh);
         const avail = tRow ? (tRow.available || 0) : 0;
         if (avail < need) shortItems.push({prd: m.prd_no, need, avail});
       }
@@ -1806,7 +1806,7 @@ async function openBatchCompletionModal() {
       const wh = item.fg_wh || 'G';
       const bom = item.bom || [];
       const materials = bom.map(m => {
-        const tRow = (m.transfers||[]).find(t => (t.wh1_name||t.wh1||'') === wh);
+        const tRow = (m.transfers||[]).find(t => (t.wh1||t.wh1_name||'') === wh);
         return {
           prd_no: m.prd_no,
           ratio: m.qty_per_unit || 0,
