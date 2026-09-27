@@ -1509,7 +1509,7 @@ async function openCompletionModal(icNo) {
   }
 
   // 按材料匹配过滤：只显示该成品中用到此调拨材料的行
-  const filtered = fgDetails.filter(d => d.materials.some(m => m.transfers.some(x => x.ic_no === icNo)));
+  const filtered = fgDetails.filter(d => d.materials.some(m => m.prd_no === matPrd));
 
   const overlay = document.createElement('div');
   overlay.id = 'cmOverlay';
@@ -1545,6 +1545,7 @@ async function openCompletionModal(icNo) {
         <span style="font-size:16px">${allOk ? '✅' : '⚠️'}</span>
         <div style="flex:1">
           <div style="font-weight:600;font-size:13px">${fmt(d.fg_no)}</div>
+          <div style="font-size:10px;color:var(--sub)">${fmt(d.fg_name||'')}</div>
           <div style="font-size:10px;color:var(--sub)">${d.materials.length} 种材料</div>
         </div>
         <div style="display:flex;align-items:center;gap:4px">
@@ -2311,13 +2312,14 @@ function renderStock(d) {
       if (!area2) return;
       const tree = bd.nested_tree;
       if (!tree) { area2.innerHTML = '<div style="padding:12px;font-size:12px;color:var(--sub)">无 BOM 结构</div>'; return; }
-      // 表头：层级|品号|配比|库存|名称（无全选按钮）
-      const headerHtml = `<div style="display:flex;align-items:center;height:26px;background:var(--bg);border-bottom:2px solid var(--border);padding:0 12px;font-size:11px;color:var(--sub);font-weight:600">
-        <span style="width:28px;flex-shrink:0;text-align:center">层级</span>
-        <span style="width:150px;flex-shrink:0">品号</span>
-        <span style="width:52px;flex-shrink:0;text-align:right">配比</span>
-        <span style="width:72px;flex-shrink:0;text-align:right">库存</span>
-        <span style="flex:1">名称</span>
+      // ponytail: 表头与表体列宽一致，品号列收窄
+      const headerHtml = `<div style="display:flex;align-items:center;height:32px;background:var(--bg);border-bottom:2px solid var(--border);padding:0 12px;font-size:11px;color:var(--sub);font-weight:600">
+        <span style="width:28px;flex-shrink:0"></span>
+        <span style="width:40px;flex-shrink:0;text-align:center">层级</span>
+        <span style="width:130px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">品号</span>
+        <span style="width:60px;flex-shrink:0;text-align:right;margin-right:8px">配比</span>
+        <span style="width:60px;flex-shrink:0;text-align:right;margin-right:8px">库存</span>
+        <span style="flex:1;min-width:0">名称</span>
       </div>`;
       area2.innerHTML = headerHtml + renderTransferBomTree(tree);
     } catch(e) {
@@ -2327,34 +2329,39 @@ function renderStock(d) {
   })();
 }
 
-// BOM 树渲染函数（checkbox 勾选 + 纯展示）
+// BOM树渲染函数（checkbox 勾选 + 纯展示，与 PMC 列表样式一致）
 function renderTransferBomTree(node, depth = 0) {
   const prdNo = node.prd_no;
   const knd = node.knd || '4';
-  const kndLabel = knd === '3' ? '半' : knd === '4' ? '原' : '';
+  const isRoot = depth === 0;
+  // ponytail: 使用与 PMC 一致的层级颜色徽章
+  const depthColors = ['#1d4ed8','#16a34a','#d97706','#ea580c','#dc2626'];
+  const depthColor = depthColors[Math.min(depth, depthColors.length-1)] || '#1d4ed8';
+  const depthLabel = isRoot ? '成' : 'L' + depth;
   const qty = node.qty_per_unit != null ? node.qty_per_unit.toFixed(5) : '1.00000';
   const stock = node.stock != null ? node.stock.toFixed(1) : '—';
   const stockColor = node.is_ready ? 'var(--green)' : 'var(--red)';
   const isSelected = (window.__curStockPrdNo && bomSelectedByProduct[window.__curStockPrdNo] && bomSelectedByProduct[window.__curStockPrdNo][prdNo]) ? true : false;
   const rowKey = prdNo + '|' + depth;
-  const isRoot = depth === 0;
 
   let html = `<div style="
-    display:flex;align-items:center;height:26px;
+    display:flex;align-items:center;height:32px;
     padding:0 12px;
     border-bottom:1px solid var(--border);
     font-size:12px;
-    ${isRoot ? 'font-weight:700;background:#F8F9FF;' : 'font-weight:400;'}
+    ${isRoot ? 'font-weight:700;background:#dbeafe;' : 'font-weight:400;'}
     ${isSelected ? 'background:#EEF6FF;' : ''}
   " data-key="${rowKey}" data-prd="${prdNo}" data-name="${htmlJsonEscape(node.prd_name||'')}" data-qty="${qty}" data-stock="${stock}" data-depth="${depth}" onclick="bomRowClick(this)">
     <span style="width:28px;flex-shrink:0;display:flex;align-items:center;justify-content:center">
       <input type="checkbox" class="bom-row-check" ${isSelected ? 'checked' : ''} onchange="updateBOMSelected()" style="cursor:pointer">
     </span>
-    <span style="width:28px;flex-shrink:0;text-align:center;font-size:11px;color:var(--sub)">${kndLabel}</span>
-    <span style="width:150px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:${isRoot?'700':'500'}">${fmt(prdNo)}</span>
-    <span style="width:52px;flex-shrink:0;text-align:right;color:var(--text)">${qty}</span>
-    <span style="width:72px;flex-shrink:0;text-align:right;font-weight:600;color:${stockColor}">${stock}</span>
-    <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--sub);font-size:11px;margin-left:4px">${fmt(node.prd_name||'')}</span>
+    <span style="width:40px;flex-shrink:0;text-align:center">
+      <span style="font-size:10px;font-weight:700;color:#fff;background:${depthColor};padding:2px 6px;border-radius:10px">${depthLabel}</span>
+    </span>
+    <span style="width:130px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:${isRoot?'700':'500'};margin-right:8px">${fmt(prdNo)}</span>
+    <span style="width:60px;flex-shrink:0;text-align:right;font-variant-numeric:tabular-nums;margin-right:8px">${qty}</span>
+    <span style="width:60px;flex-shrink:0;text-align:right;font-weight:600;color:${stockColor};font-variant-numeric:tabular-nums">${stock}</span>
+    <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--sub);font-size:11px;margin-left:8px">${fmt(node.prd_name||'')}</span>
   </div>`;
 
   if (node.children) {
@@ -2638,7 +2645,8 @@ function renderPMCTree(items, title) {
     var soRemain = r.so_remain || 0;
     var gap = r.gap || 0;
     var bg = isFg ? '#dbeafe' : (gap > 0 ? '#fef9c3' : '');
-    var indent = depth * 14;
+    // ponytail: 取消缩进，全部并排显示
+    var indent = 0;
     var depthColor = depthColors[Math.min(depth, depthColors.length-1)];
     var depthLabel = isFg ? '成' : 'L' + depth;
     var adjBtn = !isFg && depth > 0 ? '<button onclick="pmcOpenAdjust(\'' + escAttr(r.prd_no||'') + '\',\'\',\'mat\',' + matQty + ')" style="padding:3px 6px;background:#f3f4f6;border:1px solid #d1d5db;border-radius:4px;font-size:11px;cursor:pointer;color:#374151">调</button>' : '';
