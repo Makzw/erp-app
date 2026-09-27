@@ -1798,14 +1798,16 @@ async def completion_batch(
 
             # ②a 子件行（WH2=原料仓(源仓)，WH1留空）
             MAT_OUT_COLS = ['IC_NO','IC_DD','IC_KND','PRD_NO','PRD_NAME','QTY','UT','WH2','WH2NAME',
-                            'USR','USABLE','ITM','REM','FLD1','指令单号','客户','单重','净重']
+                            'USR','USABLE','ITM','REM','FLD1','指令单号','DDJH','客户','单重','净重']
             MAT_OUT_VALS = [ic_out, now_str, 23, prd_no, prd_name_gbk, comp_qty, '',
                              twh1, twh1_name,
                              'phone', 1, out_itm + 1, f"完工出库({fg_no}×{fg_qty})",
                              tic,
-                             item_ddjh,     # 指令单号（外发计划）
-                             item_cus,      # 客户
-                             item_dz, item_jz]
+                             item.get("ref") or '',     # 指令单号 ← item.ref
+                             item_ddjh,                  # DDJH ← 外发计划
+                             item_cus,                   # 客户
+                             item.get("dzhw") or 0,     # 单重 ← item.dzhw
+                             item.get("jzhw") or 0]     # 净重 ← item.jzhw
             out_itm += 1
             sql = f"INSERT INTO IC ({','.join(MAT_OUT_COLS)}) VALUES ({','.join(['%s']*len(MAT_OUT_COLS))})"
             cur.execute(sql, MAT_OUT_VALS)
