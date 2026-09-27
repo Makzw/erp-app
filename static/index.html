@@ -1614,7 +1614,8 @@ function bomRecalc(idx) {
   const qty = parseInt(document.getElementById('clQ_' + idx)?.value) || 1;
   completionList[idx].fg_qty = qty;
   const item = completionList[idx];
-  const wh = item.fg_wh || 'G';
+  const wh = (document.getElementById('clWh_' + idx)?.value || item.fg_wh || 'G');
+  completionList[idx].fg_wh = wh;
   // Update each BOM sub-row need/ok cell
   document.querySelectorAll('[data-item-idx="' + idx + '"]').forEach(row => {
     const prdNo = row.getAttribute('data-prd');
@@ -1622,7 +1623,7 @@ function bomRecalc(idx) {
     if (!m) return;
     const ratio = m.qty_per_unit || 0;
     const need = Math.ceil(ratio * qty);
-    const tRow = (m.transfers||[]).find(t => (t.wh1_name||t.wh1||'') === wh);
+    const tRow = (m.transfers||[]).find(t => (t.wh1||t.wh1_name||'') === wh);
     const avail = tRow ? (tRow.available || 0) : 0;
     const ok = avail >= need;
     const needCell = row.querySelector('.bom-need');
@@ -1652,30 +1653,31 @@ async function openBatchCompletionModal() {
     const wh = item.fg_wh || 'G';
 
     // Per-item editable fields row
-    rows += '<tr style="background:#EFF6FF">'
-      + '<td colspan="2" style="padding:6px 10px;font-weight:700;font-size:13px;border-bottom:1px solid #e5e7eb">成\u54c1 ' + (i+1) + '\uff1a' + fmt(item.fg_no) + '</td>'
-      + '<td style="padding:4px 6px;border-bottom:1px solid #e5e7eb"><input type="number" id="clQ_' + i + '" value="' + (item.fg_qty||1) + '" min="1" oninput="bomRecalc(' + i + ')" style="width:52px;padding:3px 4px;border:1.5px solid var(--border);border-radius:4px;font-size:12px;text-align:center"></td>'
-      + '<td colspan="2" style="padding:4px 6px;border-bottom:1px solid #e5e7eb;font-size:11px;color:#888">\u6307\u4ee4\u5355\uff1a<input type="text" id="clRef_' + i + '" value="' + escAttr(item.ref||'') + '" style="width:72px;padding:3px 4px;border:1.5px solid var(--border);border-radius:4px;font-size:11px;margin-left:4px"></td>'
-      + '<td style="padding:4px 6px;border-bottom:1px solid #e5e7eb;font-size:11px;color:#888">\u5ba2\u6237\uff1a<input type="text" id="clCus_' + i + '" value="' + escAttr(item.customer||'') + '" style="width:64px;padding:3px 4px;border:1.5px solid var(--border);border-radius:4px;font-size:11px;margin-left:4px"></td>'
-      + '<td style="padding:4px 6px;border-bottom:1px solid #e5e7eb;font-size:11px;color:#888">\u5916\u53d1\u8ba1\u5212\uff1a<input type="text" id="clDdjh_' + i + '" value="' + escAttr(item.ddjh||'') + '" style="width:60px;padding:3px 4px;border:1.5px solid var(--border);border-radius:4px;font-size:11px;margin-left:4px"></td>'
-      + '<td style="padding:4px 6px;border-bottom:1px solid #e5e7eb;font-size:11px">\u5355\u91cd(g)\uff1a<input type="number" id="clDz_' + i + '" value="' + (item.danzhong||'') + '" step="0.001" style="width:56px;padding:3px 4px;border:1.5px solid var(--border);border-radius:4px;font-size:11px;margin-left:4px"></td>'
-      + '<td style="padding:4px 6px;border-bottom:1px solid #e5e7eb;font-size:11px">\u51c0\u91cd(kg)\uff1a<input type="number" id="clJz_' + i + '" value="' + (item.jingzhong||'') + '" step="0.001" style="width:56px;padding:3px 4px;border:1.5px solid var(--border);border-radius:4px;font-size:11px;margin-left:4px"></td>'
+    rows += '<tr style="background:#EFF6FF;border-bottom:2px solid #2563eb">'
+      + '<td colspan="2" style="padding:8px 10px;font-weight:700;font-size:13px;border-right:2px solid #dbeafe">成\u54c1 ' + (i+1) + '\uff1a' + fmt(item.fg_no) + '</td>'
+      + '<td style="padding:4px 8px;border-right:1px solid #e5e7eb"><span style="font-size:10px;color:#888">数量</span><br><input type="number" id="clQ_' + i + '" value="' + (item.fg_qty||1) + '" min="1" oninput="bomRecalc(' + i + ')" style="width:60px;padding:3px 4px;border:1.5px solid var(--border);border-radius:4px;font-size:12px;text-align:center"></td>'
+      + '<td style="padding:4px 8px;border-right:1px solid #e5e7eb"><span style="font-size:10px;color:#888">仓库</span><br><input type="text" id="clWh_' + i + '" list="cm_wh_in_opts" value="' + escAttr(item.fg_wh||'G') + '" oninput="bomRecalc(' + i + ')" style="width:60px;padding:3px 4px;border:1.5px solid var(--border);border-radius:4px;font-size:12px"></td>'
+      + '<td style="padding:4px 8px;border-right:1px solid #e5e7eb"><span style="font-size:10px;color:#888">指令单</span><br><input type="text" id="clRef_' + i + '" value="' + escAttr(item.ref||'') + '" style="width:80px;padding:3px 4px;border:1.5px solid var(--border);border-radius:4px;font-size:12px"></td>'
+      + '<td style="padding:4px 8px;border-right:1px solid #e5e7eb"><span style="font-size:10px;color:#888">客户</span><br><input type="text" id="clCus_' + i + '" value="' + escAttr(item.customer||'') + '" style="width:70px;padding:3px 4px;border:1.5px solid var(--border);border-radius:4px;font-size:12px"></td>'
+      + '<td style="padding:4px 8px;border-right:1px solid #e5e7eb"><span style="font-size:10px;color:#888">外发计划</span><br><input type="text" id="clDdjh_' + i + '" value="' + escAttr(item.ddjh||'') + '" style="width:72px;padding:3px 4px;border:1.5px solid var(--border);border-radius:4px;font-size:12px"></td>'
+      + '<td style="padding:4px 8px;border-right:1px solid #e5e7eb"><span style="font-size:10px;color:#888">单重(g)</span><br><input type="number" id="clDz_' + i + '" value="' + (item.danzhong||'') + '" step="0.001" style="width:70px;padding:3px 4px;border:1.5px solid var(--border);border-radius:4px;font-size:12px;text-align:right"></td>'
+      + '<td style="padding:4px 8px"><span style="font-size:10px;color:#888">净重(kg)</span><br><input type="number" id="clJz_' + i + '" value="' + (item.jingzhong||'') + '" step="0.001" style="width:70px;padding:3px 4px;border:1.5px solid var(--border);border-radius:4px;font-size:12px;text-align:right"></td>'
       + '</tr>';
 
     // BOM sub-items header
-    rows += '<tr style="background:#F0F4FF">'
-      + '<th style="padding:4px 8px;font-size:10px;color:#888;border-bottom:1px solid #e5e7eb;text-align:left" colspan="2">品号</th>'
-      + '<th style="padding:4px 8px;font-size:10px;color:#888;border-bottom:1px solid #e5e7eb;text-align:right">\u914d\u6bd4</th>'
-      + '<th style="padding:4px 8px;font-size:10px;color:#888;border-bottom:1px solid #e5e7eb;text-align:right">\u00d7\u6570\u91cf</th>'
-      + '<th style="padding:4px 8px;font-size:10px;color:#888;border-bottom:1px solid #e5e7eb;text-align:right">\u9700\u7528\u91cf</th>'
-      + '<th style="padding:4px 8px;font-size:10px;color:#888;border-bottom:1px solid #e5e7eb;text-align:right">\u53ef\u7528\u91cf</th>'
-      + '<th style="padding:4px 8px;font-size:10px;color:#888;border-bottom:1px solid #e5e7eb;text-align:center">\u72b6\u6001</th>'
-      + '<th style="padding:4px 8px;font-size:10px;color:#888;border-bottom:1px solid #e5e7eb;text-align:left">调\u62e8\u5355</th>'
+    rows += '<tr style="background:#dbeafe;font-size:11px">'
+      + '<th style="padding:4px 8px;font-weight:600;color:#1e40af;text-align:left;border-bottom:1px solid #bfdbfe;border-right:1px solid #e5e7eb" colspan="2">品号</th>'
+      + '<th style="padding:4px 8px;font-weight:600;color:#1e40af;text-align:right;border-bottom:1px solid #bfdbfe;border-right:1px solid #e5e7eb">配比</th>'
+      + '<th style="padding:4px 8px;font-weight:600;color:#1e40af;text-align:right;border-bottom:1px solid #bfdbfe;border-right:1px solid #e5e7eb">×数量</th>'
+      + '<th style="padding:4px 8px;font-weight:600;color:#1e40af;text-align:right;border-bottom:1px solid #bfdbfe;border-right:1px solid #e5e7eb">需用量</th>'
+      + '<th style="padding:4px 8px;font-weight:600;color:#1e40af;text-align:right;border-bottom:1px solid #bfdbfe;border-right:1px solid #e5e7eb">可用量</th>'
+      + '<th style="padding:4px 8px;font-weight:600;color:#1e40af;text-align:center;border-bottom:1px solid #bfdbfe;border-right:1px solid #e5e7eb">状态</th>'
+      + '<th style="padding:4px 8px;font-weight:600;color:#1e40af;text-align:left;border-bottom:1px solid #bfdbfe">调拨单</th>'
       + '</tr>';
 
     const bom = item.bom || [];
     if (!bom.length) {
-      rows += '<tr><td colspan="8" style="padding:6px 12px;font-size:11px;color:#888;border-bottom:1px solid #f3f4f6">\u65e0BOM\u6570\u636e</td></tr>';
+      rows += '<tr><td colspan="8" style="padding:8px 12px;font-size:12px;color:#9ca3af;font-style:italic">无 BOM 数据</td></tr>';
     } else {
       for (const m of bom) {
         const ratio = m.qty_per_unit || 0;
@@ -1684,14 +1686,14 @@ async function openBatchCompletionModal() {
         const tRow = (m.transfers||[]).find(t => (t.wh1||t.wh1_name||'') === wh);
         const avail = tRow ? (tRow.available || 0) : 0;
         const ok = avail >= need;
-        rows += '<tr style="border-bottom:1px solid #f3f4f6" data-item-idx="' + i + '" data-prd="' + m.prd_no + '">'
-          + '<td colspan="2" style="padding:4px 8px;font-size:11px">' + fmt(m.prd_no) + '</td>'
-          + '<td style="padding:4px 8px;font-size:11px;text-align:right;font-weight:600">' + ratio + '</td>'
-          + '<td style="padding:4px 8px;font-size:11px;text-align:right">\u00d7' + fgQty + '</td>'
-          + '<td style="padding:4px 8px;font-size:11px;text-align:right;font-weight:700;color:#2563eb" class="bom-need">' + need + '</td>'
-          + '<td style="padding:4px 8px;font-size:11px;text-align:right">' + avail + '</td>'
-          + '<td class="bom-ok" style="padding:4px 8px;font-size:11px;text-align:center;font-weight:700;color:' + (ok?'#16a34a':'#dc2626') + '">' + (ok?'\u2705':'\u274c') + '</td>'
-          + '<td style="padding:4px 8px;font-size:10px;color:#888">' + (tRow ? (tRow.ic_no||'').substring(0,10) : '\u2014') + '</td>'
+        rows += '<tr style="border-bottom:1px solid #f3f4f6;background:#fff" data-item-idx="' + i + '" data-prd="' + m.prd_no + '">'
+          + '<td colspan="2" style="padding:5px 8px;font-size:12px;border-right:1px solid #e5e7eb">' + fmt(m.prd_no) + '</td>'
+          + '<td style="padding:5px 8px;font-size:12px;text-align:right;font-weight:600;border-right:1px solid #e5e7eb">' + ratio + '</td>'
+          + '<td style="padding:5px 8px;font-size:12px;text-align:right;border-right:1px solid #e5e7eb">×' + fgQty + '</td>'
+          + '<td style="padding:5px 8px;font-size:12px;text-align:right;font-weight:700;color:#2563eb;border-right:1px solid #e5e7eb" class="bom-need">' + need + '</td>'
+          + '<td style="padding:5px 8px;font-size:12px;text-align:right;border-right:1px solid #e5e7eb">' + avail + '</td>'
+          + '<td class="bom-ok" style="padding:5px 8px;font-size:12px;text-align:center;font-weight:700;color:' + (ok?'#16a34a':'#dc2626') + ';border-right:1px solid #e5e7eb">' + (ok?'✅':'❌') + '</td>'
+          + '<td style="padding:5px 8px;font-size:11px;color:#6b7280">' + (tRow ? (tRow.ic_no||'').substring(0,10) : '—') + '</td>'
           + '</tr>';
       }
     }
@@ -1702,7 +1704,7 @@ async function openBatchCompletionModal() {
   overlay.id = 'cmOverlay';
   overlay.style.cssText = 'position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:16px;font-family:inherit';
   overlay.innerHTML = ''
-    + '<div style="background:#fff;border-radius:14px;width:100%;max-width:800px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.25)">'
+    + '<div style="background:#fff;border-radius:14px;width:100%;max-width:1100px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.25)">'
     + '<div style="padding:14px 20px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
     + '<div style="flex:1;font-size:15px;font-weight:700">\u6279\u91cf\u5b8c\u5de5\u786e\u8ba4 \u00b7 ' + completionList.length + ' \u9879\u6210\u54c1</div>'
     + '<label style="font-size:12px;color:#6b7280;display:flex;align-items:center;gap:6px">'
@@ -1714,7 +1716,7 @@ async function openBatchCompletionModal() {
     + '</div>'
     + '<div style="flex:1;overflow-y:auto;padding:10px 0">'
     + '<div style="padding:0 16px;overflow-x:auto">'
-    + '<table style="width:100%;min-width:700px;border-collapse:collapse;font-size:11px">'
+    + '<table style="width:100%;min-width:980px;border-collapse:collapse;font-size:12px">'
     + '<tbody>' + rows + '</tbody></table></div>'
     + '<div style="padding:12px 16px 4px;font-size:12px;font-weight:600">\u8fd0\u8f93\u5de5\u5177</div>'
     + '<div id="cmToolArea" style="padding:4px 16px 6px"></div>'
@@ -1765,6 +1767,7 @@ async function openBatchCompletionModal() {
     for (let i = 0; i < completionList.length; i++) {
       const q = parseInt(document.getElementById('clQ_' + i)?.value) || 1;
       completionList[i].fg_qty = q;
+      completionList[i].fg_wh = document.getElementById('clWh_' + i)?.value || completionList[i].fg_wh || 'G';
       completionList[i].ref = document.getElementById('clRef_' + i)?.value || '';
       completionList[i].customer = document.getElementById('clCus_' + i)?.value || '';
       completionList[i].ddjh = document.getElementById('clDdjh_' + i)?.value || '';
@@ -2907,6 +2910,23 @@ async function openTransferModal(prd_no, wh, wh_name, qty) {
             style="display:block;width:100%;margin-top:4px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card)">
           <datalist id="tf_wh2_opts">${whOpts}</datalist>
         </label>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+          <label style="font-size:12px;color:var(--sub)">
+            客户代号
+            <input type="text" id="tf_cus" placeholder="客户代号"
+              style="display:block;width:100%;margin-top:4px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card)">
+          </label>
+          <label style="font-size:12px;color:var(--sub)">
+            指令单号
+            <input type="text" id="tf_ref" placeholder="指令单号"
+              style="display:block;width:100%;margin-top:4px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card)">
+          </label>
+          <label style="font-size:12px;color:var(--sub)">
+            单重(g)
+            <input type="number" id="tf_dz" step="0.001" min="0" placeholder="0"
+              style="display:block;width:100%;margin-top:4px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card)">
+          </label>
+        </div>
         <label style="font-size:12px;color:var(--sub)">
           调拨数量 <span style="color:red">*</span>
           <input type="number" id="tf_qty" value="${qty > 0 ? qty : ''}" min="0" step="1"
@@ -2914,25 +2934,8 @@ async function openTransferModal(prd_no, wh, wh_name, qty) {
         </label>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
           <label style="font-size:12px;color:var(--sub)">
-            指令单号
-            <input type="text" id="tf_ref" placeholder="指令单号"
-              style="display:block;width:100%;margin-top:4px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card)">
-          </label>
-          <label style="font-size:12px;color:var(--sub)">
             外发计划号
             <input type="text" id="tf_ddjh" placeholder="外发计划"
-              style="display:block;width:100%;margin-top:4px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card)">
-          </label>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-          <label style="font-size:12px;color:var(--sub)">
-            客户代号
-            <input type="text" id="tf_cus" placeholder="客户代号"
-              style="display:block;width:100%;margin-top:4px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card)">
-          </label>
-          <label style="font-size:12px;color:var(--sub)">
-            单重(g)
-            <input type="number" id="tf_dz" step="0.001" min="0" placeholder="0"
               style="display:block;width:100%;margin-top:4px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card)">
           </label>
         </div>
@@ -3158,10 +3161,7 @@ function renderBatchTable(allItems, allWhs, whOpts) {
   if (!allItems.length) { body.innerHTML = '<div style="padding:20px;text-align:center;color:var(--sub)">无数据</div>'; return; }
   let html = '<table style="width:100%;border-collapse:collapse;font-size:12px">';
   html += '<tr style="background:var(--bg)">';
-  ['品号','品名','数量','FROM仓'].forEach(h => {
-    html += `<th style="padding:8px 5px;text-align:left;font-weight:600;border-bottom:1px solid var(--border);white-space:nowrap">${h}</th>`;
-  });
-  ['指令单号','外发计划号','客户代号','单重(g)','净重(kg)','备注'].forEach(h => {
+  ['品号','品名','FROM仓','客户代号','指令单号','单重(g)','数量','净重(kg)','外发计划号','备注'].forEach(h => {
     html += `<th style="padding:8px 5px;text-align:left;font-weight:600;border-bottom:1px solid var(--border);white-space:nowrap">${h}</th>`;
   });
   html += '</tr>';
@@ -3176,14 +3176,14 @@ function renderBatchTable(allItems, allWhs, whOpts) {
     const rem = item.rem || item.REM || item.备注 || '';
     html += `<tr style="border-bottom:1px solid var(--border)">`;
     html += `<td style="padding:6px 5px;font-weight:600">${fmt(prdNo)}</td>`;
-    html += `<td style="padding:6px 5px;color:var(--sub);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${fmt(prdName)}</td>`;
-    html += `<td style="padding:6px 5px"><input type="number" class="batch-qty" data-idx="${idx}" value="${qty}" min="0" step="1" style="width:60px;padding:3px 5px;border:1px solid var(--border);border-radius:4px;font-size:11px;font-family:inherit;background:var(--card)"></td>`;
+    html += `<td style="padding:6px 5px;color:var(--sub);font-size:11px;max-width:200px;word-break:break-word;vertical-align:top">${fmt(prdName)}</td>`;
     html += `<td style="padding:6px 5px"><select class="batch-wh-from" data-idx="${idx}" style="padding:4px 4px;border:1px solid var(--border);border-radius:4px;font-size:11px;background:var(--card)">${whOpts}</select></td>`;
-    html += `<td style="padding:6px 5px"><input type="text" class="batch-ref" data-idx="${idx}" value="${escAttr(ref)}" placeholder="指令单号" style="width:70px;padding:3px 5px;border:1px solid var(--border);border-radius:4px;font-size:11px;font-family:inherit;background:var(--card)"></td>`;
-    html += `<td style="padding:6px 5px"><input type="text" class="batch-ddjh" data-idx="${idx}" value="${escAttr(ddjh)}" placeholder="外发" style="width:60px;padding:3px 5px;border:1px solid var(--border);border-radius:4px;font-size:11px;font-family:inherit;background:var(--card)"></td>`;
     html += `<td style="padding:6px 5px"><input type="text" class="batch-cus" data-idx="${idx}" value="${escAttr(cus)}" placeholder="客户" style="width:60px;padding:3px 5px;border:1px solid var(--border);border-radius:4px;font-size:11px;font-family:inherit;background:var(--card)"></td>`;
+    html += `<td style="padding:6px 5px"><input type="text" class="batch-ref" data-idx="${idx}" value="${escAttr(ref)}" placeholder="指令单号" style="width:70px;padding:3px 5px;border:1px solid var(--border);border-radius:4px;font-size:11px;font-family:inherit;background:var(--card)"></td>`;
     html += `<td style="padding:6px 5px"><input type="number" class="batch-dz" data-idx="${idx}" value="${dz}" step="0.001" min="0" placeholder="0" style="width:55px;padding:3px 5px;border:1px solid var(--border);border-radius:4px;font-size:11px;font-family:inherit;background:var(--card)" oninput="calcBatchJZ(this)"></td>`;
+    html += `<td style="padding:6px 5px"><input type="number" class="batch-qty" data-idx="${idx}" value="${qty}" min="0" step="1" style="width:60px;padding:3px 5px;border:1px solid var(--border);border-radius:4px;font-size:11px;font-family:inherit;background:var(--card)"></td>`;
     html += `<td style="padding:6px 5px"><span class="batch-jz" data-idx="${idx}" style="font-size:11px;color:var(--text);min-width:50px;display:inline-block">—</span></td>`;
+    html += `<td style="padding:6px 5px"><input type="text" class="batch-ddjh" data-idx="${idx}" value="${escAttr(ddjh)}" placeholder="外发" style="width:60px;padding:3px 5px;border:1px solid var(--border);border-radius:4px;font-size:11px;font-family:inherit;background:var(--card)"></td>`;
     html += `<td style="padding:6px 5px"><input type="text" class="batch-rem" data-idx="${idx}" value="${escAttr(rem)}" placeholder="备注" style="width:70px;padding:3px 5px;border:1px solid var(--border);border-radius:4px;font-size:11px;font-family:inherit;background:var(--card)"></td>`;
     html += '</tr>';
   });
