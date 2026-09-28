@@ -2256,13 +2256,22 @@ async function pmcOpenAdjust(prdNo, prdName, type, totalQty) {
         '<b>' + (m[0]||'') + '</b> ' + (m[1]||'') + ': <b>' + (m[2]||0) + '</b></div>';
     }).join('') + '</div>' +
     '<div style="margin-bottom:12px"><label style="font-size:13px;color:var(--sub);display:block;margin-bottom:4px">\u76ee\u6807\u4ed3\u5e93</label>' +
-    '<select id="pmcAdjWhSelect" style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:6px;font-size:13px">' + whOpts + '</select></div>' +
+    '<select id="pmcAdjWhSelect" onchange="pmcAdjWhChange()" style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:6px;font-size:13px">' + whOpts + '</select></div>' +
     '<div style="margin-bottom:14px"><label style="font-size:13px;color:var(--sub);display:block;margin-bottom:4px">调\u6574\u540e\u6570\u91cf</label>' +
     '<input id="pmcAdjQtyInput" type="number" step="0.01" min="0" value="' + (matDetail[0] ? matDetail[0][2] : totalQty) + '" style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;box-sizing:border-box"></div>' +
     '<div style="display:flex;gap:8px"><button onclick="document.getElementById(\'pmcAdjOverlay\').remove()" style="flex:1;padding:10px;background:#6b7280;color:#fff;border:none;border-radius:6px;cursor:pointer">\u53d6\u6d88</button>' +
     '<button onclick="doPmcAdjust(\'' + escAttr(prdNo) + '\')" style="flex:1;padding:10px;background:#2563eb;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600">\u786e\u8ba4调\u6574</button></div>' +
     '</div>';
   document.body.appendChild(overlay);
+  window.__pmcAdjMat = matDetail;   // 供 doPmcAdjust 取所选仓库的「当前库存」
+}
+
+// 切换目标仓库 → 数量框重置为该仓当前库存（避免把 A 仓的数量当作 B 仓的调整后数量提交）
+function pmcAdjWhChange() {
+  var wh = $id('pmcAdjWhSelect').value;
+  var m = (window.__pmcAdjMat || []).find(function(x) { return x[0] === wh; });
+  var inp = $id('pmcAdjQtyInput');
+  if (inp) inp.value = (m ? (m[2] || 0) : 0);
 }
 
 // PMC 确认调整
@@ -2270,17 +2279,21 @@ async function doPmcAdjust(prdNo) {
   var wh = $id('pmcAdjWhSelect').value;
   var qty = parseFloat($id('pmcAdjQtyInput').value) || 0;
   if (!wh || qty < 0) { alert('\u8bf7\u586b\u5199\u4ed3\u5e93\u548c\u6570\u91cf'); return; }
+  var m = (window.__pmcAdjMat || []).find(function(x) { return x[0] === wh; });
+  var currentQty = m ? (parseFloat(m[2]) || 0) : 0;   // 后端契约要 current_qty，否则它按 0 算 → 判定"无需调整"
   try {
-    await api(BASE + '/pmc/adjust_stock', {
+    var res = await api(BASE + '/pmc/adjust_stock', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({prd_no: prdNo, wh: wh, qty: qty})
+      body: JSON.stringify({prd_no: prdNo, wh: wh, input_qty: qty, current_qty: currentQty})
     });
+    if (res && res.error) { alert(res.error); return; }
+    if (res && res.ok) toast('\u2705 ' + (res.msg || ('\u5df2\u8c03\u6574 ' + prdNo + ' ' + wh + ' \u2192 ' + qty)) + (res.ic_no ? ' ' + res.ic_no : ''));
     document.getElementById('pmcAdjOverlay').remove();
     // 刷新当前 BOM 树
     var p = window.__pmcPending;
     if (p) { pmcAnalyzeRow(p.soNoItm, p.prdNo, p.qty); }
-  } catch(e) { alert('调\u6574\u5931\u8d25: ' + e.message); }
+  } catch(e) { alert('\u8c03\u6574\u5931\u8d25: ' + e.message); }
 }
 
 
