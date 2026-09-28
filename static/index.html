@@ -2429,6 +2429,12 @@ window.switchInMode = function(mode, prd_no, wh, wh_name, qty) {
   $id('in_dz').addEventListener('input', calcInJZ);
 }
 
+// 单重(g) × 数量 ÷ 1000 = 净重(kg)：三处 payload 共用一处算法，避免各写各的精度/兜底
+function calcJZ(q, d) {
+  var n = (parseFloat(q) || 0) * (parseFloat(d) || 0) / 1000;
+  return n > 0 ? +n.toFixed(3) : 0;
+}
+
 function calcInJZ() {
   var q = parseFloat($id('in_qty').value) || 0;
   var d = parseFloat($id('in_dz').value) || 0;
@@ -2474,7 +2480,7 @@ async function doInOut(prd_no, wh, mode) {
     ddjh: ($id('in_ddjh')||{value:''}).value.trim(),
     sup_name: ($id('in_sup')||{value:''}).value.trim(),
     danzhong: parseFloat(($id('in_dz')||{value:'0'}).value) || 0,
-    jingzhong: 0,
+    jingzhong: calcJZ(inQty, ($id('in_dz')||{value:'0'}).value),   // P0：原为写死的 0
   };
 
   const modal = $id('inModal');
@@ -2646,7 +2652,7 @@ async function doTransfer(prd_no, wh, wh_name, qty) {
     ddjh: ($id('tf_ddjh')||{value:''}).value.trim(),
     cus_no: ($id('tf_cus')||{value:''}).value.trim(),
     danzhong: parseFloat(($id('tf_dz')||{value:'0'}).value) || 0,
-    jingzhong: 0,
+    jingzhong: calcJZ(tfQty, ($id('tf_dz')||{value:'0'}).value),   // 原为写死的 0（该弹窗当前无入口，删/补入口待定）
   }];
   const modal = $id('transferModal');
   const btn = modal ? modal.querySelector('button:last-child') : null;
@@ -2863,7 +2869,7 @@ async function bomBatchConfirm() {
       ddjh: ddjhs[i] ? ddjhs[i].value.trim() : '',
       cus_no: cuss[i] ? cuss[i].value.trim() : '',
       danzhong: dz,
-      jingzhong: dz,
+      jingzhong: calcJZ(qty, dz),   // P0：原为 dz（把单重当净重写进账）
       rem: rems[i] ? rems[i].value.trim() : '',
     });
   });
