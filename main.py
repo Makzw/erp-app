@@ -624,6 +624,16 @@ async def stock_out(
     body: [{"prd_no": "...", "wh": "仓库代码", "qty": 数量, "rem": "备注"}]
     """
     db_name = "T041" if db.lower() == "t041" else "C041"
+    # 数量防御：qty<=0 会写出 QTY=0 的幽灵账（前端已拦，这里做后端兜底）。
+    # 必须先全量校验、再写任何一行 —— /api/stock/in 的 commit 在循环内，中途 return 会留下"已提交的部分行"
+    for _vi, _vit in enumerate(items, 1):
+        try:
+            _vq = float(_vit.get("qty") or 0)
+        except (TypeError, ValueError):
+            _vq = 0
+        if _vq <= 0:
+            return {"error": "第 %d 行数量必须大于 0（%s）" % (_vi, _vit.get("prd_no", ""))}
+
     conn = get_conn(db=db_name)
     cur = conn.cursor()
 
@@ -694,6 +704,16 @@ async def stock_in(
     body: [{"prd_no": "...", "wh": "仓库代码", "qty": 数量, "rem": "备注"}]
     """
     db_name = "T041" if db.lower() == "t041" else "C041"
+    # 数量防御：qty<=0 会写出 QTY=0 的幽灵账（前端已拦，这里做后端兜底）。
+    # 必须先全量校验、再写任何一行 —— /api/stock/in 的 commit 在循环内，中途 return 会留下"已提交的部分行"
+    for _vi, _vit in enumerate(items, 1):
+        try:
+            _vq = float(_vit.get("qty") or 0)
+        except (TypeError, ValueError):
+            _vq = 0
+        if _vq <= 0:
+            return {"error": "第 %d 行数量必须大于 0（%s）" % (_vi, _vit.get("prd_no", ""))}
+
     conn = get_conn(db=db_name)
     cur = conn.cursor()
 
@@ -767,6 +787,16 @@ async def stock_transfer(
     FLD1 = ic_no (完工单关联用)
     """
     db_name = "T041" if db.lower() == "t041" else "C041"
+    # 数量防御：qty<=0 会写出 QTY=0 的幽灵账（前端已拦，这里做后端兜底）。
+    # 必须先全量校验、再写任何一行 —— /api/stock/in 的 commit 在循环内，中途 return 会留下"已提交的部分行"
+    for _vi, _vit in enumerate(items, 1):
+        try:
+            _vq = float(_vit.get("qty") or 0)
+        except (TypeError, ValueError):
+            _vq = 0
+        if _vq <= 0:
+            return {"error": "第 %d 行数量必须大于 0（%s）" % (_vi, _vit.get("prd_no", ""))}
+
     conn = get_conn(db=db_name)
     cur = conn.cursor()
     today = datetime.now().strftime("%y%m")
@@ -1702,6 +1732,15 @@ async def completion_batch(
     items = payload.get("items", [])
     fg_wh = payload.get("fg_wh", "G")
     tool_rows = payload.get("tool_rows", [])
+    # 数量防御：完工数量为空/0 时原来静默按 1 完工（前端 B1/B2/B3 已拦，这里做后端兜底）
+    for _it in items:
+        try:
+            _vq = int(_it.get("qty") or 0)
+        except (TypeError, ValueError):
+            _vq = 0
+        if _vq <= 0:
+            return {"error": "成品 %s 的完工数量不能为空" % _it.get("fg_no", "")}
+
     conn = get_conn(db=db_name)
     if not items:
         return {"error": "缺少完工成品"}
@@ -1740,7 +1779,7 @@ async def completion_batch(
         fg_no = item.get("fg_no", "")
         if not fg_no:
             continue
-        fg_qty = int(item.get("qty") or 1)
+        fg_qty = int(item.get("qty") or 0)  # 数量必填（已全量校验），不再静默按 1
         dzhw = float(item.get("danzhong") or 0)
         jzhw = float(item.get("jingzhong") or 0)
         cur.execute("SELECT NAME, ISNULL(UT,'') FROM PRDT WITH(NOLOCK) WHERE PRD_NO=%s", (fg_no,))
@@ -1783,7 +1822,7 @@ async def completion_batch(
         fg_no = item.get("fg_no", "")
         if not fg_no:
             continue
-        fg_qty = int(item.get("qty") or 1)
+        fg_qty = int(item.get("qty") or 0)  # 数量必填（已全量校验），不再静默按 1
         # 读 item 层的字段（前端从调拨单带过来的）
         item_ddjh  = item.get("ddjh", "")
         item_cus   = item.get("customer", "")
