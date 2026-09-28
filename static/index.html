@@ -1436,13 +1436,13 @@ async function openBatchCompletionModal() {
     // Per-item editable fields row
     rows += '<tr style="background:#EFF6FF;border-bottom:2px solid #2563eb">'
       + '<td colspan="2" style="padding:8px 10px;font-weight:700;font-size:13px;border-right:2px solid #dbeafe">成\u54c1 ' + (i+1) + '\uff1a' + fmt(item.fg_no) + '</td>'
-      + '<td style="padding:4px 8px;border-right:1px solid #e5e7eb"><span style="font-size:11px;color:#888">数量</span><br><input type="number" id="clQ_' + i + '" value="' + (item.fg_qty || '') + '" min="1" oninput="bomRecalc(' + i + ')" style="width:110px;padding:6px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:13px;text-align:center"></td>'
+      + '<td style="padding:4px 8px;border-right:1px solid #e5e7eb"><span style="font-size:11px;color:#888">数量</span><br><input type="number" id="clQ_' + i + '" value="' + (item.fg_qty || '') + '" min="1" oninput="bomRecalc(' + i + ');calcCompJZ(' + i + ')" style="width:110px;padding:6px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:13px;text-align:center"></td>'
       + '<td style="padding:4px 8px;border-right:1px solid #e5e7eb"><span style="font-size:11px;color:#888">仓库</span><br><input type="text" id="clWh_' + i + '" list="cm_wh_in_opts" value="' + escAttr(item.fg_wh||'G') + '" oninput="bomRecalc(' + i + ')" style="width:110px;padding:6px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:13px"></td>'
       + '<td style="padding:4px 8px;border-right:1px solid #e5e7eb"><span style="font-size:11px;color:#888">指令单</span><br><input type="text" id="clRef_' + i + '" value="' + escAttr(item.ref||'') + '" style="width:130px;padding:6px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:13px"></td>'
       + '<td style="padding:4px 8px;border-right:1px solid #e5e7eb"><span style="font-size:11px;color:#888">客户</span><br><input type="text" id="clCus_' + i + '" value="' + escAttr(item.customer||'') + '" style="width:110px;padding:6px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:13px"></td>'
       + '<td style="padding:4px 8px;border-right:1px solid #e5e7eb"><span style="font-size:11px;color:#888">外发计划</span><br><input type="text" id="clDdjh_' + i + '" value="' + escAttr(item.ddjh||'') + '" style="width:120px;padding:6px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:13px"></td>'
-      + '<td style="padding:4px 8px;border-right:1px solid #e5e7eb"><span style="font-size:11px;color:#888">单重(g)</span><br><input type="number" id="clDz_' + i + '" value="' + (item.danzhong||'') + '" step="0.001" style="width:110px;padding:6px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:13px;text-align:right"></td>'
-      + '<td style="padding:4px 8px"><span style="font-size:11px;color:#888">净重(kg)</span><br><input type="number" id="clJz_' + i + '" value="' + (item.jingzhong||'') + '" step="0.001" style="width:110px;padding:6px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:13px;text-align:right"></td>'
+      + '<td style="padding:4px 8px;border-right:1px solid #e5e7eb"><span style="font-size:11px;color:#888">单重(g)</span><br><input type="number" id="clDz_' + i + '" value="' + (item.danzhong||'') + '" step="0.001" oninput="calcCompJZ(' + i + ')" style="width:110px;padding:6px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:13px;text-align:right"></td>'
+      + '<td style="padding:4px 8px"><span style="font-size:11px;color:#888">净重(kg)</span><br><span id="clJz_' + i + '" style="display:inline-block;min-width:110px;padding:6px 8px;font-size:13px;text-align:right;color:var(--text)">' + fmtJZ(item.fg_qty, item.danzhong) + '</span></td>'
       + '</tr>';
 
     // BOM sub-items header
@@ -1564,7 +1564,8 @@ async function openBatchCompletionModal() {
       completionList[i].customer = document.getElementById('clCus_' + i)?.value || '';
       completionList[i].ddjh = document.getElementById('clDdjh_' + i)?.value || '';
       completionList[i].danzhong = parseFloat(document.getElementById('clDz_' + i)?.value) || 0;
-      completionList[i].jingzhong = parseFloat(document.getElementById('clJz_' + i)?.value) || 0;
+      // 净重只读：按同一公式推导（不再读 DOM，显示与提交同源）
+      completionList[i].jingzhong = calcJZ(completionList[i].fg_qty, completionList[i].danzhong);
     }
 
     // 2. Check material stock
@@ -2435,6 +2436,20 @@ function calcJZ(q, d) {
   return n > 0 ? +n.toFixed(3) : 0;
 }
 
+// 净重显示：算不出（单重或数量为空）→ "—"；否则 "0.092 kg"（与批量调拨/盘点/单笔调拨同一风格）
+function fmtJZ(q, d) {
+  var n = calcJZ(q, d);
+  return n > 0 ? n.toFixed(3) + ' kg' : '—';
+}
+
+// 批量完工弹窗：数量/单重任一变动 → 重算该行净重（净重只读，不可手改，避免漏填/填错）
+function calcCompJZ(i) {
+  var q = parseFloat(($id('clQ_' + i) || {value:''}).value) || 0;
+  var d = parseFloat(($id('clDz_' + i) || {value:''}).value) || 0;
+  var el = $id('clJz_' + i);
+  if (el) el.textContent = fmtJZ(q, d);
+}
+
 function calcInJZ() {
   var q = parseFloat($id('in_qty').value) || 0;
   var d = parseFloat($id('in_dz').value) || 0;
@@ -2563,7 +2578,7 @@ async function openTransferModal(prd_no, wh, wh_name, qty) {
         </div>
         <label style="font-size:12px;color:var(--sub)">
           调拨数量 <span style="color:red">*</span>
-          <input type="number" id="tf_qty" value="${qty > 0 ? qty : ''}" min="0" step="1"
+          <input type="number" id="tf_qty" value="" min="0" step="1"
             style="display:block;width:100%;margin-top:4px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card)">
         </label>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
