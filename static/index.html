@@ -1147,8 +1147,8 @@ function renderCompletionList() {
     <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#EFF6FF;border-radius:8px;font-size:12px;border:1px solid #BFDBFE">
       <span style="color:var(--sub);font-size:11px">${idx+1}</span>
       <span style="font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${fmt(item.fg_no)}</span>
-      <input type="number" value="${item.fg_qty||1}" min="1" id="clQty_${idx}"
-        onchange="completionList[${idx}].fg_qty=parseInt(this.value)||1;updateBatchBtnCount()"
+      <input type="number" value="${item.fg_qty || ''}" min="1" id="clQty_${idx}"
+        onchange="completionList[${idx}].fg_qty=parseInt(this.value)||0;updateBatchBtnCount()"
         style="width:52px;padding:3px 4px;border:1px solid var(--border);border-radius:4px;font-size:11px;text-align:center">
       <span style="font-size:10px;color:var(--sub)">\u4ef6</span>
       <span style="font-size:10px;color:var(--sub);max-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escAttr(item.ref||'')}">${fmt(item.ref||'\u65e0\u6307\u4ee4\u5355')}</span>
@@ -1317,7 +1317,7 @@ async function openCompletionModal(icNo, prdNo) {
           <div style="font-size:10px;color:var(--sub)">${d.materials.length} 种材料</div>
         </div>
         <div style="display:flex;align-items:center;gap:4px">
-          <input type="number" id="fgQty_${idx}" value="1" min="1" step="1"
+          <input type="number" id="fgQty_${idx}" value="" min="1" step="1"
             onclick="event.stopPropagation()"
             style="width:56px;padding:5px 4px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;text-align:center">
           <span style="font-size:10px;color:var(--sub)">件</span>
@@ -1343,7 +1343,9 @@ async function openCompletionModal(icNo, prdNo) {
 // 加入完工列表：查 BOM materials + 调拨单字段，再暂存
 async function completionAddFgDetail(fgNo, icNo, prdNo, qtyInputId) {
   if (completionList.some(x => x.fg_no === fgNo)) { toast('\u26a0\ufe0f \u5df2\u6dfb\u52a0'); return; }
-  const fgQty = parseInt(document.getElementById(qtyInputId)?.value) || 1;
+  const _qEl = document.getElementById(qtyInputId);
+  const fgQty = parseInt(_qEl && _qEl.value);
+  if (!fgQty || fgQty <= 0) { toast('⚠️ 请填写完工数量'); if (_qEl) _qEl.focus(); return; }
   // 从调拨单获取指令单号/客户/单重/净重（必须同时匹配 ic_no 和 prd_no）
   const tRec = completionData.find(x => x.ic_no === icNo && x.prd_no === prdNo) || {};
   const ref = tRec.ref || '';
@@ -1381,7 +1383,8 @@ async function completionAddFgDetail(fgNo, icNo, prdNo, qtyInputId) {
 }
 // 实时重算弹窗内某项成品的 BOM 需用量
 function bomRecalc(idx) {
-  const qty = parseInt(document.getElementById('clQ_' + idx)?.value) || 1;
+  const _qi = parseInt(document.getElementById('clQ_' + idx)?.value);
+  const qty = isNaN(_qi) ? 0 : _qi;   // 空 = 未填（不再静默按 1）
   completionList[idx].fg_qty = qty;
   const item = completionList[idx];
   const wh = (document.getElementById('clWh_' + idx)?.value || item.fg_wh || 'G');
@@ -1398,10 +1401,15 @@ function bomRecalc(idx) {
     const ok = avail >= need;
     const needCell = row.querySelector('.bom-need');
     const okCell = row.querySelector('.bom-ok');
-    if (needCell) needCell.textContent = need;
+    if (needCell) needCell.textContent = qty > 0 ? need : '—';
     if (okCell) {
-      okCell.textContent = ok ? '\u2705' : '\u274c';
-      okCell.style.color = ok ? '#16a34a' : '#dc2626';
+      if (qty > 0) {   // 数量未填 → 不显示 ✅（否则 need=0 全绿会被误读成"料都够"）
+        okCell.textContent = ok ? '\u2705' : '\u274c';
+        okCell.style.color = ok ? '#16a34a' : '#dc2626';
+      } else {
+        okCell.textContent = '—';
+        okCell.style.color = '#9ca3af';
+      }
     }
   });
 }
@@ -1425,7 +1433,7 @@ async function openBatchCompletionModal() {
     // Per-item editable fields row
     rows += '<tr style="background:#EFF6FF;border-bottom:2px solid #2563eb">'
       + '<td colspan="2" style="padding:8px 10px;font-weight:700;font-size:13px;border-right:2px solid #dbeafe">成\u54c1 ' + (i+1) + '\uff1a' + fmt(item.fg_no) + '</td>'
-      + '<td style="padding:4px 8px;border-right:1px solid #e5e7eb"><span style="font-size:11px;color:#888">数量</span><br><input type="number" id="clQ_' + i + '" value="' + (item.fg_qty||1) + '" min="1" oninput="bomRecalc(' + i + ')" style="width:110px;padding:6px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:13px;text-align:center"></td>'
+      + '<td style="padding:4px 8px;border-right:1px solid #e5e7eb"><span style="font-size:11px;color:#888">数量</span><br><input type="number" id="clQ_' + i + '" value="' + (item.fg_qty || '') + '" min="1" oninput="bomRecalc(' + i + ')" style="width:110px;padding:6px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:13px;text-align:center"></td>'
       + '<td style="padding:4px 8px;border-right:1px solid #e5e7eb"><span style="font-size:11px;color:#888">仓库</span><br><input type="text" id="clWh_' + i + '" list="cm_wh_in_opts" value="' + escAttr(item.fg_wh||'G') + '" oninput="bomRecalc(' + i + ')" style="width:110px;padding:6px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:13px"></td>'
       + '<td style="padding:4px 8px;border-right:1px solid #e5e7eb"><span style="font-size:11px;color:#888">指令单</span><br><input type="text" id="clRef_' + i + '" value="' + escAttr(item.ref||'') + '" style="width:130px;padding:6px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:13px"></td>'
       + '<td style="padding:4px 8px;border-right:1px solid #e5e7eb"><span style="font-size:11px;color:#888">客户</span><br><input type="text" id="clCus_' + i + '" value="' + escAttr(item.customer||'') + '" style="width:110px;padding:6px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:13px"></td>'
@@ -1451,7 +1459,7 @@ async function openBatchCompletionModal() {
     } else {
       for (const m of bom) {
         const ratio = m.qty_per_unit || 0;
-        const fgQty = item.fg_qty || 1;
+        const fgQty = item.fg_qty || 0;
         const need = Math.ceil(ratio * fgQty);
         const tRow = (m.transfers||[]).find(t => (t.wh1||t.wh1_name||'') === wh);
         const avail = tRow ? (tRow.available || 0) : 0;
@@ -1460,9 +1468,9 @@ async function openBatchCompletionModal() {
           + '<td colspan="2" style="padding:5px 8px;font-size:12px;border-right:1px solid #e5e7eb">' + fmt(m.prd_no) + '</td>'
           + '<td style="padding:5px 8px;font-size:12px;text-align:right;font-weight:600;border-right:1px solid #e5e7eb">' + ratio + '</td>'
           + '<td style="padding:5px 8px;font-size:12px;text-align:right;border-right:1px solid #e5e7eb">×' + fgQty + '</td>'
-          + '<td style="padding:5px 8px;font-size:12px;text-align:right;font-weight:700;color:#2563eb;border-right:1px solid #e5e7eb" class="bom-need">' + need + '</td>'
+          + '<td style="padding:5px 8px;font-size:12px;text-align:right;font-weight:700;color:#2563eb;border-right:1px solid #e5e7eb" class="bom-need">' + (fgQty > 0 ? need : '—') + '</td>'
           + '<td style="padding:5px 8px;font-size:12px;text-align:right;border-right:1px solid #e5e7eb">' + avail + '</td>'
-          + '<td class="bom-ok" style="padding:5px 8px;font-size:12px;text-align:center;font-weight:700;color:' + (ok?'#16a34a':'#dc2626') + ';border-right:1px solid #e5e7eb">' + (ok?'✅':'❌') + '</td>'
+          + '<td class="bom-ok" style="padding:5px 8px;font-size:12px;text-align:center;font-weight:700;color:' + (!fgQty ? '#9ca3af' : (ok?'#16a34a':'#dc2626')) + ';border-right:1px solid #e5e7eb">' + (!fgQty ? '—' : (ok?'✅':'❌')) + '</td>'
           + '<td style="padding:5px 8px;font-size:11px;color:#6b7280">' + (tRow ? (tRow.ic_no||'').substring(0,10) : '—') + '</td>'
           + '</tr>';
       }
@@ -1538,7 +1546,15 @@ async function openBatchCompletionModal() {
 
     // 1. Read live DOM values into completionList
     for (let i = 0; i < completionList.length; i++) {
-      const q = parseInt(document.getElementById('clQ_' + i)?.value) || 1;
+      const _qEl = document.getElementById('clQ_' + i);
+      const _raw = ((_qEl && _qEl.value) || '').trim();
+      const q = parseFloat(_raw);
+      if (!_raw || !(q > 0)) {
+        toast('⚠️ 请填写第 ' + (i + 1) + ' 行的完工数量');
+        if (_qEl) _qEl.focus();
+        btn.disabled = false; btn.textContent = '确认完工';
+        return;
+      }
       completionList[i].fg_qty = q;
       completionList[i].fg_wh = document.getElementById('clWh_' + i)?.value || completionList[i].fg_wh || 'G';
       completionList[i].ref = document.getElementById('clRef_' + i)?.value || '';
@@ -1594,7 +1610,7 @@ async function openBatchCompletionModal() {
       });
       return {
         fg_no: item.fg_no,
-        qty: item.fg_qty||1,
+        qty: item.fg_qty,
         dzhw: item.danzhong||0,
         jzhw: item.jingzhong||0,
         ref: item.ref||'',
@@ -2303,9 +2319,9 @@ async function pmcOpenAdjust(prdNo, prdName, type, totalQty) {
         '<b>' + (m[0]||'') + '</b> ' + (m[1]||'') + ': <b>' + (m[2]||0) + '</b></div>';
     }).join('') + '</div>' +
     '<div style="margin-bottom:12px"><label style="font-size:13px;color:var(--sub);display:block;margin-bottom:4px">\u76ee\u6807\u4ed3\u5e93</label>' +
-    '<select id="pmcAdjWhSelect" onchange="pmcAdjWhChange()" style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:6px;font-size:13px">' + whOpts + '</select></div>' +
+    '<input type="text" id="pmcAdjWhSelect" list="pmcAdjWhOpts" value="' + escAttr(matDetail[0] ? matDetail[0][0] : '') + '" onchange="pmcAdjWhChange()" placeholder="选择或输入仓库" style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit">' + '<datalist id="pmcAdjWhOpts">' + whOpts + '</datalist></div>' +
     '<div style="margin-bottom:14px"><label style="font-size:13px;color:var(--sub);display:block;margin-bottom:4px">调\u6574\u540e\u6570\u91cf</label>' +
-    '<input id="pmcAdjQtyInput" type="number" step="0.01" min="0" value="' + (matDetail[0] ? matDetail[0][2] : totalQty) + '" style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;box-sizing:border-box"></div>' +
+    '<input id="pmcAdjQtyInput" type="number" step="0.01" min="0" value="" style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;box-sizing:border-box"></div>' +
     '<div style="display:flex;gap:8px"><button onclick="document.getElementById(\'pmcAdjOverlay\').remove()" style="flex:1;padding:10px;background:#6b7280;color:#fff;border:none;border-radius:6px;cursor:pointer">\u53d6\u6d88</button>' +
     '<button onclick="doPmcAdjust(\'' + escAttr(prdNo) + '\')" style="flex:1;padding:10px;background:#2563eb;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600">\u786e\u8ba4调\u6574</button></div>' +
     '</div>';
@@ -2318,14 +2334,17 @@ function pmcAdjWhChange() {
   var wh = $id('pmcAdjWhSelect').value;
   var m = (window.__pmcAdjMat || []).find(function(x) { return x[0] === wh; });
   var inp = $id('pmcAdjQtyInput');
-  if (inp) inp.value = (m ? (m[2] || 0) : 0);
+  if (inp && m) inp.value = m[2] || 0;   // 找不到就不动（手输错码不要把数量框清成 0）
 }
 
 // PMC 确认调整
 async function doPmcAdjust(prdNo) {
   var wh = $id('pmcAdjWhSelect').value;
-  var qty = parseFloat($id('pmcAdjQtyInput').value) || 0;
-  if (!wh || qty < 0) { alert('\u8bf7\u586b\u5199\u4ed3\u5e93\u548c\u6570\u91cf'); return; }
+  var _rawQty = String(($id('pmcAdjQtyInput') || {value:''}).value).trim();
+  var qty = parseFloat(_rawQty);
+  // 空 = 忘了填 → 拦；显式 0 = 清仓 → 放行（后端会出库整仓库存，这是合法意图）
+  if (!wh || _rawQty === '' || isNaN(qty) || qty < 0) { alert('请填写仓库和调整后数量（0 = 清仓，留空 = 未填）'); return; }
+  if (!(window.__pmcAdjMat || []).some(function(x) { return x[0] === wh; })) { alert('⚠️ 仓码不在该料的仓库列表里：' + wh); return; }
   var m = (window.__pmcAdjMat || []).find(function(x) { return x[0] === wh; });
   var currentQty = m ? (parseFloat(m[2]) || 0) : 0;   // 后端契约要 current_qty，否则它按 0 算 → 判定"无需调整"
   try {
@@ -2687,6 +2706,7 @@ function openBatchTransferModal() {
           <input type="text" id="bt_to_wh" list="bt_to_wh_opts" placeholder="选择或输入 TO 仓库"
             style="display:block;width:100%;padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card)">
           <datalist id="bt_to_wh_opts">${whOpts}</datalist>
+          <datalist id="bt_from_wh_opts">${whOpts}</datalist>
         </label>
         <div style="display:flex;align-items:flex-end;gap:6px">
           <div style="flex:1">
@@ -2763,11 +2783,11 @@ function renderBatchTable(allItems, allWhs, whOpts) {
     html += `<tr style="border-bottom:1px solid var(--border)">`;
     html += `<td style="padding:6px 5px;font-weight:600">${fmt(prdNo)}</td>`;
     html += `<td style="padding:6px 5px;color:var(--sub);font-size:12px;max-width:380px;word-break:break-word;vertical-align:top">${fmt(prdName)}</td>`;
-    html += `<td style="padding:6px 5px"><select class="batch-wh-from" data-idx="${idx}" style="padding:6px 8px;border:1px solid var(--border);border-radius:4px;max-width:170px;font-size:13px;background:var(--card)">${whOpts}</select></td>`;
+    html += `<td style="padding:6px 5px"><input type="text" class="batch-wh-from" data-idx="${idx}" list="bt_from_wh_opts" placeholder="FROM仓" style="width:130px;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:13px;font-family:inherit;background:var(--card)"></td>`;
     html += `<td style="padding:6px 5px"><input type="text" class="batch-cus" data-idx="${idx}" value="${escAttr(cus)}" placeholder="客户" style="width:110px;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:13px;font-family:inherit;background:var(--card)"></td>`;
     html += `<td style="padding:6px 5px"><input type="text" class="batch-ref" data-idx="${idx}" value="${escAttr(ref)}" placeholder="指令单号" style="width:130px;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:13px;font-family:inherit;background:var(--card)"></td>`;
     html += `<td style="padding:6px 5px"><input type="number" class="batch-dz" data-idx="${idx}" value="${dz}" step="0.001" min="0" placeholder="0" style="width:110px;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:13px;font-family:inherit;background:var(--card)" oninput="calcBatchJZ(this)"></td>`;
-    html += `<td style="padding:6px 5px"><input type="number" class="batch-qty" data-idx="${idx}" value="${qty}" min="0" step="1" style="width:120px;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:13px;font-family:inherit;background:var(--card)"></td>`;
+    html += `<td style="padding:6px 5px"><input type="number" class="batch-qty" data-idx="${idx}" value="" min="1" step="1" style="width:120px;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:13px;font-family:inherit;background:var(--card)" oninput="calcBatchJZ(this)"></td>`;
     html += `<td style="padding:6px 5px"><span class="batch-jz" data-idx="${idx}" style="font-size:13px;color:var(--text);min-width:70px;display:inline-block">—</span></td>`;
     html += `<td style="padding:6px 5px"><input type="text" class="batch-ddjh" data-idx="${idx}" value="${escAttr(ddjh)}" placeholder="外发" style="width:120px;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:13px;font-family:inherit;background:var(--card)"></td>`;
     html += `<td style="padding:6px 5px"><input type="text" class="batch-rem" data-idx="${idx}" value="${escAttr(rem)}" placeholder="备注" style="width:130px;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:13px;font-family:inherit;background:var(--card)"></td>`;
@@ -2792,13 +2812,14 @@ function renderBatchTable(allItems, allWhs, whOpts) {
   });
 }
 
-function calcBatchJZ(dzInput) {
-  const idx = dzInput.getAttribute('data-idx');
+function calcBatchJZ(el) {
+  const idx = el.getAttribute('data-idx');
   const qtyEl = document.querySelector(`.batch-qty[data-idx="${idx}"]`);
+  const dzEl = document.querySelector(`.batch-dz[data-idx="${idx}"]`);
   const jzEl = document.querySelector(`.batch-jz[data-idx="${idx}"]`);
-  if (!qtyEl || !jzEl) return;
+  if (!qtyEl || !dzEl || !jzEl) return;
   const q = parseFloat(qtyEl.value) || 0;
-  const d = parseFloat(dzInput.value) || 0;
+  const d = parseFloat(dzEl.value) || 0;
   jzEl.textContent = (q > 0 && d > 0) ? (q * d / 1000).toFixed(3) + ' kg' : '—';
 }
 
@@ -2817,10 +2838,19 @@ async function bomBatchConfirm() {
   Object.values(bomSelectedByProduct).forEach(rows => {
     Object.values(rows).forEach(r => allItems.push(r));
   });
+  // 组3-1b + B4：FROM 仓与数量必填。必须在循环外全量校验 ——
+  // forEach 里的 return 只会跳过当前行，不会中止提交（写在这里会以为拦住了其实没拦住）
+  for (let i = 0; i < allItems.length; i++) {
+    const _w = ((froms[i] && froms[i].value) || allItems[i].wh || allItems[i].WH || '').trim();
+    if (!_w) { toast('⚠️ 第 ' + (i + 1) + ' 行 FROM 仓不能为空'); if (froms[i]) froms[i].focus(); return; }
+    const _rq = ((qtys[i] && qtys[i].value) || '').trim();
+    if (!_rq || !(parseFloat(_rq) > 0)) { toast('⚠️ 第 ' + (i + 1) + ' 行数量不能为空'); if (qtys[i]) qtys[i].focus(); return; }
+  }
   allItems.forEach((item, i) => {
     const wh = froms[i] ? froms[i].value : (item.wh || item.WH || '');
     const dz = parseFloat(dzs[i] ? dzs[i].value : '0') || 0;
-    const qty = parseFloat(qtys[i] ? qtys[i].value : '0') || (item.qty || item.QTY || 0);
+    // B4：删掉原 `|| (item.qty || item.QTY || 0)` 兜底（空值已在上方拦截；留着会让"空"静默变成"整仓库存全调"）
+    const qty = parseFloat(qtys[i] ? qtys[i].value : '0');
     rows.push({
       prd_no: item.prd_no || item.PRD_NO || '',
       qty: qty,
