@@ -2461,6 +2461,7 @@ async function doInOut(prd_no, wh, mode) {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify([row]),
     });
+    if (res && res.error) throw new Error(res.error);   // Step C：后端 200 + {"error"} 的业务错误 → 走 catch（❌ 提示 + 按钮恢复 + 弹窗留下可重试）
     const icNo = res.items ? res.items[0].ic_no : res.ic_no || '';
     toast(`✅ ${isIn ? '入库' : '出库'}成功 ${icNo}`);
     if (modal) modal.remove();
@@ -2629,6 +2630,7 @@ async function doTransfer(prd_no, wh, wh_name, qty) {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({items: rows, tool_rows}),
     });
+    if (res && res.error) throw new Error(res.error);   // Step C：后端 200 + {"error"} 的业务错误 → 走 catch（❌ 提示 + 按钮恢复 + 弹窗留下可重试）
     toast(`✅ 调拨成功 ${res.ic_no}`);
     if (modal) modal.remove();
     if (stockData && stockData.prd_no) stockSearchByPRD(stockData.prd_no);
@@ -2821,6 +2823,7 @@ async function bomBatchConfirm() {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({items: rows, tool_rows: stockBatchTools}),
     });
+    if (res && res.error) throw new Error(res.error);   // Step C：后端 200 + {"error"} 的业务错误 → 走 catch（❌ 提示 + 按钮恢复 + 浮层留下可重试）
     toast(`✅ 批量调拨成功 ${res.ic_no}`);
     bomBatchOverlayRemove();
     if (stockData && stockData.prd_no) stockSearchByPRD(stockData.prd_no);
