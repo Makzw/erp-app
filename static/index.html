@@ -569,10 +569,13 @@ function escAttr(v) { return v.replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 function escHtml(v) { return v == null ? '' : String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function escJs(v) { return String(v||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'\\"'); }
 function fmtNum(v) { return v == null ? '' : Number(v).toLocaleString('zh-CN'); }
+let _toastTimer = null;
 function toast(msg, dur = 2500) {
   const el = document.getElementById('toast');
   el.textContent = msg; el.classList.add('show');
-  setTimeout(() => el.classList.remove('show'), dur);
+  // 清掉上一条的定时器：否则上一条 2.5s 的 timeout 会把这一条的 show 提前摘掉（连发两条时第二条看不见）
+  if (_toastTimer) clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => el.classList.remove('show'), dur);
 }
 function $id(id) { return document.getElementById(id); }
 
