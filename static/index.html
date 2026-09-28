@@ -525,8 +525,32 @@ let rawData = []; // 存储原始数据供搜索过滤
 let curSearch = ''; // 当前搜索词
 
 // ── Utils ───────────────────────────────────────────────────────────────────
+// 统一网络入口：非 2xx 抛 Error（带 status / data），2xx 仍返回解析后的 JSON（成功契约不变）
 function api(url, opts) {
-  return fetch(url, opts).then(r => r.json());
+  return fetch(url, opts).then(function (r) {
+    return r.text().then(function (t) {
+      var d = null;
+      try { d = t ? JSON.parse(t) : null; } catch (e) { d = null; }
+      if (r.ok) return d === null ? {} : d;
+      var msg;
+      if (d && typeof d.detail === 'string') {
+        msg = d.detail;                                  // FastAPI HTTPException 的 detail 字符串
+      } else if (d && Array.isArray(d.detail) && d.detail.length) {
+        var f = d.detail[0] || {};                       // FastAPI 参数校验错（422）
+        msg = (r.status === 422 ? '参数错误：' : '') + (f.msg || '参数不合法')
+            + (f.loc ? '（' + f.loc.join('.') + '）' : '');
+      } else if (d && d.error) {
+        msg = d.error;
+      } else if (t && !d) {
+        msg = t.slice(0, 120);                           // 500 纯文本（不是 JSON）→ 直接显示，不再抛 SyntaxError
+      } else {
+        msg = 'HTTP ' + r.status;
+      }
+      var err = new Error(msg);
+      err.status = r.status; err.data = d;
+      throw err;
+    });
+  });
 }
 function fmt(v) { return v == null || v === '' ? '' : String(v); }
 // 适合 HTML data-attribute 里 JSON 的转义（处理 HTMLEncode 后仍然残留的问题）
