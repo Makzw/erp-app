@@ -54,6 +54,19 @@ def g(v) -> str:
     except Exception:
         return s
 
+def _jz_fallback(dzhw, jzhw, qty):
+    """净重兜底：净重缺省/<=0 但单重>0 且数量>0 时，按 单重(g)×数量÷1000 补算（保留 3 位，与前端 calcJZ 一致）。
+    其余情况一律尊重前端传入的值（包括显式 0、以及任何非 0 的怪值，绝不擅自覆盖）。
+    用字符串格式化而非 round()：与 JS 的 toFixed(3) 舍入行为最接近。
+    """
+    try:
+        d = float(dzhw or 0); j = float(jzhw or 0); q = float(qty or 0)
+    except (TypeError, ValueError):
+        return jzhw
+    if j <= 0 and d > 0 and q > 0:
+        return float(f"{d * q / 1000:.3f}")
+    return j   # 返回解析后的 float：缺省/None/'' → 0.0，保持各接口原有 "(x or 0)" 的落库语义（不能落 NULL）
+
 def col_zh(name) -> str:
     """中文字段名 → GBK bytes → decode via pymssql"""
     return name
@@ -685,7 +698,7 @@ async def stock_out(
               prd_no, prd_name, qty, ut, wh2, wh2_name,
               itm, rem, sup_name, ref_itm, ddjh, cus_no,
               float(item.get("danzhong", 0) or 0),
-              float(item.get("jingzhong", 0) or 0)))
+              _jz_fallback(item.get("danzhong", 0), item.get("jingzhong", 0), qty)))
         results.append({"ic_no": ic_no, "prd_no": prd_no, "wh": wh2, "qty": qty, "itm": itm})
 
     conn.commit()
@@ -764,7 +777,7 @@ async def stock_in(
         """, (ic_no, now_str, prd_no, prd_name, qty, ut, wh1, wh1_name,
               itm, rem, sup_name, ref_itm, ddjh, cus_no,
               float(item.get("danzhong", 0) or 0),
-              float(item.get("jingzhong", 0) or 0)))
+              _jz_fallback(item.get("danzhong", 0), item.get("jingzhong", 0), qty)))
         results.append({"ic_no": ic_no, "prd_no": prd_no, "wh": wh1, "qty": qty, "itm": itm})
 
         conn.commit()
@@ -831,6 +844,7 @@ async def stock_transfer(
         cus_no  = item.get("cus_no", "") or ""
         dzhw    = float(item.get("danzhong", 0) or 0)
         jzhw    = float(item.get("jingzhong", 0) or 0)
+        jzhw    = _jz_fallback(dzhw, jzhw, qty)   # 净重兜底（<=0 且单重>0 且数量>0 → 补算）
 
         cur.execute("SELECT NAME, UT FROM PRDT WITH(NOLOCK) WHERE PRD_NO=%s", (prd_no,))
         pr = cur.fetchone()
@@ -1798,7 +1812,7 @@ async def completion_batch(
                        item.get("customer") or all_customer,  # 客户
                        all_ddjh,                          # DDJH ← 外发计划
                        item.get("dzhw") or 0,           # 单重
-                       item.get("jzhw") or 0]            # 净重
+                       _jz_fallback(item.get("dzhw"), item.get("jzhw"), fg_qty)]   # 净重兜底（<=0 且单重>0 且数量>0 → 补算）
         prod_itm += 1
         sql = f"INSERT INTO IC ({','.join(FG_IN_COLS)}) VALUES ({','.join(['%s']*len(FG_IN_COLS))})"
         cur.execute(sql, FG_IN_VALS)
@@ -1854,7 +1868,7 @@ async def completion_batch(
                              item_ddjh,                  # DDJH ← 外发计划
                              item_cus,                   # 客户
                              item.get("dzhw") or 0,     # 单重 ← item.dzhw
-                             item.get("jzhw") or 0]     # 净重 ← item.jzhw
+                             _jz_fallback(item.get("dzhw"), item.get("jzhw"), fg_qty)]   # 净重兜底（材料行沿用成品行单重/净重，故同用 fg_qty）
             out_itm += 1
             sql = f"INSERT INTO IC ({','.join(MAT_OUT_COLS)}) VALUES ({','.join(['%s']*len(MAT_OUT_COLS))})"
             cur.execute(sql, MAT_OUT_VALS)
