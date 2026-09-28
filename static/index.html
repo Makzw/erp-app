@@ -585,7 +585,11 @@ function handleSearch(v) {
         try {
           const data = await api(BASE + '/pmc/pos_unanalyzed?' + new URLSearchParams({q: q||''}));
           renderPMCList(data.items || [], q||'');
-        } catch(e) { renderPMCList([], q||''); }
+        } catch(e) {
+          // Step A：原来渲染成"暂无数据"（误导：其实是请求失败）
+          const el = $id('content');
+          if (el) el.innerHTML = '<div class="error-msg">加载失败: ' + e.message + '</div>';
+        }
       })();
       break;
   }
@@ -1226,21 +1230,26 @@ async function openCompletionModal(icNo, prdNo) {
   toast('查询成品…');
 
   // 查 bom_match：哪些成品用了这个材料
-  let matchData;
+  let matchData, matchErr = null;
   try {
     matchData = await api(BASE + '/completion/bom_match?' + new URLSearchParams({prd_no: matPrd}));
-  } catch(e) { matchData = {items: []}; }
+  } catch(e) { matchData = {items: []}; matchErr = e; }
   const matches = matchData.items || [];
-  if (!matches.length) { toast('⚠️ 无成品使用此材料'); return; }
+  if (!matches.length) {   // Step A：区分"查不到"和"请求失败"（原来都提示无成品使用此材料）
+    toast(matchErr ? ('❌ 查询失败: ' + matchErr.message) : '⚠️ 无成品使用此材料');
+    return;
+  }
 
   // 批量查每个成品的材料详情
   const fgDetails = [];
+  let fgFail = 0;   // Step A：原来 catch(e){} 空吞，用户看到的是"无匹配"
   for (const m of matches) {
     try {
       const d = await api(BASE + '/completion/fg_detail?' + new URLSearchParams({fg_no: m.prd_no}));
       fgDetails.push(d);
-    } catch(e) {}
+    } catch(e) { fgFail++; }
   }
+  if (fgFail) toast('⚠️ ' + fgFail + ' 个成品的材料详情加载失败');
 
   // 按材料匹配过滤：只显示该成品中用到此调拨材料的行
   const filtered = fgDetails.filter(d => d.materials.some(m => m.prd_no === matPrd));
@@ -1615,7 +1624,11 @@ async function loadTransfer() {
     try {
       const res = await api(BASE + '/warehouses/all');
       window.__allWarehouses = res.warehouses || res.items || res || [];
-    } catch(e) { window.__allWarehouses = []; }
+    } catch(e) {
+      // Step A：原来静默置空（弹窗仓库下拉空白，无任何提示）
+      window.__allWarehouses = [];
+      toast('⚠️ 仓库列表加载失败: ' + e.message);
+    }
   })();
   const inp = $id('searchInput');
   if (inp) {
@@ -1652,6 +1665,12 @@ async function loadStockSuggestions(q) {
     renderSuggestions();
   } catch(e) {
     dismissSuggestions();
+    // Step A：原来完全静默。打字时每次请求都失败会刷屏 → 同类提示 5 秒内只报一次
+    var now = Date.now();
+    if (!window.__suggestErrAt || now - window.__suggestErrAt > 5000) {
+      window.__suggestErrAt = now;
+      toast('⚠️ 商品搜索失败: ' + e.message);
+    }
   }
 }
 
@@ -2374,7 +2393,11 @@ async function openInModal(prd_no, wh, wh_name, qty) {
     try {
       const whRes = await api(BASE + '/warehouses/all');
       window.__allWarehouses = whRes.warehouses || whRes.items || whRes || [];
-    } catch(e) { window.__allWarehouses = []; }
+    } catch(e) {
+      // Step A：原来静默置空（入库弹窗仓库下拉空白，无任何提示）
+      window.__allWarehouses = [];
+      toast('⚠️ 仓库列表加载失败: ' + e.message);
+    }
   }
 
   var overlay = document.createElement('div');
