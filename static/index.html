@@ -1294,6 +1294,7 @@ async function openCompletionModal(icNo, prdNo) {
     </div>
     <style>@keyframes slideUp{from{transform:translateY(100%)}}</style>`;
   document.body.appendChild(overlay);
+  _setupCmOverlayClose();
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
 
   const listEl = $id('cmFgList');
@@ -1493,6 +1494,9 @@ async function openBatchCompletionModal() {
     + '<div style="padding:0 16px 8px;font-size:10px;color:#888">成\u54c1 KND=13 \u5165\u5e93\uff0c\u6750\u6599 KND=23 \u51fa\u5e93\uff0c\u5de5\u5177 KND=13 \u5165\u5e93</div>'
     + '</div></div>';
   document.body.appendChild(overlay);
+  _setupCmOverlayClose();
+  // 属性 autofocus 在鼠标点击路径下不生效（Chrome 仅在焦点位于 body 时认）→ 显式聚焦首格
+  const _fc = $id('clQ_0'); if (_fc) _fc.focus();
 
   // 填充入库仓库 datalist（确保 __allWarehouses 已加载）
   async function fillWhOpts() {
@@ -2706,6 +2710,9 @@ function openBatchTransferModal() {
   document.body.appendChild(overlay);
   _setupOverlayClose();
   renderBatchTable(allItems, allWhs, whOpts);
+  // 同上：显式聚焦。这里聚焦 TO 仓（★必填、且是自然填写第一步）；
+  // 表格首格 FROM 仓目前仍是 select，聚焦后滚轮/字母会直接改仓库值 → 留到组3 换成 datalist 再聚焦
+  const _ft = $id('bt_to_wh'); if (_ft) _ft.focus();
 }
 
 function bomBatchOverlayRemove() {
@@ -2719,6 +2726,18 @@ function _setupOverlayClose() {
       bomBatchOverlayRemove();
       document.removeEventListener('keydown', escHandler);
     }
+  });
+}
+
+// ponytail: #cmOverlay（材料弹窗 + 批量完工弹窗共用此 id）的 Esc 关闭。
+// 只绑一次（window.__cmEscBound），避免每次开窗堆积监听器；按 Esc 时仅当弹窗存在才移除。
+function _setupCmOverlayClose() {
+  if (window.__cmEscBound) return;
+  window.__cmEscBound = true;
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    const el = $id('cmOverlay');
+    if (el) el.remove();
   });
 }
 
