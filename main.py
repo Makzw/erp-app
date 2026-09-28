@@ -1151,7 +1151,9 @@ async def smo_bom_stock(fg_no: str = Query(...), db: str = Query(default="c041")
 
     # ── 1. 加载全 BOM，建立 (parent_guid, child_prd_no) → row ──────────
     cur.execute("SELECT GUID, PRD_NO FROM BOM WITH(NOLOCK) WHERE LEV=0")
-    prd_to_root = {r[1]: r[0] for r in cur.fetchall()}  # prd_no → LEV=0 GUID
+    # ⚠️ varchar 列（PRD_NO）读出来是 latin-1 乱码，必须过 g() 还原，
+    #    否则下游 8 个 key 全部对不上（品号乱码 + 品名空 + 库存假 0 + 中文根打不开）
+    prd_to_root = {g(r[1]): r[0] for r in cur.fetchall()}  # prd_no → LEV=0 GUID
 
     cur.execute("""
         SELECT c.GUID, c.PRD_NO, c.LEV, c.IDX, c.QTY, c.KND,
@@ -1161,7 +1163,10 @@ async def smo_bom_stock(fg_no: str = Query(...), db: str = Query(default="c041")
         WHERE ISNULL(c.删除,0)=0
     """)
     # 结构: GUID, PRD_NO, LEV, IDX, QTY, KND, UPGUID, parent_prd
-    edges = cur.fetchall()  # 所有 LEV=1 边
+    # 只在读边界还原 PRD_NO / parent_prd（GUID/UPGUID 是 ASCII UUID 不动），
+    # prd_info / child_map / parent_children / node_map 全部派生于此，随之自动对齐
+    edges = [(e[0], g(e[1]), e[2], e[3], e[4], e[5], e[6], g(e[7]))
+             for e in cur.fetchall()]  # 所有 LEV=1 边
 
     # 建立 prd → (name, knd) 字典
     # 先从 BOM 的 LEV=0 根获取成品名（GUID=PRD_NO 时）
@@ -1245,20 +1250,20 @@ async def smo_bom_stock(fg_no: str = Query(...), db: str = Query(default="c041")
                 row = cur.fetchone()
                 if row is None:
                     break
-                name_map[row[0]] = g(row[1])
+                name_map[g(row[0])] = g(row[1])   # key 也过 g()，否则查不到 → 品名空白
             except UnicodeDecodeError:
                 # 跳过无法解码的行（该品号名字留空）
                 continue
         for n in tree_nodes:
             n["name"] = name_map.get(n["prd_no"], '')
-        # 直接 string 查询（V2 PRD_NO 是 VARCHAR，存 ASCII 品号）
+        # V2.PRD_NO 同样是 varchar（GBK 字节），46 个品号带中文 → key 必须过 g()
         cur.execute(f"""
             SELECT PRD_NO, SUM(QTY_WH) AS stock
             FROM VW_STOCK_DETAIL2 WITH(NOLOCK)
             WHERE PRD_NO IN ({ph})
             GROUP BY PRD_NO
         """, tuple(all_prds))
-        stock_map = {r[0]: float(r[1] or 0) for r in cur.fetchall()}
+        stock_map = {g(r[0]): float(r[1] or 0) for r in cur.fetchall()}   # 不过 g() → 中文品号库存恒 0
         # 各仓库存 {prd_no: {wh: qty}}
         cur.execute(f"""
             SELECT PRD_NO, WH, SUM(QTY_WH) AS qty
@@ -1268,7 +1273,7 @@ async def smo_bom_stock(fg_no: str = Query(...), db: str = Query(default="c041")
         """, tuple(all_prds))
         wh_stock_map = {}
         for r in cur.fetchall():
-            p, w, q = r[0], r[1], float(r[2] or 0)
+            p, w, q = g(r[0]), r[1], float(r[2] or 0)   # w=仓码，纯 ASCII，不动
             wh_stock_map.setdefault(p, {})[w] = q
 
         def get_stock(prd):
@@ -1395,10 +1400,8 @@ async def bom_children(fg_no: str = Query(...), depth: int = Query(default=1), d
     conn = get_conn(db=db_name)
     cur = conn.cursor()
 
-    def gbk(v):
-        if v is None: return ''
-        if isinstance(v, bytes): return v.decode('gbk', errors='ignore')
-        return str(v)
+    # 本地版对 str 只做 str(v)（= 不还原），PRDT.PRD_NO 是 varchar → 统一用全局 g()
+    gbk = g
 
     # 成品基本信息
     cur.execute(
@@ -1424,7 +1427,7 @@ async def bom_children(fg_no: str = Query(...), depth: int = Query(default=1), d
     """, (fg_no,))
     children = cur.fetchall()
 
-    child_prds = [str(c[0]) for c in children]
+    child_prds = [g(c[0]) for c in children]   # varchar → latin-1 乱码，必须还原
 
     # 批量查 V2 各仓库存（只取有库存的仓）
     stock_by_prd = {}
@@ -1438,7 +1441,7 @@ async def bom_children(fg_no: str = Query(...), depth: int = Query(default=1), d
             HAVING SUM(QTY_WH) > 0
         """, tuple(child_prds))
         for prd, wh, qty in cur.fetchall():
-            p = str(prd)
+            p = g(prd)
             if p not in stock_by_prd:
                 stock_by_prd[p] = {}
             stock_by_prd[p][str(wh)] = round(float(qty), 2)
@@ -1450,13 +1453,13 @@ async def bom_children(fg_no: str = Query(...), depth: int = Query(default=1), d
         cur.execute(f"SELECT PRD_NO, NAME FROM PRDT WITH(NOLOCK) WHERE PRD_NO IN ({ph})",
                     tuple(child_prds))
         for prd, name in cur.fetchall():
-            name_map[str(prd)] = gbk(name)
+            name_map[g(prd)] = gbk(name)
 
     conn.close()
 
     items = []
     for prd_no, qty_per_unit, knd in children:
-        p = str(prd_no)
+        p = g(prd_no)
         items.append({
             "prd_no":      p,
             "prd_name":    name_map.get(p, p),
