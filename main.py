@@ -173,10 +173,11 @@ async def list_qts(
           {"AND EXISTS (SELECT 1 FROM POS lp2 WITH(NOLOCK) WHERE lp2.PRD_NO = q.PRD_NO AND lp2.CUS_NAME LIKE %s)" if supplier else ""}
         ORDER BY q.QT_DD DESC, q.QT_NO DESC, q.ITM
         OFFSET %s ROWS FETCH NEXT %s ROWS ONLY
-    """, (usr, (page - 1) * page_size, page_size)
+    """, (usr,)
           + ((f"%{prd_no}%",) if prd_no else ())
           + ((f"%{order_no}%",) if order_no else ())
-          + ((f"%{supplier}%",) if supplier else ()))
+          + ((f"%{supplier}%",) if supplier else ())
+          + ((page - 1) * page_size, page_size))   # OFFSET/FETCH 在 SQL 里位于筛选条件之后
 
     rows = cur.fetchall()
     COLS = {c[0]: i for i, c in enumerate(cur.description)}
