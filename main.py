@@ -3197,15 +3197,18 @@ def _calc_prd_summary(db_name="C041"):
         data = {}
         for p, n in need.items():
             e = stock.get(p) or {}
-            st = float(e.get("mat_qty", 0)) + float(e.get("prod_qty", 0))
+            mat = float(e.get("mat_qty", 0))            # 材料仓
+            prod = float(e.get("prod_qty", 0))          # 生产仓（车间仓/外发仓）
             row_gap = n - own[p]                        # 本单口径缺口加总（屏上对照用）
-            # 下单口径：需求合计 − 全厂池（在途采购+在单请购）− 库存（只扣一次）。
-            # 池子是全厂的（含别的单已经下、还没回来的） → 「昨天买了 7000，今天只买 3000」成立。
-            net = max(0.0, n - pool[p] - st)
+            # 下单口径：需求合计 − 全厂池（在途采购+在单请购）− **材料仓**。
+            # 生产仓不扣（MAK 2026-09-29）：车间仓/外发仓的料已经被领去做别的单了，
+            # 不能再拿来抵新单的需求。负的生产仓库存也不该吃材料仓的量。
+            net = max(0.0, n - pool[p] - mat)
             data[p] = {
                 "prd_no": p, "prd_name": names.get(p, ""),
                 "need": round(n, 2), "own": round(own[p], 2), "pool": round(pool[p], 2),
-                "stock": round(st, 2), "row_gap": round(row_gap, 2), "net": round(net, 2),
+                "mat": round(mat, 2), "prod": round(prod, 2),
+                "stock": round(mat + prod, 2), "row_gap": round(row_gap, 2), "net": round(net, 2),
                 "orders": len(seen[p]),
             }
         _PRD_SUM.update(ts=_t.time(), data=data, orders=len(items))
@@ -3507,17 +3510,19 @@ async def pmc_preview_mps(
     # 计算最终 gap（④ 扣在途+在单请购）
     for r in rows:
         r['gap'] = round(r['real_demand'] - r['total_avail'], 2)
-        # 屏上「缺口」= 需求 − 全厂在途/在单请购 − 库存（= 下单口径，与品号汇总净缺口同源）。
+        # 屏上「缺口」= 需求 − 全厂在途/在单请购 − **材料仓**（下单口径，与品号汇总净缺口同源）。
+        # 生产仓不扣：车间仓/外发仓的料已经被领去做别的单了（MAK 2026-09-29）。
         # gap 保留「本单口径」只用于屏上对照/自检；同品号多行或多单时以品号汇总为准
-        # （那里跨单合并需求、库存只扣一次）。
+        # （那里跨单合并需求、池子和材料仓各只扣一次）。
         r['pool_total'] = round((r.get('pool_way') or 0) + (r.get('pool_odr') or 0), 2)
-        r['net_gap'] = round(max(0.0, r['real_demand'] - r['pool_total'] - (r.get('total_stock') or 0)), 2)
+        r['net_gap'] = round(max(0.0, r['real_demand'] - r['pool_total'] - (r.get('mat_qty') or 0)), 2)
         # 品号级净缺口（跨单，库存只扣一次）—— 缓存热了才有；冷的时候前端不显示
         s = (_PRD_SUM['data'] or {}).get(r['prd_no'])
         if s:
             r['prd_net'] = s['net']
             r['prd_need'] = s['need']
             r['prd_pool'] = s.get('pool', 0)
+            r['prd_mat'] = s.get('mat', 0)
             r['prd_stock'] = s['stock']
             r['prd_orders'] = s['orders']
 
