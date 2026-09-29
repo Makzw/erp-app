@@ -5,6 +5,7 @@
   需求基准 = 销售未出（VW_POS.QTY − SAQTY，= v2 视图 QTY_ON_ODR 的口径），不是订单原始数量
   ① 需求按「BOM 边（母件实例→子件实例）」分配 —— 同一料号挂多个母件时各自算
   ② MRP 净需求展开：子件需求 = 父件缺口 × 配比，且父件缺口 = 屏上同一个数
+     毛需求（gross_demand）= 父件毛需求 × 配比，起点 = 销售未出（不扣任何料）
      （逐层扣该层自己的池+材料仓 → 中间件有货就不往下要料）
   ③ 在途采购 / 在单请购的**全厂池**（po_all/qts_all）参与扣减；挂本单的量(po/qts)
      只用于屏上 tooltip，且 ≤ 池子总量
@@ -69,16 +70,18 @@ def main():
         for i, c in enumerate(comp):
             edges.setdefault(stack.get(c[5] - 1, -1), []).append(i)
             stack[c[5]] = i
-        want = {}
+        want, want_gross = {}, {}
 
-        def walk(parent_idx, demand, av):
+        def walk(parent_idx, demand, av, gross):
             gap = max(0.0, demand - av)
             for i in edges.get(parent_idx, []):
                 d = gap * comp[i][6]
+                g = gross * comp[i][6]
                 want[i] = d
-                walk(i, d, net_avail(comp[i][0]))
+                want_gross[i] = g
+                walk(i, d, net_avail(comp[i][0]), g)
 
-        walk(-1, remain, net_avail(prd))
+        walk(-1, remain, net_avail(prd), remain)
         for i, r in enumerate(api):
             rows += 1
             tag = f'{prd}/{r["prd_no"]} L{r["depth"]}'
@@ -100,9 +103,13 @@ def main():
             # 需求基准 = 销售未出
             if r['is_fg'] and abs(r['real_demand'] - remain) > 0.01:
                 fails.append(f'{tag}: 成品需求 {r["real_demand"]:.1f} ≠ 销售未出 {remain:.1f}')
-            # ①② 需求 = 父件缺口×配比（按边算的独立参考实现）
+            # ①② 需求(净) = 父件缺口×配比；毛需求 = 父件毛需求×配比（独立参考实现按边重算）
             if i and abs(want.get(i - 1, 0) - r['real_demand']) > 0.5:
                 fails.append(f'{tag}: 需求 {r["real_demand"]:.1f} ≠ 应为 {want.get(i-1,0):.1f}')
+            if i and abs(want_gross.get(i - 1, 0) - r['gross_demand']) > 0.5:
+                fails.append(f'{tag}: 毛需求 {r["gross_demand"]:.1f} ≠ 应为 {want_gross.get(i-1,0):.1f}')
+            if not i and abs(r['gross_demand'] - remain) > 0.01:
+                fails.append(f'{tag}: 成品毛需求 {r["gross_demand"]:.1f} ≠ 销售未出 {remain:.1f}')
     conn.close()
     # ⑥ 品号汇总自洽：net = max(0, need − pool − stock)
     try:

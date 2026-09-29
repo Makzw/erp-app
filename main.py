@@ -3181,7 +3181,9 @@ def _calc_prd_summary(db_name="C041"):
                                              qty=it["qty"], db=db_name.lower()))
             for r in api["items"]:
                 p = r["prd_no"]
-                need[p] += r["real_demand"]
+                # need = 毛需求合计（销售未出不扣任何料展开，与路径无关）→ 跨单加总才有意义。
+                # 别用 real_demand（净需求，逐层扣过池/材料仓：跨单会重复扣，加总偏小）。
+                need[p] += r["gross_demand"]
                 own[p] += r["total_avail"]
                 pool[p] = max(pool[p], float(r.get("pool_way") or 0) + float(r.get("pool_odr") or 0))
                 # 成品行没有 prd_name 字段（只有子件有），用列表里的品名兜底
@@ -3408,6 +3410,7 @@ async def pmc_preview_mps(
             "qty": round(c_qty, 4),
             "qty_on_odr": qty_on_odr,
             "real_demand": round(real_demand, 4),
+            "gross_demand": round(c_qty, 4),    # 毛需求：由 allocate 填（父件毛需求×配比）；成品行 = 销售未出
             "mat_qty": mat_qty, "prod_qty": prod_qty,
             "qty_on_way": qty_on_way,
             "total_stock": round(total_stock, 2),
@@ -3493,18 +3496,23 @@ async def pmc_preview_mps(
         """参与扣减的供给 = 全厂在途/在单请购(池) + 材料仓。生产仓已被领走，不参与。"""
         return float((row.get('pool_way') or 0) + (row.get('pool_odr') or 0) + (row.get('mat_qty') or 0))
 
-    def allocate(parent_row, parent_idx, parent_demand):
-        """自顶向下分配 BOM 需求；父件缺口与屏上「缺口」列同口径。"""
+    def allocate(parent_row, parent_idx, parent_demand, parent_gross):
+        """自顶向下分配 BOM 需求；父件缺口与屏上「缺口」列同口径。
+        parent_gross = 毛需求（从销售未出不扣任何库存/在途展开），只上屏给「这张单总共要用多少料」。"""
         parent_gap = max(0.0, parent_demand - net_avail(parent_row))
         for i in edges.get(parent_idx, []):
             child_row = rows[i + 1]
-            # 子件需求 = 父件缺口 × BOM配比
-            child_row['real_demand'] = round(parent_gap * comp_rows[i][6], 4)
-            allocate(child_row, i, child_row['real_demand'])
+            ratio = comp_rows[i][6]
+            # 子件需求 = 父件缺口 × BOM配比；毛需求 = 父件毛需求 × BOM配比
+            child_row['real_demand'] = round(parent_gap * ratio, 4)
+            child_row['gross_demand'] = round(parent_gross * ratio, 4)
+            allocate(child_row, i, child_row['real_demand'], child_row['gross_demand'])
 
     # FG 真实需求 = 销售未出；成品自身也先扣库存/池（货够就不用做，子件也不用要料）
+    # 毛需求起点 = 销售未出（不扣任何料）→ 屏上「毛需求」列不会被跨单乐观影响
     rows[0]['real_demand'] = demand_qty
-    allocate(rows[0], -1, demand_qty)
+    rows[0]['gross_demand'] = demand_qty
+    allocate(rows[0], -1, demand_qty, demand_qty)
 
     # 计算最终 gap（④ 扣在途+在单请购）
     for r in rows:
