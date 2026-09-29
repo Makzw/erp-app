@@ -2459,6 +2459,7 @@ function pmcQdNone() {
 function pmcQdClose() { var o = $id('qdConfirmOv'); if (o && o.parentNode) o.parentNode.removeChild(o); }
 
 async function pmcMakeQd() {
+  if ($id('qdConfirmOv')) return;   // 确认框已开着，别叠第二个
   var rows = pmcQdCollect();
   if (!rows.length) { toast('请先勾选要请购的原材料并填数量'); return; }
   var dd = $id('qdEstDd');
@@ -2508,6 +2509,7 @@ function pmcQdConfirmHtml(pre, rows) {
       '<button onclick="pmcQdConfirm()" id="qdOkBtn" style="padding:7px 18px;border-radius:16px;border:none;background:#16a34a;color:#fff;font-size:13px;font-weight:600;cursor:pointer">确认生成</button></div>' +
     '<div style="padding:12px 20px 0;font-size:12px;color:var(--sub);display:flex;gap:18px;flex-wrap:wrap">' +
       '<span>单号 <b style="color:#1d4ed8">' + escHtml(pre.qd_no) + '</b>（还没写入）</span>' +
+      '<span>销售订单行 <b style="color:#dc2626">' + escHtml(pre.so_no_itm || '') + '</b>（写进 QTS.SO_NO_ITM，采购下单靠它回写）</span>' +
       '<span>成品编号 <b style="color:var(--text)">' + escHtml(pre['成品编号'] || '') + '</b></span>' +
       '<span>指令单号 <b style="color:var(--text)">' + escHtml(pre['指令单号'] || '') + '</b></span>' +
       '<span>客户代号 <b style="color:var(--text)">' + escHtml(pre['客户代号'] || '') + '</b></span>' +
@@ -2556,7 +2558,7 @@ async function pmcQdConfirm() {
   el.innerHTML = '<div style="padding:16px">' +
     '<div style="font-size:16px;font-weight:700;color:#16a34a;margin-bottom:4px">✓ 请购单已生成</div>' +
     '<div style="font-size:14px;font-weight:600;margin-bottom:2px">单号：' + escHtml(res.qd_no) + '　共 ' + res.itm_count + ' 行</div>' +
-    '<div style="font-size:12px;color:var(--sub);margin-bottom:12px">制单人 0014（PMC）· 待审 · 供应商 20399 待定 · 交期 ' + escHtml(res.est_dd || '') +
+    '<div style="font-size:12px;color:var(--sub);margin-bottom:12px">销售订单行 ' + escHtml(res.so_no_itm || '') + ' · 制单人 0014（PMC）· 待审 · 供应商 20399 待定 · 交期 ' + escHtml(res.est_dd || '') +
       ' · 指令单号 ' + escHtml(res['指令单号'] || '') + ' · 客户代号 ' + escHtml(res['客户代号'] || '') + ' · 成品编号 ' + escHtml(res['成品编号'] || '') + '</div>' +
     '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;background:#fff;border:1px solid var(--border);border-radius:8px">' +
       '<thead><tr style="background:#f3f4f6;color:var(--sub)"><th style="padding:6px 8px">ITM</th><th style="padding:6px 8px;text-align:left">品号</th>' +

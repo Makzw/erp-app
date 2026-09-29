@@ -4187,15 +4187,28 @@ async def pmc_make_qd(
     写库口径（对齐桌面端真单 QD26090038/39，字段全部按真单形态）：
       USR='0014'（PMC）· APP_ID=0（待审）· CLS_ID=0 · USABLE=1 · 删除=0
       CUS_NO='20399' / CUS_NAME='待定'（采购审完才定厂）
-      PRD_NAME/UT 取 PRDT · AMT/UP 留空（＝未确认单价，采购才认领）
+      PRD_NAME/UT 取 PRDT · AMT=0 / UP 留空（＝未确认单价，采购才认领）· 删除 不写（＝NULL，同真单）
       指令单号/客户代号/成品编号/订单数量/SO_NO_ITM 挂本单；REF_ITM 留空（app 不建派工单）
     """
-    items = [it for it in (body.get("items") or []) if float(it.get("qty") or 0) > 0 and it.get("prd_no")]
+    # 数量先解析成数字再筛（防手工构造的 body 送非数字把 float() 炸到 500）
+    items = []
+    for it in (body.get("items") or []):
+        try:
+            q = float(it.get("qty") or 0)
+        except (TypeError, ValueError):
+            return {"error": f"数量不是数字：{it.get('prd_no')}"}
+        if q > 0 and it.get("prd_no"):
+            it = dict(it); it["qty"] = q
+            items.append(it)
     if not items:
         return {"error": "没有勾选请购的原材料（数量要大于 0）"}
     est_dd = (body.get("est_dd") or "").strip()
     if not est_dd:
         return {"error": "请填写交期"}
+    try:
+        datetime.strptime(est_dd, "%Y-%m-%d")
+    except ValueError:
+        return {"error": f"交期格式不对（要 YYYY-MM-DD）：{est_dd}"}
     so_no_itm = (body.get("so_no_itm") or "").strip()
     fg_no = (body.get("fg_no") or "").strip()
     dry = str(body.get("dry") or "") in ("1", "true", "True")
@@ -4215,6 +4228,9 @@ async def pmc_make_qd(
             FROM POS WITH(NOLOCK) WHERE SO_NO_ITM=%s
         """, (so_no_itm,))
         pr = cur.fetchone()
+        if not pr:
+            conn.rollback()
+            return {"error": f"POS 里找不到销售订单行 {so_no_itm}（请从待分析单的 BOM 树里生成）"}
         order_ref = g(pr[0]) if pr else ""
         cus_ref = g(pr[1]) if pr else ""
         order_qty = float(pr[2] or 0) if pr else 0.0
@@ -4234,11 +4250,11 @@ async def pmc_make_qd(
             prd_name = g(prow[0])
             ut = g(prow[1])
             itm += 1
-            rem1 = (it.get("rem") or "").strip() or (f"{fg_no} PMC请购" if fg_no else "PMC请购")
+            rem1 = f"{fg_no} PMC请购" if fg_no else "PMC请购"
             cur.execute("""
                 INSERT INTO QTS (QT_NO,QT_ID,QT_DD,USR,USABLE,CUS_NO,CUS_NAME,ITM,PRD_NO,PRD_NAME,UT,
                                  QTY,EST_DD,CLS_ID,SO_NO_ITM,指令单号,客户代号,成品编号,订单数量,
-                                 REM1,EFF_DD,APP_ID,删除)
+                                 REM1,EFF_DD,APP_ID,AMT)
                 VALUES (%s,'QD',%s,%s,1,%s,%s,%s,%s,%s,%s,%s,%s,0,%s,%s,%s,%s,%s,%s,%s,0,0)
             """, (
                 qd_no, now_str, "0014", "20399", "待定", itm, prd_no, prd_name, ut,
