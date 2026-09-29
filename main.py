@@ -3157,7 +3157,8 @@ async def pmc_preview_mps(
         prod_way  = round(sm.get('prod_qty_on_way', 0), 2)
         total_way = mat_way + prod_way
         det = stock_det or []
-        qty_on_odr = round(det[0][5], 2) if len(det) > 0 and len(det[0]) > 5 else 0.0
+        # ③ 在单请购 = 所有仓之和（原来只取排序后第一行，其余仓的在单请购被丢掉）
+        qty_on_odr = round(sum(x[5] for x in det), 2)
         # 在途只显示，不参与计算
         real_demand = max(0, c_qty - mat_qty - prod_qty)
         total_stock = mat_qty + prod_qty
@@ -3190,7 +3191,7 @@ async def pmc_preview_mps(
     # ITM=1 成品行
     det = stock_detail.get(prd_no, [])
     fg_way = round(fg_stock.get('mat_qty_on_way', 0) + fg_stock.get('prod_qty_on_way', 0), 2)
-    fg_on_odr = round(det[0][5], 2) if len(det) > 0 and len(det[0]) > 5 else 0.0
+    fg_on_odr = round(sum(x[5] for x in det), 2)
     fg_raw = round(fg_stock.get('mat_qty', 0) + fg_stock.get('prod_qty', 0), 2)
     fg_real_demand = max(0, qty - fg_stock.get('mat_qty', 0) - fg_stock.get('prod_qty', 0))
     fg_total_stock = fg_raw
@@ -3229,20 +3230,15 @@ async def pmc_preview_mps(
     # 父件缺口 = 父件需求 - 父件库存
     # - KND=3 半成品：raw_stock = mat+prod 库存
     # - KND=4 原料：raw_stock = mat+prod 库存
+    #
+    # ponytail: 按「BOM 边（母件实例→子件实例）」分配，不按品号索引。
+    # 同一料号会挂在多个母件下（50 单里有 54 个这样的料号），按品号索引
+    # 只会命中最后一行，前一行留着「展开量-库存」的错值。
+    # rows[i+1] 与 comp_rows[i] 一一对应（上面就是按序遍历生成的）。
     # -----------------------------------------------------------
-    prd_to_idx = {}
-    for i, r in enumerate(rows):
-        if not r['is_fg']:
-            prd_to_idx[r['prd_no']] = i
-
-    # 建立 parent → children 映射
-    parent_to_children = {}
-    child_info = {}   # child_prd → (bom_ratio, parent)
-    for c_prd, c_name, c_qty, c_knd, c_parent, c_depth, c_bom_ratio in comp_rows:
-        if c_parent not in parent_to_children:
-            parent_to_children[c_parent] = []
-        parent_to_children[c_parent].append(c_prd)
-        child_info[c_prd] = (c_bom_ratio, c_parent)
+    edges = {}   # 母件品号 → [comp_rows 下标]
+    for i, row in enumerate(comp_rows):
+        edges.setdefault(row[4], []).append(i)
 
     # FG 真实需求 = qty（成品销售未出）
     rows[0]['real_demand'] = qty
@@ -3254,21 +3250,17 @@ async def pmc_preview_mps(
         父件缺口 = max(0, 父件需求 - 父件库存)
         中间件有子件则递归继续分配；无子件则叶子，需求到此为止。
         """
-        children = parent_to_children.get(parent_prd, [])
-        for child_prd in children:
-            cidx = prd_to_idx.get(child_prd)
-            if cidx is None:
-                continue
-            child_row = rows[cidx]
-            bom_ratio, _ = child_info[child_prd]
-            # 父件缺口
-            parent_gap = max(0, parent_demand - parent_stock)
+        parent_gap = max(0, parent_demand - parent_stock)
+        for i in edges.get(parent_prd, []):
+            bom_ratio = comp_rows[i][6]
+            child_row = rows[i + 1]
             # 子件需求 = 父件缺口 × BOM配比
             child_row['real_demand'] = parent_gap * bom_ratio
             # 递归向下，把子件的需求和库存传给下一层
-            allocate(child_prd, child_row['real_demand'], child_row['raw_stock'])
+            allocate(child_row['prd_no'], child_row['real_demand'], child_row['raw_stock'])
 
-    allocate(prd_no, qty, 0)
+    # ② 顶层要传成品自身库存（原来传 0：成品有库存时，整张单的子件需求按整单量虚高）
+    allocate(prd_no, qty, fg_raw)
 
     # 计算最终 gap
     for r in rows:
