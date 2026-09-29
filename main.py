@@ -3068,42 +3068,48 @@ def _v2_stock_detail(prd_nos, db_conn):
     return result
 
 
+# PMC 待分析销售订单的筛选口径（MAK 2026-09-29 定）：
+#   已审核（CHK_MAN 有值）+ 销售未出>0（QTY−QTYPS）+ 指令单号>7721 + MP=0
+# ⚠ CHK_MAN = 审核人；APP_ID/APP_MAN/APP_DD 是「核准」（默认 0，基本没用过），别拿它当审核
+# ⚠ 老单（指令单号 ≤7721）不排产；空/非数字的指令单号（含 TEST01）一律不要
+_PMC_POS_FILTER = """
+    MP=0 AND USABLE=1 AND OS_NO LIKE 'SO%'
+      AND ISNULL(CHK_MAN,'') <> ''
+      AND ISNULL(QTY,0) - ISNULL(QTYPS,0) > 0
+      AND ISNUMERIC(指令单号) = 1 AND CAST(指令单号 AS INT) > 7721
+"""
+
+
 @app.get("/api/pmc/pos_unanalyzed")
 async def pmc_pos_unanalyzed(
     q: str = Query(default=""),
     db: str = Query(default="c041")
 ):
     """
-    返回 MP=0 未分析的 POS 行（按 VW_POS 视图）。
+    返回 MP=0 未分析、且【已审核 + 销售未出>0 + 指令单号>7721】的 POS 行（按 VW_POS 视图）。
     q: 品号/品名模糊搜索。
     """
     db_name = "T041" if db.lower() == "t041" else "C041"
     conn = get_conn(db=db_name)
     cur = conn.cursor()
+    # 带参数的查询要经 pymssql 的 %-插值，字面量 % 必须写成 %%（两处口径同源，别各写一份）
+    flt = _PMC_POS_FILTER.replace('%', '%%') if q else _PMC_POS_FILTER
 
     if q:
         cur.execute(f"""
             SELECT TOP 50 OS_NO,ITM,SO_NO_ITM,PRD_NO,PRD_NAME,SPC,QTY,CUS_NO,CUS_NAME,指令单号,EST_DD,
                    ISNULL(QTY,0)-ISNULL(QTYPS,0) AS so_remain
             FROM VW_POS WITH(NOLOCK)
-            WHERE MP=0 AND USABLE=1 AND APP_ID=1 AND OS_NO LIKE 'SO%'
-              AND (
-                (ISNULL(指令单号,'') = '' OR ISNULL(指令单号,'') = 'TEST01')
-                 OR (ISNUMERIC(指令单号)=1 AND CAST(指令单号 AS INT) >= 7721)
-              )
+            WHERE {flt}
               AND (OS_NO LIKE %s OR 指令单号 LIKE %s OR PRD_NO LIKE %s OR PRD_NAME LIKE %s)
             ORDER BY 指令单号, OS_NO, ITM
         """, (f"%{q}%", f"%{q}%", f"%{q}%", f"%{q}%"))
     else:
-        cur.execute("""
+        cur.execute(f"""
             SELECT TOP 50 OS_NO,ITM,SO_NO_ITM,PRD_NO,PRD_NAME,SPC,QTY,CUS_NO,CUS_NAME,指令单号,EST_DD,
                    ISNULL(QTY,0)-ISNULL(QTYPS,0) AS so_remain
             FROM VW_POS WITH(NOLOCK)
-            WHERE MP=0 AND USABLE=1 AND APP_ID=1 AND OS_NO LIKE 'SO%'
-              AND (
-                (ISNULL(指令单号,'') = '' OR ISNULL(指令单号,'') = 'TEST01')
-                 OR (ISNUMERIC(指令单号)=1 AND CAST(指令单号 AS INT) >= 7721)
-              )
+            WHERE {flt}
             ORDER BY 指令单号, OS_NO, ITM
         """)
 
