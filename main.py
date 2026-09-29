@@ -3127,6 +3127,22 @@ async def pmc_pos_unanalyzed(
     }
 
 
+def _so_line_remain(so_no_itm, db_conn):
+    """该销售订单行的「销售未出」= QTY - QTYPS。
+
+    需求基准必须用这个，不能用订单原始数量：已部分出货的单，未出部分才是还要
+    采购/生产的量。前端传的 qty 是订单原始数量（PMC 列表里的「订单量」）。
+    查不到该行时返回 None，调用方回落用传入的 qty。
+    """
+    cur = db_conn.cursor()
+    cur.execute("""
+        SELECT ISNULL(QTY,0)-ISNULL(QTYPS,0) FROM VW_POS WITH(NOLOCK)
+        WHERE SO_NO_ITM=%s
+    """, (so_no_itm,))
+    r = cur.fetchone()
+    return float(r[0] or 0) if r else None
+
+
 @app.get("/api/pmc/preview_mps")
 async def pmc_preview_mps(
     so_no_itm: str = Query(...),
@@ -3139,7 +3155,11 @@ async def pmc_preview_mps(
     """
     db_name = "T041" if db.lower() == "t041" else "C041"
     conn = get_conn(db=db_name)
-    comp_rows = _mps_bom_tree(prd_no, conn, qty=qty)
+    # 需求基准 = 销售未出（QTY-QTYPS），不是订单原始数量：已部分出货的单只算未出部分
+    demand_qty = _so_line_remain(so_no_itm, conn)
+    if demand_qty is None:
+        demand_qty = qty
+    comp_rows = _mps_bom_tree(prd_no, conn, qty=demand_qty)
     all_prds = [prd_no] + [r[0] for r in comp_rows]
     stock_map = _v2_stock(all_prds, conn)
     stock_detail = _v2_stock_detail(all_prds, conn)
@@ -3149,7 +3169,8 @@ async def pmc_preview_mps(
     fg_stock = stock_map.get(prd_no, {})
 
     def make_row(c_prd, c_name, c_qty, c_depth, c_knd, stock_map_entry, stock_det):
-        """统一公式：需求=max(0,BOM量-原材料仓-生产仓-在途)"""
+        """统一公式：需求=父件缺口×配比；缺口=需求-合计；
+        合计=原材料仓+生产仓+在途采购+在单请购（④⑥）"""
         sm = stock_map_entry or {}
         mat_qty   = round(sm.get('mat_qty', 0), 2)
         prod_qty  = round(sm.get('prod_qty', 0), 2)
@@ -3159,10 +3180,11 @@ async def pmc_preview_mps(
         det = stock_det or []
         # ③ 在单请购 = 所有仓之和（原来只取排序后第一行，其余仓的在单请购被丢掉）
         qty_on_odr = round(sum(x[5] for x in det), 2)
-        # 在途只显示，不参与计算
+        # ④ 缺口要扣在途 + 在单请购；⑥ 合计 = 库存 + 在途 + 在单请购
         real_demand = max(0, c_qty - mat_qty - prod_qty)
         total_stock = mat_qty + prod_qty
-        gap = round(real_demand - total_stock, 2)
+        total_avail = round(total_stock + total_way + qty_on_odr, 2)
+        gap = round(real_demand - total_avail, 2)
         # wh_detail: 全部明细（兼容前端调整弹窗）
         # mat_detail / prod_detail: 原材料仓/生产仓分组（显示用）
         mat_detail = [(x[0], x[1], x[2], x[3], x[4], x[5]) for x in det if not x[6]]
@@ -3175,6 +3197,7 @@ async def pmc_preview_mps(
             "mat_qty": mat_qty, "prod_qty": prod_qty,
             "qty_on_way": round(total_way, 2),
             "total_stock": round(total_stock, 2),
+            "total_avail": total_avail,
             "gap": gap,
             "is_fg": False, "depth": c_depth,
             "knd": c_knd,
@@ -3193,20 +3216,22 @@ async def pmc_preview_mps(
     fg_way = round(fg_stock.get('mat_qty_on_way', 0) + fg_stock.get('prod_qty_on_way', 0), 2)
     fg_on_odr = round(sum(x[5] for x in det), 2)
     fg_raw = round(fg_stock.get('mat_qty', 0) + fg_stock.get('prod_qty', 0), 2)
-    fg_real_demand = max(0, qty - fg_stock.get('mat_qty', 0) - fg_stock.get('prod_qty', 0))
+    fg_real_demand = max(0, demand_qty - fg_stock.get('mat_qty', 0) - fg_stock.get('prod_qty', 0))
     fg_total_stock = fg_raw
+    fg_total_avail = round(fg_raw + fg_way + fg_on_odr, 2)   # ④⑥ 合计含在途+在单请购
 
     os_no = so_no_itm[:-3] if len(so_no_itm) > 3 else so_no_itm
     rows = [{
-        "prd_no": prd_no, "qty": round(qty, 4),
+        "prd_no": prd_no, "qty": round(demand_qty, 4),
         "qty_on_odr": fg_on_odr,
-        "so_remain": round(qty, 4),   # 销售未出 = qty基准
+        "so_remain": round(demand_qty, 4),   # 销售未出 = QTY-QTYPS
         "real_demand": round(fg_real_demand, 4),
         "mat_qty": round(fg_stock.get('mat_qty', 0), 2),
         "prod_qty": round(fg_stock.get('prod_qty', 0), 2),
         "qty_on_way": fg_way,
         "total_stock": round(fg_total_stock, 2),
-        "gap": round(fg_real_demand - fg_total_stock, 2),
+        "total_avail": fg_total_avail,
+        "gap": round(fg_real_demand - fg_total_avail, 2),
         "is_fg": True, "depth": 0,
         "knd": None,
         "raw_stock": fg_raw,
@@ -3240,31 +3265,32 @@ async def pmc_preview_mps(
     for i, row in enumerate(comp_rows):
         edges.setdefault(row[4], []).append(i)
 
-    # FG 真实需求 = qty（成品销售未出）
-    rows[0]['real_demand'] = qty
+    # FG 真实需求 = 销售未出
+    rows[0]['real_demand'] = demand_qty
 
-    def allocate(parent_prd, parent_demand, parent_stock):
+    def allocate(parent_prd, parent_demand, parent_avail):
         """
         自顶向下分配 BOM 需求。
         公式：子件需求 = 父件缺口 × (子件用量 / 母件底数) = parent_gap × bom_ratio
-        父件缺口 = max(0, 父件需求 - 父件库存)
+        父件缺口 = max(0, 父件需求 - 父件合计)
+        父件合计 = 原材料仓+生产仓+在途采购+在单请购（与树上「合计」列同口径）
         中间件有子件则递归继续分配；无子件则叶子，需求到此为止。
         """
-        parent_gap = max(0, parent_demand - parent_stock)
+        parent_gap = max(0, parent_demand - parent_avail)
         for i in edges.get(parent_prd, []):
             bom_ratio = comp_rows[i][6]
             child_row = rows[i + 1]
             # 子件需求 = 父件缺口 × BOM配比
             child_row['real_demand'] = parent_gap * bom_ratio
-            # 递归向下，把子件的需求和库存传给下一层
-            allocate(child_row['prd_no'], child_row['real_demand'], child_row['raw_stock'])
+            # 递归向下，把子件的需求和合计传给下一层
+            allocate(child_row['prd_no'], child_row['real_demand'], child_row['total_avail'])
 
-    # ② 顶层要传成品自身库存（原来传 0：成品有库存时，整张单的子件需求按整单量虚高）
-    allocate(prd_no, qty, fg_raw)
+    # ② 顶层要传成品自身的合计（原来传 0：成品有货时，整张单的子件需求按整单量虚高）
+    allocate(prd_no, demand_qty, fg_total_avail)
 
-    # 计算最终 gap
+    # 计算最终 gap（④ 扣在途+在单请购）
     for r in rows:
-        r['gap'] = round(r['real_demand'] - r['total_stock'], 2)
+        r['gap'] = round(r['real_demand'] - r['total_avail'], 2)
 
     return {"items": rows, "so_no": os_no}
 

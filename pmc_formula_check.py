@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """PMC 公式自检（只读，不写库）。
 
-对 /api/pmc/preview_mps 做三条不变量断言，覆盖三个已修的坑：
-  ① 需求按「BOM 边」分配 —— 同一料号挂多个母件时，每一处都要有各自的 父件缺口×配比
-  ② 顶层要带成品自身库存 —— 子件需求 = (整单量 - 成品库存) × 配比
+对 /api/pmc/preview_mps 做逐行断言，覆盖已修的坑：
+  需求基准 = 销售未出（POS.QTY-QTYPS），不是订单原始数量
+  ① 需求按「BOM 边」分配 —— 同一料号挂多个母件时，每一处都有各自的 父件缺口×配比
+  ② 顶层带成品自身合计 —— 子件需求 = (销售未出 − 成品合计) × 配比
   ③ 在单请购 = 各仓之和（不是排序后第一行）
+  ④ 缺口 = 需求 − 合计（合计已含在途 + 在单请购）
+  ⑥ 合计 = 原材料仓 + 生产仓 + 在途采购 + 在单请购
 
-用法：cd /home/Mak/erp-app && python3 pmc_formula_check.py [单号数量，默认全量]
+用法：cd /home/Mak/erp-app && python3 pmc_formula_check.py [单数，默认全量]
 退出码 0 = 全过；1 = 有断言失败。
 """
 import os, sys, json, urllib.request
@@ -35,40 +38,58 @@ def main():
     fails = []
     rows = 0
     for it in items:
-        prd, so_itm, qty = it['prd_no'], it['so_no_itm'], float(it['qty'])
+        prd, so_itm = it['prd_no'], it['so_no_itm']
+        qty = float(it['qty'])
+        remain = M._so_line_remain(so_itm, conn)   # 销售未出
+        if remain is None:
+            remain = qty
         api = get(f"{BASE}/api/pmc/preview_mps?so_no_itm={so_itm}&prd_no={prd}&qty={qty}")['items']
-        comp = M._mps_bom_tree(prd, conn, qty=qty)
+        comp = M._mps_bom_tree(prd, conn, qty=remain)
         if len(comp) + 1 != len(api):
             fails.append(f'{prd}: 行数不一致 {len(api)} vs {len(comp)+1}')
             continue
         stock = M._v2_stock([prd] + [c[0] for c in comp], conn)
         det = M._v2_stock_detail([r['prd_no'] for r in api], conn)
 
-        def sm(p):
+        def avail(p):
+            """独立参考实现：合计 = 原材料仓+生产仓+在途采购+在单请购（各仓求和）"""
             e = stock.get(p, {})
-            return float(e.get('mat_qty', 0)) + float(e.get('prod_qty', 0))
+            return (float(e.get('mat_qty', 0)) + float(e.get('prod_qty', 0))
+                    + float(e.get('mat_qty_on_way', 0)) + float(e.get('prod_qty_on_way', 0))
+                    + sum(x[4] for x in det.get(p, [])) + sum(x[5] for x in det.get(p, [])))
 
         edges = {}
         for i, c in enumerate(comp):
             edges.setdefault(c[4], []).append(i)
         want = {}
 
-        def walk(parent, demand, stk):
-            gap = max(0.0, demand - stk)
+        def walk(parent, demand, av):
+            gap = max(0.0, demand - av)
             for i in edges.get(parent, []):
                 d = gap * comp[i][6]
                 want[i] = d
-                walk(comp[i][0], d, sm(comp[i][0]))
+                walk(comp[i][0], d, avail(comp[i][0]))
 
-        walk(prd, qty, sm(prd))
+        walk(prd, remain, avail(prd))
         for i, r in enumerate(api):
             rows += 1
-            if abs(round(r['real_demand'] - r['total_stock'], 2) - r['gap']) > 0.01:
-                fails.append(f'{prd}/{r["prd_no"]}: 缺口≠需求-合计')
+            tag = f'{prd}/{r["prd_no"]} L{r["depth"]}'
+            # ⑥ 合计构成
+            s = r['mat_qty'] + r['prod_qty'] + r['qty_on_way'] + r['qty_on_odr']
+            if abs(s - r['total_avail']) > 0.01:
+                fails.append(f'{tag}: 合计 {r["total_avail"]:.1f} ≠ 四列之和 {s:.1f}')
+            # ④ 缺口 = 需求 − 合计
+            if abs(round(r['real_demand'] - r['total_avail'], 2) - r['gap']) > 0.01:
+                fails.append(f'{tag}: 缺口 {r["gap"]:.1f} ≠ 需求-合计 {r["real_demand"]-r["total_avail"]:.1f}')
+            # ③ 在单请购 = 各仓之和
             if abs(sum(x[5] for x in det.get(r['prd_no'], [])) - r['qty_on_odr']) > 0.5:
-                fails.append(f'{prd}/{r["prd_no"]}: 在单请购≠各仓之和')
+                fails.append(f'{tag}: 在单请购≠各仓之和')
+            # 需求基准 = 销售未出
+            if r['is_fg'] and abs(r['real_demand'] - remain) > 0.01:
+                fails.append(f'{tag}: 成品需求 {r["real_demand"]:.1f} ≠ 销售未出 {remain:.1f}')
+            # ①② 需求 = 父件缺口×配比（按边算的独立参考实现）
             if i and abs(want.get(i - 1, 0) - r['real_demand']) > 0.5:
-                fails.append(f'{prd}/{r["prd_no"]} L{r["depth"]}: 需求 {r["real_demand"]:.1f} ≠ 应为 {want.get(i-1,0):.1f}')
+                fails.append(f'{tag}: 需求 {r["real_demand"]:.1f} ≠ 应为 {want.get(i-1,0):.1f}')
     conn.close()
     print(f'检查 {len(items)} 单 / {rows} 行，失败 {len(fails)} 条')
     for f in fails[:20]:
