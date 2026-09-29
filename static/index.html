@@ -6,7 +6,7 @@
   <title>安而固 ERP</title>
   <style>
     :root {
-      --bg: #f0f2f5; --card: #fff; --text: #1a1a1a; --sub: #888;
+      --bg: #f0f2f5; --card: #fff; --text: #1a1a1a; --sub: #888; --name: #374151;
       --accent: #2563eb; --green: #16a34a; --red: #dc2626; --orange: #d97706;
       --border: #e5e7eb; --radius: 10px; --shadow: 0 1px 3px rgba(0,0,0,.08);
     }
@@ -109,7 +109,7 @@
     .qts-row-body { display: flex; flex-direction: column; gap: 4px; }
     .qts-prd { display: flex; gap: 8px; }
     .qts-pno { font-weight: 600; font-size: 13px; color: var(--text); }
-    .qts-pname { font-size: 12px; color: var(--sub); flex: 1; word-break: break-all; }
+    .qts-pname { font-size: 13px; color: var(--name); flex: 1; word-break: break-all; }
     .qts-row-foot { display: flex; gap: 12px; font-size: 12px; color: var(--sub); }
     .qts-row-foot b { color: var(--text); }
     .qts-row-meta { display: flex; gap: 12px; font-size: 12px; color: var(--sub); border-top: 1px solid var(--border); margin-top: 6px; padding-top: 6px; flex-wrap: wrap; }
@@ -170,12 +170,12 @@
     .smo-card-header { padding-bottom: 6px; }
     .dispatch-mat-list { background: var(--bg); border-radius: 8px; overflow: hidden; }
     .smo-fg { font-weight: 700; font-size: 15px; word-break: break-all; }
-    .smo-fg-name { color: var(--sub); font-size: 13px; margin-top: 2px; word-break: break-all; }
+    .smo-fg-name { color: var(--name); font-size: 14px; margin-top: 2px; word-break: break-all; }
     .smo-divider { border: none; border-top: 1px solid var(--border); margin: 8px 0; }
     .smo-bom-rows { border-top: 1px solid var(--border); margin-top: 8px; padding-top: 8px; }
     .smo-bom-row { padding: 4px 0; min-width: 0; display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
     .smo-bom-row-prd { font-weight: 600; font-size: 13px; word-break: break-all; flex: 0 0 auto; }
-    .smo-bom-row-name { color: var(--sub); font-size: 12px; flex: 1 1 auto; min-width: 0; word-break: break-all; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .smo-bom-row-name { color: var(--name); font-size: 13px; flex: 1 1 auto; min-width: 0; word-break: break-all; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .smo-bom-row-right { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
     .smo-bom-row .ok { color: var(--green); font-size: 12px; }
     .smo-bom-row .part { color: var(--orange); font-size: 12px; }
@@ -273,7 +273,7 @@
       display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
     }
     .issue-prd { font-weight: 700; font-size: 14px; flex: 1; }
-    .issue-name { font-size: 12px; color: var(--sub); }
+    .issue-name { font-size: 13px; color: var(--name); }
     .issue-stock { font-size: 11px; color: var(--sub); }
     .issue-stock span { margin-right: 8px; }
     .issue-stock .shortage { color: var(--red); font-weight: 600; }
@@ -313,7 +313,7 @@
     .toast {
       position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%);
       background: rgba(0,0,0,.8); color: #fff; padding: 10px 20px;
-      border-radius: 8px; font-size: 14px; z-index: 400;
+      border-radius: 8px; font-size: 14px; z-index: 600;
       display: none; white-space: nowrap;
     }
     .toast.show { display: block; animation: fadeIn .2s; }
@@ -899,7 +899,7 @@ function renderBomStock(d) {
     <div class="smo-card" style="background:var(--bg2);margin-bottom:8px">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
         <b style="font-size:15px">${fmt(d.fg_no)}</b>
-        <span style="font-size:12px;color:var(--sub)">${fmt(d.fg_name||'').substring(0,40)}</span>
+        <span style="font-size:13px;color:var(--name)">${fmt(d.fg_name||'').substring(0,40)}</span>
       </div>
       <div style="font-size:12px;color:var(--sub)">
         ${d.node_count} 节点 · 最深 D${d.max_depth} ·
@@ -967,7 +967,7 @@ function renderBomStock(d) {
               ${kndLabel}
               <span style="font-size:10px;color:var(--sub)">×${qty}</span>
             </div>
-            ${name ? `<div style="font-size:11px;color:var(--sub);margin-top:2px;word-break:break-all;white-space:normal">${fmt(name)}</div>` : ''}
+            ${name ? `<div style="font-size:13px;color:var(--name);margin-top:2px;word-break:break-all;white-space:normal">${fmt(name)}</div>` : ''}
           </div>
           ${isLeaf ? `<span style="font-size:13px;font-weight:700;color:${statusColor};white-space:nowrap;margin-left:8px">${statusIcon} ${stockLabel}</span>` : ''}
         </div>
@@ -1179,7 +1179,7 @@ function renderCompletionList() {
       <td style="padding:8px 10px;font-size:12px;color:var(--sub)">${i+1}</td>
       <td style="padding:8px 10px;font-size:12px;font-weight:600">${fmt(t.ic_no)}</td>
       <td style="padding:8px 10px;font-size:12px">${fmt(t.prd_no)}</td>
-      <td style="padding:8px 10px;font-size:12px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${fmt(t.prd_name||'')}">${fmt(t.prd_name||'').substring(0,15)}</td>
+      <td style="padding:8px 10px;font-size:13px;color:var(--name);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${fmt(t.prd_name||'')}">${fmt(t.prd_name||'').substring(0,15)}</td>
       <td style="padding:8px 10px;font-size:12px;text-align:center">${fmt(t.wh1_name||t.wh1||'')}</td>
       <td style="padding:8px 10px;font-size:12px;text-align:center">${fmt(t.ref||'')}</td>
       <td style="padding:8px 10px;font-size:12px;text-align:center;color:var(--orange)">${fmt(t.ddjh||'')}</td>
@@ -1283,19 +1283,61 @@ async function openCompletionModal(icNo, prdNo) {
 
   const overlay = document.createElement('div');
   overlay.id = 'cmOverlay';
-  overlay.style.cssText = 'position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.5);display:flex;align-items:flex-end;justify-content:center;';
-  overlay.innerHTML = `
-    <div style="background:var(--card);border-radius:16px 16px 0 0;width:100%;max-width:640px;max-height:85vh;display:flex;flex-direction:column;animation:slideUp .2s;font-family:inherit">
-      <div style="padding:12px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px">
-        <div style="flex:1">
-          <div style="font-size:11px;color:var(--sub)">调拨单 ${fmt(icNo)} — 材料 ${fmt(matPrd)}</div>
-          <div style="font-size:13px;font-weight:600">点击成品加入完工列表</div>
-        </div>
-        <button onclick="document.getElementById('cmOverlay').remove()" style="width:28px;height:28px;border-radius:50%;border:none;background:var(--bg);font-size:16px;cursor:pointer">×</button>
-      </div>
-      <div id="cmFgList" style="flex:1;overflow-y:auto;padding:10px 12px"></div>
-    </div>
-    <style>@keyframes slideUp{from{transform:translateY(100%)}}</style>`;
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:16px;font-family:inherit';
+
+  // 成品表（样式对齐批量完工弹窗：宽面板 + 表格式明细）
+  let fgRows = '';
+  filtered.forEach((d, idx) => {
+    const allOk = d.all_fulfilled;
+    fgRows += '<tr style="background:#EFF6FF;border-bottom:2px solid #2563eb;cursor:pointer" data-fg="' + escAttr(d.fg_no) + '" data-qty="fgQty_' + idx + '">'
+      + '<td colspan="2" style="padding:8px 10px;font-weight:700;font-size:13px;border-right:2px solid #dbeafe">'
+      +   '<span style="color:#6b7280;font-weight:400">' + (idx+1) + '\uff0e</span>' + fmt(d.fg_no)
+      +   '<span style="font-weight:400;font-size:13px;color:var(--name);margin-left:8px">' + fmt(d.fg_name||'') + '</span>'
+      + '</td>'
+      + '<td style="padding:4px 8px;border-right:1px solid #e5e7eb;font-size:12px;color:#6b7280">'
+      +   '<span style="font-size:11px;color:#888">\u6750\u6599</span><br>' + d.materials.length + ' \u79cd'
+      +   (allOk ? ' <span style="color:#16a34a">\u2705\u9f50\u6599</span>' : ' <span style="color:#d97706">\u26a0\ufe0f\u7f3a\u6599</span>')
+      + '</td>'
+      + '<td style="padding:4px 8px;border-right:1px solid #e5e7eb">'
+      +   '<span style="font-size:11px;color:#888">\u6570\u91cf(\u4ef6)</span><br>'
+      +   '<input type="number" id="fgQty_' + idx + '" value="" min="1" step="1" onclick="event.stopPropagation()" style="width:110px;padding:6px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:13px;text-align:center">'
+      + '</td>'
+      + '<td style="padding:4px 8px;text-align:center">'
+      +   '<button style="padding:6px 16px;background:' + (allOk ? 'var(--green)' : 'var(--orange)') + ';color:#fff;border:none;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer" onclick="event.stopPropagation();completionAddFgDetail(\'' + escAttr(d.fg_no) + '\',\'' + escAttr(icNo) + '\',\'' + escAttr(matPrd) + '\',\'fgQty_' + idx + '\')">' + (allOk ? '+ \u52a0\u5165' : '+ \u52a0\u5165(\u7f3a\u6599)') + '</button>'
+      + '</td>'
+      + '</tr>';
+    fgRows += '<tr style="background:#dbeafe;font-size:11px">'
+      + '<th style="padding:4px 8px;font-weight:600;color:#1e40af;text-align:left;border-bottom:1px solid #bfdbfe;border-right:1px solid #e5e7eb" colspan="2">\u54c1\u53f7</th>'
+      + '<th style="padding:4px 8px;font-weight:600;color:#1e40af;text-align:right;border-bottom:1px solid #bfdbfe;border-right:1px solid #e5e7eb">\u914d\u6bd4</th>'
+      + '<th style="padding:4px 8px;font-weight:600;color:#1e40af;text-align:right;border-bottom:1px solid #bfdbfe">\u53ef\u7528\u91cf</th>'
+      + '</tr>';
+    d.materials.forEach(m => {
+      const thisOne = m.transfers.find(x => x.ic_no === icNo);
+      const status = thisOne ? (m.fulfilled ? '\u2705' : '\u26a0\ufe0f') : (m.fulfilled ? '\u2705' : '\u274c');
+      const avail = thisOne ? (thisOne.available||0).toFixed(1) : (m.total_available||0).toFixed(1);
+      fgRows += '<tr style="border-bottom:1px solid #f3f4f6;background:#fff">'
+        + '<td colspan="2" style="padding:5px 8px;font-size:12px;border-right:1px solid #e5e7eb">' + fmt(m.prd_no) + '</td>'
+        + '<td style="padding:5px 8px;font-size:12px;text-align:right;font-weight:600;border-right:1px solid #e5e7eb">' + m.ratio + '</td>'
+        + '<td style="padding:5px 8px;font-size:12px;text-align:right;border-right:1px solid #e5e7eb;color:' + (m.fulfilled ? '#16a34a' : '#d97706') + '">' + status + ' ' + avail + '</td>'
+        + '</tr>';
+    });
+  });
+
+  overlay.innerHTML = ''
+    + '<div style="background:#fff;border-radius:14px;width:100%;max-width:min(92vw,1500px);max-height:90vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.25)">'
+    +   '<div style="padding:14px 20px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
+    +     '<div style="flex:1;font-size:15px;font-weight:700">\u9009\u62e9\u6210\u54c1'
+    +       '<span style="font-size:12px;font-weight:400;color:#6b7280;margin-left:10px">\u8c03\u62e8\u5355 ' + fmt(icNo) + ' \u2014 \u6750\u6599 ' + fmt(matPrd) + '</span>'
+    +     '</div>'
+    +     '<button onclick="document.getElementById(\'cmOverlay\').remove()" style="padding:5px 12px;border:1px solid #e5e7eb;border-radius:20px;background:#f9fafb;font-size:12px;cursor:pointer">\u53d6\u6d88</button>'
+    +   '</div>'
+    +   '<div id="cmFgList" style="flex:1;overflow-y:auto;padding:10px 0">'
+    +     '<div style="padding:0 16px;overflow-x:auto">'
+    +       '<table style="width:100%;min-width:1000px;border-collapse:collapse;font-size:12px"><tbody>' + fgRows + '</tbody></table>'
+    +     '</div>'
+    +     '<div style="padding:10px 16px 6px;font-size:10px;color:#888">\u70b9\u6210\u54c1\u884c\u6216\u70b9\u300c+ \u52a0\u5165\u300d\u5373\u53ef\u52a0\u5165\u5b8c\u5de5\u5217\u8868</div>'
+    +   '</div>'
+    + '</div>';
   document.body.appendChild(overlay);
   _setupCmOverlayClose();
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
@@ -1305,41 +1347,9 @@ async function openCompletionModal(icNo, prdNo) {
     listEl.innerHTML = '<div style="padding:20px;text-align:center;color:var(--sub)">无成品使用此材料</div>';
     return;
   }
-
-  filtered.forEach((d, idx) => {
-    const allOk = d.all_fulfilled;
-    const card = document.createElement('div');
-    card.className = 'smo-card';
-    card.style.cssText = 'margin-bottom:10px;cursor:pointer;padding:10px';
-    card.innerHTML = `
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-        <span style="font-size:16px">${allOk ? '✅' : '⚠️'}</span>
-        <div style="flex:1">
-          <div style="font-weight:600;font-size:13px">${fmt(d.fg_no)}</div>
-          <div style="font-size:10px;color:var(--sub)">${fmt(d.fg_name||'')}</div>
-          <div style="font-size:10px;color:var(--sub)">${d.materials.length} 种材料</div>
-        </div>
-        <div style="display:flex;align-items:center;gap:4px">
-          <input type="number" id="fgQty_${idx}" value="" min="1" step="1"
-            onclick="event.stopPropagation()"
-            style="width:56px;padding:5px 4px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;text-align:center">
-          <span style="font-size:10px;color:var(--sub)">件</span>
-          <button style="padding:5px 10px;background:${allOk ? 'var(--green)' : 'var(--orange)'};color:#fff;border:none;border-radius:16px;font-size:12px;font-weight:600;cursor:pointer" onclick="event.stopPropagation();completionAddFgDetail('${escAttr(d.fg_no)}','${escAttr(icNo)}','${escAttr(matPrd)}','${'fgQty_' + idx}')">${allOk ? '+ 加入' : '+ 加入(缺料)'}</button>
-        </div>
-      </div>
-      <div style="padding:6px 8px;background:var(--bg);border-radius:6px;font-size:10px">
-        ${d.materials.map(m => {
-          const thisOne = m.transfers.find(x => x.ic_no === icNo);
-          const status = thisOne ? (m.fulfilled ? '✅' : '⚠️') : (m.fulfilled ? '✅' : '❌');
-          const avail = thisOne ? (thisOne.available||0).toFixed(1) : (m.total_available||0).toFixed(1);
-          return `<div style="display:flex;justify-content:space-between;padding:2px 0">
-            <span>${fmt(m.prd_no)}</span>
-            <span style="color:${m.fulfilled ? 'var(--green)' : 'var(--orange)'}">${status} ${avail}/${m.ratio}</span>
-          </div>`;
-        }).join('')}
-      </div>`;
-    card.onclick = () => completionAddFgDetail(d.fg_no, icNo, matPrd, 'fgQty_' + idx);
-    listEl.appendChild(card);
+  // 点成品行 = 加入完工列表（与「+ 加入」同一入口）
+  listEl.querySelectorAll('tr[data-fg]').forEach(tr => {
+    tr.onclick = () => completionAddFgDetail(tr.dataset.fg, icNo, matPrd, tr.dataset.qty);
   });
 }
 
@@ -1743,7 +1753,7 @@ function renderSuggestions() {
   for (const p of stockSuggestions.slice(0, 8)) {
     const div = document.createElement('div');
     div.style.cssText = 'padding:8px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border)';
-    div.innerHTML = `<b>${hl(p.prd_no)}</b> <span style="color:var(--sub)">${hl(p.name||'')}</span>`;
+    div.innerHTML = `<b>${hl(p.prd_no)}</b> <span style="color:var(--name)">${hl(p.name||'')}</span>`;
     div.onmouseenter = () => div.style.background = '#f5f5f5';
     div.onmouseleave = () => div.style.background = '';
     div.onclick = () => {
@@ -1950,7 +1960,7 @@ function renderTransferBomTree(node, depth = 0) {
   // ponytail: 使用与 PMC 一致的层级颜色徽章
   const depthColors = ['#1d4ed8','#16a34a','#d97706','#ea580c','#dc2626'];
   const depthColor = depthColors[Math.min(depth, depthColors.length-1)] || '#1d4ed8';
-  const depthLabel = isRoot ? '成' : 'L' + depth;
+  const depthLabel = isRoot ? '成品' : 'L' + depth;
   const qty = node.qty_per_unit != null ? node.qty_per_unit.toFixed(5) : '1.00000';
   const stock = node.stock != null ? node.stock.toFixed(1) : '—';
   const stockColor = node.is_ready ? 'var(--green)' : 'var(--red)';
@@ -1974,7 +1984,7 @@ function renderTransferBomTree(node, depth = 0) {
     <span style="width:130px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:${isRoot?'700':'500'};margin-right:8px">${fmt(prdNo)}</span>
     <span style="width:60px;flex-shrink:0;text-align:right;font-variant-numeric:tabular-nums;margin-right:8px">${qty}</span>
     <span style="width:60px;flex-shrink:0;text-align:right;font-weight:600;color:${stockColor};font-variant-numeric:tabular-nums">${stock}</span>
-    <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--sub);font-size:11px;margin-left:8px">${fmt(node.prd_name||'')}</span>
+    <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--name);font-size:13px;margin-left:8px">${fmt(node.prd_name||'')}</span>
   </div>`;
 
   if (node.children) {
@@ -2094,7 +2104,7 @@ function renderPMCList(items, q) {
     ' style="flex:1;min-width:100px;padding:7px 10px;border:1.5px solid var(--border);border-radius:20px;font-size:13px"' +
     ' onkeydown="if(event.key===\'Enter\'){window.__pmcSearchFn&&window.__pmcSearchFn(this.value)}"' +
     ' oninput="window.__pmcSearchFn&&window.__pmcSearchFn(this.value)">' +
-    '<div style="flex:1;text-align:right;font-size:13px;color:var(--sub)">' + items.length + ' \u6761 \u00b7 <b id="pmcSelCount" style="color:var(--accent);font-weight:700">' + selCount + '</b> <span style="font-size:11px;color:var(--sub)">\u5df2\u9009</span></div></div>' +
+    '<div style="flex:1;text-align:right;font-size:13px;color:var(--sub)">' + '\u5df2\u9009 <b id="pmcSelCount" style="color:var(--accent);font-weight:700">' + selCount + '</b> / ' + items.length + ' \u6761</div></div>' +
     (cusBtns ? '<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">' + cusBtns + '</div>' : '') +
     (refBtns ? '<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">' + refBtns + '</div>' : '') +
     '</div>';
@@ -2120,7 +2130,7 @@ function renderPMCList(items, q) {
     var zhilianHtml = zhilian ? '<div style="font-size:13px;font-weight:700;color:#92400e;background:#fef3c7;border-radius:4px;padding:3px 8px;display:inline-block">#' + escAttr(zhilian) + '</div>' : '';
     var fmtQty = Number(qty).toLocaleString('zh-CN');
     var isSel = pmcSelected.some(function(x){return (x.so_no_itm||'')===(t.so_no_itm||'')&&(x.prd_no||'')===(t.prd_no||t.PRD_NO||'');});
-    var cardContent = '<div style="flex:1;cursor:pointer;min-width:0" onclick="event.stopPropagation();pmcAnalyzeRow(\'' + escAttr(soItm) + '\',\'' + escAttr(prdNo) + '\',' + qty + ')"><div style="font-size:12px;color:var(--sub);margin-bottom:2px">' + escAttr(osNo) + '</div><div style="font-size:14px;font-weight:600;margin-bottom:2px">' + escAttr(prdNo) + '</div><div style="font-size:12px;color:var(--text);margin-bottom:4px;word-break:break-all">' + escAttr(prdName) + '</div>' + (cusName ? '<span style="font-size:11px;color:#374151;background:#f3f4f6;border-radius:3px;padding:1px 5px;margin-right:4px">' + escAttr(cusName) + '</span>' : '') + '</div>';
+    var cardContent = '<div style="flex:1;cursor:pointer;min-width:0" onclick="event.stopPropagation();pmcAnalyzeRow(\'' + escAttr(soItm) + '\',\'' + escAttr(prdNo) + '\',' + qty + ')"><div style="font-size:12px;color:var(--sub);margin-bottom:2px">' + escAttr(osNo) + '</div><div style="font-size:14px;font-weight:600;margin-bottom:2px">' + escAttr(prdNo) + '</div><div style="font-size:13px;color:var(--name);margin-bottom:4px;word-break:break-all">' + escAttr(prdName) + '</div>' + (cusName ? '<span style="font-size:11px;color:#374151;background:#f3f4f6;border-radius:3px;padding:1px 5px;margin-right:4px">' + escAttr(cusName) + '</span>' : '') + '</div>';
     var rightDiv = '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0"><div style="font-size:18px;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums">' + fmtQty + '</div><div style="font-size:11px;color:var(--sub)">\u4ef6</div>' + zhilianHtml + '</div>';
     var checkbox = '<div style="display:flex;align-items:flex-start;padding-top:2px" onclick="event.stopPropagation();pmcToggleSel(' + i + ')"><input type="checkbox" ' + (isSel?'checked':'') + ' style="width:16px;height:16px;cursor:pointer;accent-color:var(--accent)"></div>';
     return '<div class="pmc-card' + (isSel?' pmc-card-sel':'') + '">' + checkbox + cardContent + rightDiv + '</div>';
@@ -2157,7 +2167,7 @@ window.__pmcSearchFn = function(q) {
 // ── PMC 批量提交（旧版）──────────────────────────────────────────────
 async function pmcSubmit() {
   if (!pmcSelected || !pmcSelected.length) {
-    alert('\u8bf7\u5148\u9009\u4e2d\u8ba1\u5355');
+    alert('\u8bf7\u5148\u52fe\u9009\u6307\u4ee4\u5355');
     return;
   }
   var el = $id('content');
@@ -2172,13 +2182,13 @@ async function pmcSubmit() {
     var results = res.results || (res.mps_no ? [res] : []);
     var mpsList = results.map(function(r) { return r.mps_no; }).filter(Boolean).join(' / ') || res.mps_no || '\u2014';
     var totalItm = results.reduce(function(s, r) { return s + (r.total_itm || 0); }, 0);
-    el.innerHTML = '<div style="padding:20px;text-align:center"><div style="font-size:16px;font-weight:600;color:var(--green);margin-bottom:8px">✓ MPS \u751f成\u5b8c成</div><div style="font-size:14px;word-break:break-all">' + mpsList + '</div><div style="font-size:13px;color:var(--sub);margin-top:6px">' + results.length + ' \u5f20\u5de5\u5355 \u00b7 ' + totalItm + ' \u4e2a ITM</div><div style="margin-top:16px"><button onclick="loadPMC()" style="padding:10px 20px;background:var(--accent);color:#fff;border:none;border-radius:8px;cursor:pointer">\u7ee7\u7eed\u5206\u6790</button></div></div>';
+    el.innerHTML = '<div style="padding:20px;text-align:center"><div style="font-size:16px;font-weight:600;color:var(--green);margin-bottom:8px">✓ MPS \u751f成\u5b8c成</div><div style="font-size:14px;word-break:break-all">' + mpsList + '</div><div style="font-size:13px;color:var(--sub);margin-top:6px">' + results.length + ' \u5f20\u5de5\u5355 \u00b7 ' + totalItm + ' \u4e2a\u9879\u6b21</div><div style="margin-top:16px"><button onclick="loadPMC()" style="padding:10px 20px;background:var(--accent);color:#fff;border:none;border-radius:8px;cursor:pointer">\u7ee7\u7eed\u5206\u6790</button></div></div>';
   } catch(e) { el.innerHTML = '<div class="error-msg">' + e.message + '</div>'; }
 }
 
 // PMC 批量预览（BOM 树合并）
 async function pmcPreviewBatch() {
-  if (!pmcSelected || !pmcSelected.length) { alert('\u8bf7\u5148\u9009\u4e2d\u8ba1\u5355'); return; }
+  if (!pmcSelected || !pmcSelected.length) { alert('\u8bf7\u5148\u52fe\u9009\u6307\u4ee4\u5355'); return; }
   var el = $id('content');
   el.innerHTML = '<div class="state-msg"><div class="spinner"></div>加载中\u2026</div>';
   var allRows = [];
@@ -2188,7 +2198,7 @@ async function pmcPreviewBatch() {
       var data = await api(BASE + '/pmc/preview_mps?' + new URLSearchParams({so_no_itm: it.so_no_itm, prd_no: it.prd_no, qty: it.qty}));
       if (data.items) allRows = allRows.concat(data.items);
     }
-    renderPMCTree(allRows, pmcSelected.length + ' 条指令单合并');
+    renderPMCTree(allRows, '合并 ' + pmcSelected.length + ' 条指令单');
   } catch(e) { el.innerHTML = '<div class="error-msg">' + e.message + '</div>'; }
 }
 
@@ -2220,7 +2230,7 @@ function renderPMCTree(items, title) {
   var totalGap = 0, gapCount = 0;
   for (var gi = 0; gi < items.length; gi++) { if ((items[gi].gap||0) > 0) { totalGap += items[gi].gap||0; gapCount++; } }
   var summaryTag = fgRow ? (totalGap > 0
-    ? '<span style="background:#fee2e2;color:#dc2626;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:600">\u7f3a ' + totalGap.toLocaleString('zh-CN') + ' \u4ef6 \u5173 ' + gapCount + ' \u9879</span>'
+    ? '<span style="background:#fee2e2;color:#dc2626;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:600">\u7f3a ' + totalGap.toLocaleString('zh-CN') + ' \u4ef6 \u00b7 ' + gapCount + ' \u9879\u7f3a\u53e3</span>'
     : '<span style="background:#dcfce7;color:#16a34a;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:600">✓ \u5168\u90e8\u5145\u8db3</span>')
     : '';
   html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap"><div style="font-size:13px;color:var(--sub)">' + (title||'') + '</div>' + summaryTag + '</div>';
@@ -2230,14 +2240,14 @@ function renderPMCTree(items, title) {
   html += '<th style="padding:7px 8px;text-align:left">品号</th>';
   html += '<th style="padding:7px 4px;text-align:center">层</th>';
   html += '<th style="padding:7px 4px;text-align:right">需求</th>';
-  html += '<th style="padding:7px 4px;text-align:right">销未出</th>';
+  html += '<th style="padding:7px 4px;text-align:right">销售未出</th>';
   html += '<th style="padding:7px 4px;text-align:right">原材料仓</th>';
   html += '<th style="padding:7px 4px;text-align:right">生产仓</th>';
-  html += '<th style="padding:7px 4px;text-align:right">在途</th>';
+  html += '<th style="padding:7px 4px;text-align:right">在途采购</th>';
   html += '<th style="padding:7px 4px;text-align:right">在单请购</th>';
   html += '<th style="padding:7px 4px;text-align:right">合计</th>';
   html += '<th style="padding:7px 4px;text-align:right;min-width:80px">缺口</th>';
-  html += '<th style="padding:7px 4px;text-align:center">调</th>';
+  html += '<th style="padding:7px 4px;text-align:center">调整</th>';
   html += '</tr></thead><tbody>';
 
   var depthColors = ['#1d4ed8','#16a34a','#d97706','#ea580c','#dc2626'];
@@ -2249,7 +2259,7 @@ function renderPMCTree(items, title) {
     var prodQty = r.prod_qty || 0;
     var wayQty = r.qty_on_way || 0;
     var odrQty = r.qty_on_odr || 0;
-    var totalStock = r.total_stock || 0;
+    var totalStock = r.total_avail || r.total_stock || 0;   // 合计 = 原材料仓+生产仓+在途采购+在单请购
     var realDemand = r.real_demand || 0;
     var soRemain = r.so_remain || 0;
     var gap = r.gap || 0;
@@ -2257,8 +2267,8 @@ function renderPMCTree(items, title) {
     // ponytail: 取消缩进，全部并排显示
     var indent = 0;
     var depthColor = depthColors[Math.min(depth, depthColors.length-1)];
-    var depthLabel = isFg ? '成' : 'L' + depth;
-    var adjBtn = !isFg && depth > 0 ? '<button onclick="pmcOpenAdjust(\'' + escAttr(r.prd_no||'') + '\',\'\',\'mat\',' + matQty + ')" style="padding:3px 6px;background:#f3f4f6;border:1px solid #d1d5db;border-radius:4px;font-size:11px;cursor:pointer;color:#374151">调</button>' : '';
+    var depthLabel = isFg ? '成品' : 'L' + depth;
+    var adjBtn = !isFg && depth > 0 ? '<button onclick="pmcOpenAdjust(\'' + escAttr(r.prd_no||'') + '\',\'\',\'mat\',' + matQty + ')" style="padding:3px 6px;background:#f3f4f6;border:1px solid #d1d5db;border-radius:4px;font-size:11px;cursor:pointer;color:#374151">调整</button>' : '';
     // 缺口进度条
     var barPct = realDemand > 0 ? Math.min(100, Math.round((totalStock/realDemand)*100)) : 0;
     var barColor = gap > 0 ? '#dc2626' : '#16a34a';
@@ -2270,7 +2280,7 @@ function renderPMCTree(items, title) {
     var wayHtml = wayQty > 0 ? '<span style="color:#f59e0b;font-weight:600;font-variant-numeric:tabular-nums">' + Number(wayQty).toLocaleString('zh-CN') + '</span>' : '<span style="font-variant-numeric:tabular-nums">-</span>';
     var odrHtml = odrQty > 0 ? '<span style="color:#8b5cf6;font-weight:600;font-variant-numeric:tabular-nums">' + Number(odrQty).toLocaleString('zh-CN') + '</span>' : '<span style="font-variant-numeric:tabular-nums">-</span>';
     html += '<tr style="border-bottom:1px solid #f3f4f6;background:' + bg + '">';
-    html += '<td style="padding:7px 8px"><span style="display:inline-block;margin-left:' + indent + 'px"></span><b style="font-variant-numeric:tabular-nums">' + escHtml(r.prd_no||'') + '</b> <span style="font-size:11px;color:var(--sub)">' + escHtml(r.prd_name||'') + '</span></td>';
+    html += '<td style="padding:7px 8px"><span style="display:inline-block;margin-left:' + indent + 'px"></span><b style="font-variant-numeric:tabular-nums">' + escHtml(r.prd_no||'') + '</b> <span style="font-size:13px;color:var(--name)">' + escHtml(r.prd_name||'') + '</span></td>';
     html += '<td style="padding:7px 4px;text-align:center"><span style="font-size:10px;font-weight:700;color:#fff;background:' + depthColor + ';padding:2px 5px;border-radius:10px">' + depthLabel + '</span></td>';
     html += '<td style="padding:7px 4px;text-align:right;font-weight:600;font-variant-numeric:tabular-nums">' + Number(realDemand).toLocaleString('zh-CN') + '</td>';
     html += '<td style="padding:7px 4px;text-align:right;font-variant-numeric:tabular-nums">' + soRemainHtml + '</td>';
@@ -2288,7 +2298,7 @@ function renderPMCTree(items, title) {
   // 说明
   html += '<div style="margin-top:10px;font-size:11px;color:var(--sub);display:flex;gap:14px;flex-wrap:wrap">';
   html += '<span>销未出=<span style="color:#6366f1;font-weight:600">销售未出</span></span>';
-  html += '<span>在途=<span style="color:#f59e0b;font-weight:600">原材料在途购</span></span>';
+  html += '<span>在途=<span style="color:#f59e0b;font-weight:600">原材料在途采购</span></span>';
   html += '<span>在单请购=<span style="color:#8b5cf6;font-weight:600">原材料在单请购</span></span>';
   html += '</div>';
 
@@ -2307,7 +2317,7 @@ async function pmcOpenAdjust(prdNo, prdName, type, totalQty) {
   var bomRows = window.__pmcBomRows || [];
   var row = bomRows.find(function(r) { return r.prd_no === prdNo; });
   var matDetail = (row && row.mat_detail) ? row.mat_detail : [];
-  if (!matDetail.length) { alert('\u8be5品号\u65e0\u539f\u6750\u6599\u4ed3\u5e93\u5b58\uff0c\u65e0\u9879调\u6574'); return; }
+  if (!matDetail.length) { alert('\u8be5品号\u65e0\u539f\u6750\u6599\u4ed3\u5e93\u5b58\uff0c\u65e0\u6cd5调\u6574'); return; }
 
   var whOpts = matDetail.map(function(m) {
     return '<option value="' + m[0] + '">' + m[0] + ' ' + (m[1]||'') + ' (' + (m[2]||0) + ')</option>';
@@ -2401,7 +2411,7 @@ window.switchInMode = function(mode, prd_no, wh, wh_name, qty) {
     '<div style="display:grid;gap:10px">' +
     '<div style="padding:10px;background:var(--bg);border-radius:8px">' +
     '<div style="font-size:14px;font-weight:600">'+fmt(prd_no)+'</div>' +
-    '<div style="font-size:12px;color:var(--sub);margin-top:2px">'+fmt((stockData||{}).prd_name||'')+'</div>' +
+    '<div style="font-size:13px;color:var(--name);margin-top:2px">'+fmt((stockData||{}).prd_name||'')+'</div>' +
     (wh && qty > 0 ? '<div style="font-size:12px;color:var(--sub);margin-top:2px">\u5f53\u524d\u4ed3\u5e93 <b>'+fmt(wh_name||wh)+'</b> \u5e93\u5b58 <b style="color:var(--green)">'+fmtNum(qty)+'</b> \u4ef6</div>' : '') +
     '</div>' +
     '<div style="font-size:12px;color:var(--sub);margin-bottom:4px">'+whLabel+' <span style="color:red">*</span></div>' + whInput +
@@ -2546,7 +2556,7 @@ async function openTransferModal(prd_no, wh, wh_name, qty) {
       <div style="display:grid;gap:10px">
         <div style="padding:10px;background:var(--bg);border-radius:8px">
           <div style="font-size:14px;font-weight:600">${fmt(prd_no)}</div>
-          <div style="font-size:12px;color:var(--sub);margin-top:2px">${fmt((stockData||{}).prd_name||'')}</div>
+          <div style="font-size:13px;color:var(--name);margin-top:2px">${fmt((stockData||{}).prd_name||'')}</div>
           <div style="font-size:12px;color:var(--sub)">
             FROM仓 <span style="color:var(--sub);font-size:11px">(当前仓库)</span>
             <input type="text" id="tf_wh" list="tf_wh_opts" value="${escAttr(wh)}" placeholder="选择或输入 FROM 仓库"
@@ -2806,7 +2816,7 @@ function renderBatchTable(allItems, allWhs, whOpts) {
     const rem = item.rem || item.REM || item.备注 || '';
     html += `<tr style="border-bottom:1px solid var(--border)">`;
     html += `<td style="padding:6px 5px;font-weight:600">${fmt(prdNo)}</td>`;
-    html += `<td style="padding:6px 5px;color:var(--sub);font-size:12px;max-width:380px;word-break:break-word;vertical-align:top">${fmt(prdName)}</td>`;
+    html += `<td style="padding:6px 5px;color:var(--name);font-size:13px;max-width:380px;word-break:break-word;vertical-align:top">${fmt(prdName)}</td>`;
     html += `<td style="padding:6px 5px"><input type="text" class="batch-wh-from" data-idx="${idx}" list="bt_from_wh_opts" placeholder="FROM仓" style="width:130px;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:13px;font-family:inherit;background:var(--card)"></td>`;
     html += `<td style="padding:6px 5px"><input type="text" class="batch-cus" data-idx="${idx}" value="${escAttr(cus)}" placeholder="客户" style="width:110px;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:13px;font-family:inherit;background:var(--card)"></td>`;
     html += `<td style="padding:6px 5px"><input type="text" class="batch-ref" data-idx="${idx}" value="${escAttr(ref)}" placeholder="指令单号" style="width:130px;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:13px;font-family:inherit;background:var(--card)"></td>`;
