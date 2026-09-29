@@ -56,8 +56,8 @@
 |---|---|---|---|
 | **品号** | `r.prd_no` + `r.prd_name` | `prd_no / prd_name` | 来自 BOM 树节点；成品行 = 销售订单的品号 |
 | **层** | `is_fg ? '成品' : 'L'+depth` | `is_fg / depth` | 成品 = L0；子件逐层 L1…（颜色 5 档：蓝/绿/橙/深橙/红） |
-| **需求** | `Number(r.real_demand)` | `real_demand` | 成品行 = **销售未出**（`QTY − QTYPS`）；子件行 = **父件缺口 × 配比**（配比 = BOM.用量 ÷ 基数） |
-| **销售未出** | `so_remain` | `so_remain` | `QTY − QTYPS`，**只有成品行有**，其他行显示 `-` |
+| **需求** | `Number(r.real_demand)` | `real_demand` | 成品行 = **销售未出**（`QTY − SAQTY`）；子件行 = **父件缺口 × 配比**（配比 = BOM.用量 ÷ 基数） |
+| **销售未出** | `so_remain` | `so_remain` | `QTY − SAQTY`，**只有成品行有**，其他行显示 `-` |
 | **原材料仓** | `r.mat_qty` | `mat_qty` | 该品号**除生产仓外**所有仓的现存量之和（可点 → 调整弹窗） |
 | **生产仓** | `r.prod_qty` | `prod_qty` | 该品号在 `ATTRIB ∈ {5,6}`（车间仓+外发仓）的现存量之和（不可调） |
 | **在途采购** | `r.qty_on_way` | `qty_on_way` | **只算挂本单的**采购未回（`VW_POS` 采购行 `QTY − PSQTY` 中，指令单号 = 本单的） |
@@ -126,7 +126,7 @@ prd_net prd_need prd_stock prd_orders                              ← 品号汇
 | 名字 | 定义 | 用在哪 |
 |---|---|---|
 | **订单量** `qty` | `POS.QTY` | 列表卡片大数字；选中时传给后端只作兜底 |
-| **销售未出** `so_remain` | `POS.QTY − POS.QTYPS` | 树上成品行「需求」、销未出列；**真正参与计算的需求基准** |
+| **销售未出** `so_remain` | `VW_POS.QTY − VW_POS.SAQTY`（v2 视图 `QTY_ON_ODR` 的口径；`QTYPS` 是废列） | 树上成品行「需求」、销未出列；**真正参与计算的需求基准** |
 | **需求** `real_demand` | 成品=销售未出；子件=父件缺口×配比 | 树上「需求」列、缺口算式左边 |
 
 ### 3.2 「合计」不是库存

@@ -31,7 +31,7 @@ PMC 干的事：**从待排产的销售订单行出发，按 BOM 一层层展开
 
 | 数据 | 来源 | 说明 |
 |---|---|---|
-| 销售订单行 | `VW_POS`（`OS_NO LIKE 'SO%'`） | 订单量 `QTY`、已出 `QTYPS`、审核人 `CHK_MAN`、指令单号、`EST_DD`、`MP` |
+| 销售订单行 | `VW_POS`（`OS_NO LIKE 'SO%'`） | 订单量 `QTY`、**已出货 `SAQTY`**、审核人 `CHK_MAN`、指令单号、`EST_DD`、`MP`（`QTYPS` 是废列，恒 0，别用） |
 | 采购行 | `VW_POS`（`OS_ID='PO'`） | 采购未回量 = `QTY − ISNULL(PSQTY,0)` |
 | 请购行 | `QTS`（`QT_ID='QD'`） | 在单请购量 = `SUM(QTY)` |
 | 库存 | `VW_STOCK_DETAIL2`（逐仓） | `QTY_WH / QTY_ON_RSV / QTY_ON_PRC / QTY_ON_INS / QTY_ON_SCR / QTY_ON_WAY / QTY_ON_ODR` |
@@ -52,7 +52,7 @@ PMC 干的事：**从待排产的销售订单行出发，按 BOM 一层层展开
 ```sql
 MP = 0 AND USABLE = 1 AND OS_NO LIKE 'SO%'
   AND ISNULL(CHK_MAN,'') <> ''                                   -- 已审核（审核人）
-  AND ISNULL(QTY,0) - ISNULL(QTYPS,0) > 0                        -- 销售未出 > 0
+  AND ISNULL(QTY,0) - ISNULL(SAQTY,0) > 0                        -- 销售未出 > 0（= v2 视图口径）
   AND ISNUMERIC(指令单号) = 1 AND CAST(指令单号 AS INT) > 7721     -- 老单不排产
 ```
 
@@ -69,7 +69,7 @@ MP = 0 AND USABLE = 1 AND OS_NO LIKE 'SO%'
 `_so_line_info(so_no_itm)` → `(销售未出, 指令单号)`：
 
 ```
-销售未出 = POS.QTY − POS.QTYPS          # 不是订单原始数量：已部分出货的只算未出
+销售未出 = VW_POS.QTY − VW_POS.SAQTY    # = VW_SO_QTY / v2 视图 QTY_ON_ODR 的口径，不是订单原始数量
 指令单号  = 用来把池子（在途/在单请购）挂到本单
 ```
 
@@ -160,7 +160,7 @@ _mps_bom_tree(fg_no, conn, qty) →
 | 字段 | 公式 | 含义 |
 |---|---|---|
 | `real_demand` | 父件缺口 × 配比（成品行 = 销售未出） | **需求** |
-| `so_remain` | `QTY − QTYPS`（只有成品行有值） | **销售未出** |
+| `so_remain` | `QTY − SAQTY`（只有成品行有值） | **销售未出** |
 | `mat_qty` | Σ 原材料仓库存 | **原材料仓** |
 | `prod_qty` | Σ 生产仓库存 | **生产仓** |
 | `qty_on_way` | 挂本单的采购未回 `po` | **在途采购** |
@@ -231,7 +231,7 @@ diff > 0 → IC KND=13（其他入库），diff < 0 → IC KND=23（其他出库
 
 | # | 坑 | 现状 |
 |---|---|---|
-| 1 | 需求基准用订单原始量（已出货部分重复排产） | 已改 `QTY − QTYPS` |
+| 1 | 需求基准用订单原始量（已出货部分重复排产） | 已改 `QTY − SAQTY`（`QTYPS` 是废列恒 0 —— 2026-09-29 纠正，之前算的是整单量） |
 | 2 | 「在单请购」取 `QTY_ON_ODR`（其实是销售未出） | 已改 `_v2_odr_split` |
 | 3 | 按品号索引分配 BOM 需求（同料多母件时覆盖） | 已改按边分配 |
 | 4 | 顶层 `allocate(..., 0)` 导致整单虚高 | 已改传成品自身供给 |

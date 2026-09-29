@@ -3069,13 +3069,16 @@ def _v2_stock_detail(prd_nos, db_conn):
 
 
 # PMC 待分析销售订单的筛选口径（MAK 2026-09-29 定）：
-#   已审核（CHK_MAN 有值）+ 销售未出>0（QTY−QTYPS）+ 指令单号>7721 + MP=0
+#   已审核（CHK_MAN 有值）+ 销售未出>0（QTY−SAQTY）+ 指令单号>7721 + MP=0
+# ⚠ 销售未出必须用 SAQTY（= VW_SO_QTY / VW_STOCK_DETAIL2.QTY_ON_ODR 的口径）；
+#   VW_POS.QTYPS 在整库 850 行 SO 里全是 0/NULL，是废列 —— 用它会得到「整单量」，
+#   已部分出货的单需求虚高、已出完的单还会被列进待分析（实测 QTYPS≠SAQTY 有 129 行）
 # ⚠ CHK_MAN = 审核人；APP_ID/APP_MAN/APP_DD 是「核准」（默认 0，基本没用过），别拿它当审核
 # ⚠ 老单（指令单号 ≤7721）不排产；空/非数字的指令单号（含 TEST01）一律不要
 _PMC_POS_FILTER = """
     MP=0 AND USABLE=1 AND OS_NO LIKE 'SO%'
       AND ISNULL(CHK_MAN,'') <> ''
-      AND ISNULL(QTY,0) - ISNULL(QTYPS,0) > 0
+      AND ISNULL(QTY,0) - ISNULL(SAQTY,0) > 0
       AND ISNUMERIC(指令单号) = 1 AND CAST(指令单号 AS INT) > 7721
 """
 
@@ -3098,7 +3101,7 @@ async def pmc_pos_unanalyzed(
     if q:
         cur.execute(f"""
             SELECT TOP 200 OS_NO,ITM,SO_NO_ITM,PRD_NO,PRD_NAME,SPC,QTY,CUS_NO,CUS_NAME,指令单号,EST_DD,
-                   ISNULL(QTY,0)-ISNULL(QTYPS,0) AS so_remain
+                   ISNULL(QTY,0)-ISNULL(SAQTY,0) AS so_remain
             FROM VW_POS WITH(NOLOCK)
             WHERE {flt}
               AND (OS_NO LIKE %s OR 指令单号 LIKE %s OR PRD_NO LIKE %s OR PRD_NAME LIKE %s)
@@ -3107,7 +3110,7 @@ async def pmc_pos_unanalyzed(
     else:
         cur.execute(f"""
             SELECT TOP 200 OS_NO,ITM,SO_NO_ITM,PRD_NO,PRD_NAME,SPC,QTY,CUS_NO,CUS_NAME,指令单号,EST_DD,
-                   ISNULL(QTY,0)-ISNULL(QTYPS,0) AS so_remain
+                   ISNULL(QTY,0)-ISNULL(SAQTY,0) AS so_remain
             FROM VW_POS WITH(NOLOCK)
             WHERE {flt}
             ORDER BY 指令单号, OS_NO, ITM
@@ -3160,7 +3163,7 @@ def _calc_prd_summary(db_name="C041"):
         cur = conn.cursor()
         cur.execute(f"""
             SELECT OS_NO,ITM,SO_NO_ITM,PRD_NO,PRD_NAME,SPC,QTY,CUS_NO,CUS_NAME,指令单号,EST_DD,
-                   ISNULL(QTY,0)-ISNULL(QTYPS,0) AS so_remain
+                   ISNULL(QTY,0)-ISNULL(SAQTY,0) AS so_remain
             FROM VW_POS WITH(NOLOCK)
             WHERE {_PMC_POS_FILTER}
             ORDER BY 指令单号, OS_NO, ITM
@@ -3324,12 +3327,12 @@ def _v2_odr_split(prd_nos, db_conn, ref=None, fg=None, so_itm=None):
 def _so_line_info(so_no_itm, db_conn):
     """该销售订单行的「销售未出」和「指令单号」。
 
-    销售未出 = QTY − QTYPS（需求基准，不是订单原始数量：已部分出货的单只算未出部分）。
+    销售未出 = QTY − SAQTY（= VW_SO_QTY / v2 视图 QTY_ON_ODR 的口径；VW_POS.QTYPS 是废列，恒 0）。
     指令单号用来把在途/在单请购挂到单上。查不到返回 (None, '')。
     """
     cur = db_conn.cursor()
     cur.execute("""
-        SELECT ISNULL(QTY,0)-ISNULL(QTYPS,0), ISNULL([指令单号],'') FROM VW_POS WITH(NOLOCK)
+        SELECT ISNULL(QTY,0)-ISNULL(SAQTY,0), ISNULL([指令单号],'') FROM VW_POS WITH(NOLOCK)
         WHERE SO_NO_ITM=%s
     """, (so_no_itm,))
     r = cur.fetchone()
@@ -3355,7 +3358,7 @@ async def pmc_preview_mps(
     """
     db_name = "T041" if db.lower() == "t041" else "C041"
     conn = get_conn(db=db_name)
-    # 需求基准 = 销售未出（QTY-QTYPS）；指令单号用来把在途/在单请购挂到本单
+    # 需求基准 = 销售未出（QTY-SAQTY）；指令单号用来把在途/在单请购挂到本单
     demand_qty, ref = _so_line_info(so_no_itm, conn)
     if demand_qty is None:
         demand_qty = qty
@@ -3432,7 +3435,7 @@ async def pmc_preview_mps(
     rows = [{
         "prd_no": prd_no, "qty": round(demand_qty, 4),
         "qty_on_odr": fg_on_odr,
-        "so_remain": round(demand_qty, 4),   # 销售未出 = QTY-QTYPS
+        "so_remain": round(demand_qty, 4),   # 销售未出 = QTY-SAQTY
         "real_demand": round(fg_real_demand, 4),
         "mat_qty": round(fg_stock.get('mat_qty', 0), 2),
         "prod_qty": round(fg_stock.get('prod_qty', 0), 2),
