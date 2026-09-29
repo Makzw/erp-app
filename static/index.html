@@ -2104,6 +2104,7 @@ function renderPMCList(items, q) {
     ' style="flex:1;min-width:100px;padding:7px 10px;border:1.5px solid var(--border);border-radius:20px;font-size:13px"' +
     ' onkeydown="if(event.key===\'Enter\'){window.__pmcSearchFn&&window.__pmcSearchFn(this.value)}"' +
     ' oninput="window.__pmcSearchFn&&window.__pmcSearchFn(this.value)">' +
+    '<button onclick="pmcShowSummary()" style="padding:6px 12px;border-radius:16px;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">\u54c1\u53f7\u6c47\u603b</button>' +
     '<div style="flex:1;text-align:right;font-size:13px;color:var(--sub)">' + '\u5df2\u9009 <b id="pmcSelCount" style="color:var(--accent);font-weight:700">' + selCount + '</b> / ' + items.length + ' \u6761</div></div>' +
     (cusBtns ? '<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">' + cusBtns + '</div>' : '') +
     (refBtns ? '<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">' + refBtns + '</div>' : '') +
@@ -2163,6 +2164,57 @@ function pmcToggleSel(key, idx) {
 window.__pmcSearchFn = function(q) {
   renderPMCList(window.__pmcItems || [], q);
 };
+
+// 品号级汇总（跨单净缺口）：后台算、缓存 10 分钟。库存只扣一次的那个数就是「净缺口」。
+var pmcSumShown = false;
+function pmcSumBack() {
+  pmcSumShown = false;
+  var q = $id('pmcSearch') ? $id('pmcSearch').value : '';
+  renderPMCList(window.__pmcItems || [], q);
+}
+async function pmcShowSummary(refresh) {
+  var el = $id('content'); if (!el) return;
+  pmcSumShown = true;
+  el.innerHTML = '<div class="state-msg">\u52a0\u8f7d\u4e2d\u2026</div>';
+  try {
+    var d = await api(BASE + '/pmc/prd_summary' + (refresh ? '?refresh=1' : ''));
+    if (!pmcSumShown) return;
+    if (d.computing) {
+      el.innerHTML = '<div class="state-msg">\u6c47\u603b\u8ba1\u7b97\u4e2d\u2026\u4e00\u904d\u8981\u51e0\u5341\u79d2\uff0c\u7b97\u5b8c\u81ea\u52a8\u51fa</div>';
+      setTimeout(function() { if (pmcSumShown) pmcShowSummary(); }, 6000);
+      return;
+    }
+    if (d.err) { el.innerHTML = '<div class="state-msg" style="color:#dc2626">\u6c47\u603b\u5931\u8d25\uff1a' + escHtml(d.err) + '</div>'; return; }
+    var it = d.items || [];
+    var tot = 0; for (var i = 0; i < it.length; i++) tot += (it[i].net || 0);
+    var h = '<div style="padding:10px 4px 14px">' +
+      '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">' +
+      '<button onclick="pmcSumBack()" style="padding:6px 12px;border-radius:16px;border:1px solid var(--border);background:#fff;font-size:12px;cursor:pointer">\u2190 \u8fd4\u56de\u5217\u8868</button>' +
+      '<button onclick="pmcShowSummary(1)" style="padding:6px 12px;border-radius:16px;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;font-size:12px;font-weight:600;cursor:pointer">\u91cd\u7b97</button>' +
+      '<div style="font-size:12px;color:var(--sub)">\u57fa\u4e8e ' + (d.orders || 0) + ' \u5f20\u5f85\u5206\u6790\u5355\u3001' + it.length + ' \u4e2a\u54c1\u53f7' + (d.ts ? '\uff0c\u7b97\u4e8e ' + new Date(d.ts * 1000).toLocaleTimeString('zh-CN') : '') + '</div></div>' +
+      '<div style="font-size:12px;color:var(--sub);margin-bottom:8px">\u51c0\u7f3a\u53e3 = \u9700\u6c42\u5408\u8ba1 \u2212 \u6302\u672c\u5355\u7684\u6599 \u2212 \u5e93\u5b58\uff08\u8de8\u5355\u53bb\u91cd\uff0c\u5e93\u5b58\u53ea\u6263\u4e00\u6b21\uff09\u3002\u73b0\u5728\u5c31\u662f<b>\u4e0b\u91c7\u8d2d/\u8bf7\u8d2d\u7528\u8fd9\u4e00\u5217</b>\u3002</div>' +
+      '<table style="width:100%;border-collapse:collapse;font-size:12px">' +
+      '<thead><tr style="background:#f9fafb;color:var(--sub)">' +
+      '<th style="text-align:left;padding:6px 4px">\u54c1\u53f7</th><th style="text-align:left;padding:6px 4px">\u54c1\u540d</th>' +
+      '<th style="text-align:right;padding:6px 4px">\u9700\u6c42\u5408\u8ba1</th><th style="text-align:right;padding:6px 4px">\u5e93\u5b58</th>' +
+      '<th style="text-align:right;padding:6px 4px">\u51c0\u7f3a\u53e3</th><th style="text-align:center;padding:6px 4px">\u5355\u6570</th></tr></thead><tbody>';
+    for (var j = 0; j < it.length; j++) {
+      var r = it[j], on = (r.net || 0) > 0;
+      h += '<tr style="border-top:1px solid var(--border)' + (on ? '' : ';opacity:.55') + '">' +
+        '<td style="padding:6px 4px;font-weight:600">' + escHtml(r.prd_no) + '</td>' +
+        '<td style="padding:6px 4px;color:var(--name);word-break:break-all">' + escHtml(r.prd_name) + '</td>' +
+        '<td style="padding:6px 4px;text-align:right;font-variant-numeric:tabular-nums">' + Number(r.need).toLocaleString('zh-CN') + '</td>' +
+        '<td style="padding:6px 4px;text-align:right;font-variant-numeric:tabular-nums;color:' + ((r.stock || 0) < 0 ? '#dc2626' : 'inherit') + '">' + Number(r.stock).toLocaleString('zh-CN') + '</td>' +
+        '<td style="padding:6px 4px;text-align:right;font-weight:700;font-variant-numeric:tabular-nums;color:' + (on ? '#dc2626' : 'var(--sub)') + '">' + (on ? Number(r.net).toLocaleString('zh-CN') : '\u2014') + '</td>' +
+        '<td style="padding:6px 4px;text-align:center;color:var(--sub)">' + r.orders + '</td></tr>';
+    }
+    h += '</tbody></table>' +
+      '<div style="margin-top:10px;font-size:13px">\u51c0\u7f3a\u53e3\u5408\u8ba1\uff1a<b style="color:#dc2626">' + Number(tot).toLocaleString('zh-CN') + '</b> \u4ef6</div></div>';
+    el.innerHTML = h;
+  } catch (e) {
+    el.innerHTML = '<div class="state-msg" style="color:#dc2626">\u52a0\u8f7d\u5931\u8d25\uff1a' + escHtml(e.message || e) + '</div>';
+  }
+}
 
 // ── PMC 批量提交（旧版）──────────────────────────────────────────────
 async function pmcSubmit() {
@@ -2275,6 +2327,15 @@ function renderPMCTree(items, title) {
     var gapHtml = gap > 0
       ? '<div style="display:flex;align-items:center;gap:4px"><div style="flex:1;height:5px;background:#f3f4f6;border-radius:3px;overflow:hidden"><div style="width:' + barPct + '%;height:100%;background:' + barColor + ';border-radius:3px"></div></div><span style="font-weight:700;color:' + barColor + ';font-size:11px;min-width:24px;text-align:right;font-variant-numeric:tabular-nums">' + gap + '</span></div>'
       : '<span style="color:#16a34a;font-weight:700">✓</span>';
+    // 品号级净缺口（跨单，库存只扣一次）：缓存算好才有；单层缺口只是「不含公共库存」的本单数
+    var prdNet = r.prd_net;
+    if (prdNet !== undefined && prdNet !== null) {
+      var netTxt = Number(prdNet).toLocaleString('zh-CN');
+      var netTip = '该品号跨 ' + (r.prd_orders || 1) + ' 张待分析单：需求合计 ' +
+        Number(r.prd_need || 0).toLocaleString('zh-CN') + ' − 库存 ' + Number(r.prd_stock || 0).toLocaleString('zh-CN') + ' = 净缺口 ' + netTxt;
+      gapHtml += '<div title="' + escAttr(netTip) + '" style="font-size:11px;margin-top:1px;white-space:nowrap;color:' +
+        (prdNet > 0 ? '#b45309' : '#16a34a') + '">品号净缺 ' + (prdNet > 0 ? netTxt : '0') + '</div>';
+    }
     // 销未出 / 在途 / 在单
     var soRemainHtml = isFg && soRemain > 0 ? '<span style="color:#6366f1;font-weight:600;font-variant-numeric:tabular-nums">' + Number(soRemain).toLocaleString('zh-CN') + '</span>' : '<span style="font-variant-numeric:tabular-nums">-</span>';
     var wayHtml = wayQty > 0 ? '<span style="color:#f59e0b;font-weight:600;font-variant-numeric:tabular-nums">' + Number(wayQty).toLocaleString('zh-CN') + '</span>' : '<span style="font-variant-numeric:tabular-nums">-</span>';

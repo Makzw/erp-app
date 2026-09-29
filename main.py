@@ -3097,7 +3097,7 @@ async def pmc_pos_unanalyzed(
 
     if q:
         cur.execute(f"""
-            SELECT TOP 50 OS_NO,ITM,SO_NO_ITM,PRD_NO,PRD_NAME,SPC,QTY,CUS_NO,CUS_NAME,指令单号,EST_DD,
+            SELECT TOP 200 OS_NO,ITM,SO_NO_ITM,PRD_NO,PRD_NAME,SPC,QTY,CUS_NO,CUS_NAME,指令单号,EST_DD,
                    ISNULL(QTY,0)-ISNULL(QTYPS,0) AS so_remain
             FROM VW_POS WITH(NOLOCK)
             WHERE {flt}
@@ -3106,7 +3106,7 @@ async def pmc_pos_unanalyzed(
         """, (f"%{q}%", f"%{q}%", f"%{q}%", f"%{q}%"))
     else:
         cur.execute(f"""
-            SELECT TOP 50 OS_NO,ITM,SO_NO_ITM,PRD_NO,PRD_NAME,SPC,QTY,CUS_NO,CUS_NAME,指令单号,EST_DD,
+            SELECT TOP 200 OS_NO,ITM,SO_NO_ITM,PRD_NO,PRD_NAME,SPC,QTY,CUS_NO,CUS_NAME,指令单号,EST_DD,
                    ISNULL(QTY,0)-ISNULL(QTYPS,0) AS so_remain
             FROM VW_POS WITH(NOLOCK)
             WHERE {flt}
@@ -3115,21 +3115,129 @@ async def pmc_pos_unanalyzed(
 
     rows = cur.fetchall()
     conn.close()
+    return {"items": [_pos_row(r) for r in rows]}
+
+
+def _pos_row(r):
+    """VW_POS 待分析行的字段映射（列表 / 汇总共用，别各写一份）"""
     return {
-        "items": [{
-            "os_no":     g(r[0]),
-            "itm":       r[1],
-            "so_no_itm": g(r[2]),
-            "prd_no":    g(r[3]),
-            "prd_name":  g(r[4]),
-            "spc":       g(r[5]),
-            "qty":       float(r[6] or 0),
-            "cus_no":    g(r[7]),
-            "cus_name":  g(r[8]),
-            "ref":       g(r[9]),
-            "est_dd":    str(r[10])[:10] if r[10] else "",
-            "so_remain": float(r[11] or 0),
-        } for r in rows]
+        "os_no":     g(r[0]),
+        "itm":       r[1],
+        "so_no_itm": g(r[2]),
+        "prd_no":    g(r[3]),
+        "prd_name":  g(r[4]),
+        "spc":       g(r[5]),
+        "qty":       float(r[6] or 0),
+        "cus_no":    g(r[7]),
+        "cus_name":  g(r[8]),
+        "ref":       g(r[9]),
+        "est_dd":    str(r[10])[:10] if r[10] else "",
+        "so_remain": float(r[11] or 0),
+    }
+
+
+# ---------------------------------------------------------------------------
+# 品号级汇总（跨单）：需求合计 − 挂本单供给 − 库存（库存只扣一次）= 净缺口
+#
+# 为什么要有它：单层「不分摊」后，单层缺口不扣公共库存，多张单用同一个料时
+# 还会各扣一遍别人的料 —— 单层的数只能看「本单要多少」，**不能拿来下单**。
+# 采购是按品号下的，所以净缺口在这里算：同一品号的需求合并、库存只扣一次。
+# 一遍要跑所有待分析单的 BOM（几十秒）→ 后台线程算 + 内存缓存（TTL 10 分钟）。
+# ---------------------------------------------------------------------------
+_PRD_SUM = {"ts": 0.0, "data": None, "busy": False, "err": "", "orders": 0, "kicked": 0.0}
+_PRD_SUM_TTL = 600
+
+
+def _calc_prd_summary(db_name="C041"):
+    """跑一遍全部待分析单的 BOM，按品号汇总。只在后台线程里调。"""
+    import asyncio
+    import collections
+    import time as _t
+    _PRD_SUM["busy"] = True
+    _PRD_SUM["err"] = ""
+    try:
+        conn = get_conn(db=db_name)
+        cur = conn.cursor()
+        cur.execute(f"""
+            SELECT OS_NO,ITM,SO_NO_ITM,PRD_NO,PRD_NAME,SPC,QTY,CUS_NO,CUS_NAME,指令单号,EST_DD,
+                   ISNULL(QTY,0)-ISNULL(QTYPS,0) AS so_remain
+            FROM VW_POS WITH(NOLOCK)
+            WHERE {_PMC_POS_FILTER}
+            ORDER BY 指令单号, OS_NO, ITM
+        """)
+        items = [_pos_row(r) for r in cur.fetchall()]
+        conn.close()
+
+        need = collections.defaultdict(float)          # 毛需求合计（跨单）
+        own = collections.defaultdict(float)           # 挂本单的在途+在单请购
+        names = {}
+        seen = collections.defaultdict(set)            # 被哪几张单用
+        for it in items:
+            api = asyncio.run(pmc_preview_mps(so_no_itm=it["so_no_itm"], prd_no=it["prd_no"],
+                                             qty=it["qty"], db=db_name.lower()))
+            for r in api["items"]:
+                p = r["prd_no"]
+                need[p] += r["real_demand"]
+                own[p] += r["total_avail"]
+                # 成品行没有 prd_name 字段（只有子件有），用列表里的品名兜底
+                nm = r.get("prd_name") or (it["prd_name"] if p == it["prd_no"] else "")
+                if nm:
+                    names[p] = nm
+                seen[p].add(it["os_no"])
+
+        conn = get_conn(db=db_name)
+        stock = _v2_stock(list(need), conn)
+        conn.close()
+
+        data = {}
+        for p, n in need.items():
+            e = stock.get(p) or {}
+            st = float(e.get("mat_qty", 0)) + float(e.get("prod_qty", 0))
+            row_gap = n - own[p]                        # 单层缺口的加总口径
+            net = max(0.0, row_gap - st)                # 库存只扣这一次
+            data[p] = {
+                "prd_no": p, "prd_name": names.get(p, ""),
+                "need": round(n, 2), "own": round(own[p], 2), "stock": round(st, 2),
+                "row_gap": round(row_gap, 2), "net": round(net, 2),
+                "orders": len(seen[p]),
+            }
+        _PRD_SUM.update(ts=_t.time(), data=data, orders=len(items))
+        _PRD_SUM["kicked"] = 0.0            # 算完了，允许下一次到点重算
+    except Exception as e:                                # 后台线程：别把异常吞了就完了
+        _PRD_SUM["err"] = f"{type(e).__name__}: {e}"
+    finally:
+        _PRD_SUM["busy"] = False
+
+
+def _kick_prd_summary(db_name="C041"):
+    """单飞：算的过程中和刚踢过的 30 秒内都不许再踢（否则每次轮询都开一个新线程一起算）"""
+    import time as _t
+    if _PRD_SUM["busy"] or (_t.time() - _PRD_SUM["kicked"]) < 30:
+        return
+    _PRD_SUM["kicked"] = _t.time()
+    import threading
+    threading.Thread(target=_calc_prd_summary, args=(db_name,), daemon=True).start()
+
+
+@app.get("/api/pmc/prd_summary")
+async def pmc_prd_summary(
+    refresh: int = Query(default=0),
+    db: str = Query(default="c041")
+):
+    """品号级汇总（净缺口）。后台算、缓存 10 分钟；初次调用返回 computing=true。"""
+    import time as _t
+    db_name = "T041" if db.lower() == "t041" else "C041"
+    now = _t.time()
+    stale = (now - _PRD_SUM["ts"]) > _PRD_SUM_TTL
+    if refresh or (stale and _PRD_SUM["data"] is None):
+        _kick_prd_summary(db_name)
+    data = _PRD_SUM["data"] or {}
+    return {
+        "computing": _PRD_SUM["busy"],
+        "ts": _PRD_SUM["ts"],
+        "err": _PRD_SUM["err"],
+        "orders": _PRD_SUM["orders"],
+        "items": sorted(data.values(), key=lambda x: -x["net"]),
     }
 
 
@@ -3392,6 +3500,13 @@ async def pmc_preview_mps(
     # 计算最终 gap（④ 扣在途+在单请购）
     for r in rows:
         r['gap'] = round(r['real_demand'] - r['total_avail'], 2)
+        # 品号级净缺口（跨单，库存只扣一次）—— 缓存热了才有；冷的时候前端不显示
+        s = (_PRD_SUM['data'] or {}).get(r['prd_no'])
+        if s:
+            r['prd_net'] = s['net']
+            r['prd_need'] = s['need']
+            r['prd_stock'] = s['stock']
+            r['prd_orders'] = s['orders']
 
     return {"items": rows, "so_no": os_no}
 
