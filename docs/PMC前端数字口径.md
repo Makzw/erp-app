@@ -83,6 +83,26 @@
 
 就是口径速查：`销未出=销售未出`、`在途=原材料在途采购（只算挂本单的）`、`在单请购（只算挂本单的）`、`合计=挂本单的在途+在单请购`、`缺口=需求−合计（公共库存不分摊、不扣）`。
 
+### 2.5 调整弹窗（点「原材料仓」单元格或「调整」按钮）
+
+| 位置 | 值 | 来源 |
+|---|---|---|
+| 原材料仓明细列表 | `仓码 仓名: 现存量` | 行里的 `mat_detail[]`（= `wh_detail` 里 `is_prod=false` 的仓），元素 `[仓码, 仓名, 现存量, 可用量, 在途, 在单]` |
+| 目标仓库 | 下拉/手输 | `mat_detail` 的仓码做 datalist；切换仓会**把数量框重置为该仓现存量** |
+| 调整后数量 | 手填 | **空 = 未填（拦）**；显式 `0` = 清仓（放行）；提交后后端写 IC（`0` 出库/`13` 入库，数量取差额绝对值） |
+
+### 2.6 行的完整字段（前端只用了其中一部分）
+
+```
+prd_no prd_name is_fg depth knd real_demand so_remain gap          ← 显示用
+qty（=销售未出兜底） qty_on_way qty_on_odr total_avail total_stock ← 显示用
+mat_qty prod_qty mat_detail[] prod_detail[]                        ← 显示 + 调整弹窗
+pool_way pool_odr                                                  ← 只进 tooltip
+raw_stock contribution wh qty_wh qty_av                            ← 旧版字段，现在前端不用
+prd_net prd_need prd_stock prd_orders                              ← 品号汇总缓存（热了才有）
+```
+
+
 ---
 
 ## 3. 为什么「缺口」和「品号净缺」经常不是一个数（关键）
