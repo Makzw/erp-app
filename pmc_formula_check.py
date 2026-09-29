@@ -3,13 +3,14 @@
 
 对 /api/pmc/preview_mps 做逐行断言，覆盖已修的坑：
   需求基准 = 销售未出（VW_POS.QTY − SAQTY，= v2 视图 QTY_ON_ODR 的口径），不是订单原始数量
-  ① 需求按「BOM 边」分配 —— 同一料号挂多个母件时，每一处都有各自的 父件缺口×配比
-  ② 顶层带成品自身合计 —— 子件需求 = (销售未出 − 成品合计) × 配比
-  ③ 在途采购 / 在单请购 = **只算挂到本单的**（池子行按 指令单号/成品编号/SO行 挂单；
-     挂别的单、或挂不上的库存 ← 不分摊）。两者之和 ≤ 该品号池子总量
+  ① 需求按「BOM 边（母件实例→子件实例）」分配 —— 同一料号挂多个母件时各自算
+  ② MRP 净需求展开：子件需求 = 父件缺口 × 配比，且父件缺口 = 屏上同一个数
+     （逐层扣该层自己的池+材料仓 → 中间件有货就不往下要料）
+  ③ 在途采购 / 在单请购的**全厂池**（po_all/qts_all）参与扣减；挂本单的量(po/qts)
+     只用于屏上 tooltip，且 ≤ 池子总量
      ⚠ QTY_ON_ODR 是「销售未出货量」(VW_SO_QTY)，不是请购，别拿来当供给扣
-  ④ 缺口 = 需求 − 合计（合计 = 挂本单的在途 + 在单请购；公共库存不分摊、不扣）
-  ⑤ 屏上「缺口」(net_gap) = 需求 − 全厂池(在途+在单请购) − 材料仓 —— 下单口径，
+  ④ 合计(池) = pool_way + pool_odr；本单口径 gap = 需求 − 挂本单的料（只作对照）
+  ⑤ 屏上「缺口」(net_gap) = 需求 − 全厂池 − 材料仓 —— 下单口径，生产仓不参与；
      就是「昨天买了 7000，今天只该买 3000」；品号汇总的净缺口用同一算式
 
 用法：cd /home/Mak/erp-app && python3 pmc_formula_check.py [单数，默认全量]
@@ -55,24 +56,29 @@ def main():
         det = M._v2_stock_detail([r['prd_no'] for r in api], conn)
         split = M._v2_odr_split([r['prd_no'] for r in api], conn, ref=ref, fg=prd, so_itm=so_itm)
 
-        def avail(p):
-            """独立参考实现：本单专属供给 = 挂本单的采购未回 + 请购在单（库存不分摊）"""
+        def net_avail(p):
+            """独立参考实现：参与扣减的供给 = 全厂池(在途采购 po_all + 在单请购 qts_all) + 材料仓。
+            生产仓(prod_qty)已被领走，不参与；本单专属量(po/qts)只用于屏上 tooltip。"""
             sp = split.get(p) or {}
-            return float(sp.get('po', 0)) + float(sp.get('qts', 0))
+            st = stock.get(p) or {}
+            return (float(sp.get('po_all', 0)) + float(sp.get('qts_all', 0))
+                    + float(st.get('mat_qty', 0)))
 
-        edges = {}
+        # 母件「实例」连线：comp 是 DFS 前序，某行的母件 = 前面最近的 depth-1 那一行（-1=成品）
+        edges, stack = {}, {}
         for i, c in enumerate(comp):
-            edges.setdefault(c[4], []).append(i)
+            edges.setdefault(stack.get(c[5] - 1, -1), []).append(i)
+            stack[c[5]] = i
         want = {}
 
-        def walk(parent, demand, av):
+        def walk(parent_idx, demand, av):
             gap = max(0.0, demand - av)
-            for i in edges.get(parent, []):
+            for i in edges.get(parent_idx, []):
                 d = gap * comp[i][6]
                 want[i] = d
-                walk(comp[i][0], d, avail(comp[i][0]))
+                walk(i, d, net_avail(comp[i][0]))
 
-        walk(prd, remain, avail(prd))
+        walk(-1, remain, net_avail(prd))
         for i, r in enumerate(api):
             rows += 1
             tag = f'{prd}/{r["prd_no"]} L{r["depth"]}'

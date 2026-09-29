@@ -3468,44 +3468,43 @@ async def pmc_preview_mps(
         rows.append(make_row(c_prd, c_name, c_qty, c_depth, c_knd, c_stock, c_det))
 
     # -----------------------------------------------------------
-    # 自顶向下 BOM 配比分需求
+    # 自顶向下 BOM 配比分需求（MRP 净需求展开）
     #
-    # 公式：子件需求 = 父件缺口 × BOM配比
-    # 父件缺口 = 父件需求 − 父件「本单专属供给」（挂本单的在途/在单请购）
-    # 公共库存不分摊 → 不在这里扣（该品号净缺口看品号汇总）
-    # - KND=3 半成品 / KND=4 原料 都用同一个口径
-    #
+    # 公式：子件需求 = 父件缺口 × BOM配比 = parent_gap × bom_ratio
+    # 父件缺口 = max(0, 父件需求 − 父件池(在途+在单请购) − 父件材料仓)
+    #            ← 与屏上「缺口」列同一算式，所以「子件需求 = 父件缺口 × 配比」恒成立
+    # 生产仓已被领走，不参与扣减（MAK 2026-09-29）
+    # - KND=2 组件 / KND=3 半成品 / KND=4 原料 都用同一个口径
+    # - 每层都扣该层自己的库存/池 → 中间件有货就不往下要料
+    #   （例：振光件库存够 → 黑坯和钢带都不用做/买）
     # ponytail: 按「BOM 边（母件实例→子件实例）」分配，不按品号索引。
     # 同一料号会挂在多个母件下（50 单里有 54 个这样的料号），按品号索引
     # 只会命中最后一行，前一行留着「展开量-库存」的错值。
-    # rows[i+1] 与 comp_rows[i] 一一对应（上面就是按序遍历生成的）。
+    # rows[i+1] 与 comp_rows[i] 一一对应（上面就是按序遍历生成的）；
+    # comp_rows 是 DFS 前序，所以某行的母件 = 它前面最近的 depth-1 那一行。
     # -----------------------------------------------------------
-    edges = {}   # 母件品号 → [comp_rows 下标]
-    for i, row in enumerate(comp_rows):
-        edges.setdefault(row[4], []).append(i)
+    edges = {}    # 母件实例下标（-1 = 成品行）→ [comp_rows 下标]
+    stack = {}
+    for i, crow in enumerate(comp_rows):
+        edges.setdefault(stack.get(crow[5] - 1, -1), []).append(i)
+        stack[crow[5]] = i
 
-    # FG 真实需求 = 销售未出
-    rows[0]['real_demand'] = demand_qty
+    def net_avail(row):
+        """参与扣减的供给 = 全厂在途/在单请购(池) + 材料仓。生产仓已被领走，不参与。"""
+        return float((row.get('pool_way') or 0) + (row.get('pool_odr') or 0) + (row.get('mat_qty') or 0))
 
-    def allocate(parent_prd, parent_demand, parent_avail):
-        """
-        自顶向下分配 BOM 需求。
-        公式：子件需求 = 父件缺口 × (子件用量 / 母件底数) = parent_gap × bom_ratio
-        父件缺口 = max(0, 父件需求 - 父件合计)
-        父件合计 = 原材料仓+生产仓+在途采购+在单请购（与树上「合计」列同口径）
-        中间件有子件则递归继续分配；无子件则叶子，需求到此为止。
-        """
-        parent_gap = max(0, parent_demand - parent_avail)
-        for i in edges.get(parent_prd, []):
-            bom_ratio = comp_rows[i][6]
+    def allocate(parent_row, parent_idx, parent_demand):
+        """自顶向下分配 BOM 需求；父件缺口与屏上「缺口」列同口径。"""
+        parent_gap = max(0.0, parent_demand - net_avail(parent_row))
+        for i in edges.get(parent_idx, []):
             child_row = rows[i + 1]
             # 子件需求 = 父件缺口 × BOM配比
-            child_row['real_demand'] = parent_gap * bom_ratio
-            # 递归向下，把子件的需求和合计传给下一层
-            allocate(child_row['prd_no'], child_row['real_demand'], child_row['total_avail'])
+            child_row['real_demand'] = round(parent_gap * comp_rows[i][6], 4)
+            allocate(child_row, i, child_row['real_demand'])
 
-    # ② 顶层要传成品自身的合计（原来传 0：成品有货时，整张单的子件需求按整单量虚高）
-    allocate(prd_no, demand_qty, fg_total_avail)
+    # FG 真实需求 = 销售未出；成品自身也先扣库存/池（货够就不用做，子件也不用要料）
+    rows[0]['real_demand'] = demand_qty
+    allocate(rows[0], -1, demand_qty)
 
     # 计算最终 gap（④ 扣在途+在单请购）
     for r in rows:
