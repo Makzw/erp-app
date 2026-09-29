@@ -2193,20 +2193,20 @@ async function pmcShowSummary(refresh) {
       '<button onclick="pmcShowSummary(1)" style="padding:6px 12px;border-radius:16px;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;font-size:12px;font-weight:600;cursor:pointer">\u91cd\u7b97</button>' +
       '<div style="font-size:12px;color:var(--sub)">\u57fa\u4e8e ' + (d.orders || 0) + ' \u5f20\u5f85\u5206\u6790\u5355\u3001' + it.length + ' \u4e2a\u54c1\u53f7' + (d.ts ? '\uff0c\u7b97\u4e8e ' + new Date(d.ts * 1000).toLocaleTimeString('zh-CN') : '') + '</div></div>' +
       '<div style="font-size:12px;color:var(--sub);margin-bottom:8px">\u51c0\u7f3a\u53e3 = \u9700\u6c42\u5408\u8ba1 \u2212 \u6302\u672c\u5355\u7684\u6599 \u2212 \u5e93\u5b58\uff08\u8de8\u5355\u53bb\u91cd\uff0c\u5e93\u5b58\u53ea\u6263\u4e00\u6b21\uff09\u3002\u73b0\u5728\u5c31\u662f<b>\u4e0b\u91c7\u8d2d/\u8bf7\u8d2d\u7528\u8fd9\u4e00\u5217</b>\u3002</div>' +
-      '<table style="width:100%;border-collapse:collapse;font-size:12px">' +
+      '<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:1080px">' +
       '<thead><tr style="background:#f9fafb;color:var(--sub)">' +
-      '<th style="text-align:left;padding:6px 4px">\u54c1\u53f7</th><th style="text-align:left;padding:6px 4px">\u54c1\u540d</th>' +
-      '<th style="text-align:right;padding:6px 4px">\u9700\u6c42\u5408\u8ba1</th><th style="text-align:right;padding:6px 4px">\u5e93\u5b58</th>' +
-      '<th style="text-align:right;padding:6px 4px">\u51c0\u7f3a\u53e3</th><th style="text-align:center;padding:6px 4px">\u5355\u6570</th></tr></thead><tbody>';
+      '<th style="text-align:left;padding:8px 10px;white-space:nowrap;min-width:150px">\u54c1\u53f7</th><th style="text-align:left;padding:8px 10px">\u54c1\u540d</th>' +
+      '<th style="text-align:right;padding:8px 10px;white-space:nowrap;min-width:104px">\u9700\u6c42\u5408\u8ba1</th><th style="text-align:right;padding:8px 10px;white-space:nowrap;min-width:112px">\u5e93\u5b58</th>' +
+      '<th style="text-align:right;padding:8px 10px;white-space:nowrap;min-width:104px">\u51c0\u7f3a\u53e3</th><th style="text-align:center;padding:8px 10px;white-space:nowrap;min-width:64px">\u5355\u6570</th></tr></thead><tbody>';
     for (var j = 0; j < it.length; j++) {
       var r = it[j], on = (r.net || 0) > 0;
       h += '<tr style="border-top:1px solid var(--border)' + (on ? '' : ';opacity:.55') + '">' +
-        '<td style="padding:6px 4px;font-weight:600">' + escHtml(r.prd_no) + '</td>' +
-        '<td style="padding:6px 4px;color:var(--name);word-break:break-all">' + escHtml(r.prd_name) + '</td>' +
-        '<td style="padding:6px 4px;text-align:right;font-variant-numeric:tabular-nums">' + Number(r.need).toLocaleString('zh-CN') + '</td>' +
-        '<td style="padding:6px 4px;text-align:right;font-variant-numeric:tabular-nums;color:' + ((r.stock || 0) < 0 ? '#dc2626' : 'inherit') + '">' + Number(r.stock).toLocaleString('zh-CN') + '</td>' +
-        '<td style="padding:6px 4px;text-align:right;font-weight:700;font-variant-numeric:tabular-nums;color:' + (on ? '#dc2626' : 'var(--sub)') + '">' + (on ? Number(r.net).toLocaleString('zh-CN') : '\u2014') + '</td>' +
-        '<td style="padding:6px 4px;text-align:center;color:var(--sub)">' + r.orders + '</td></tr>';
+        '<td style="padding:8px 10px;font-weight:600;white-space:nowrap">' + escHtml(r.prd_no) + '</td>' +
+        '<td style="padding:8px 10px"><div style="max-width:min(42vw,700px);white-space:normal;overflow-wrap:anywhere;color:var(--name)" title="' + escAttr(r.prd_name||'') + '">' + escHtml(r.prd_name) + '</div></td>' +
+        '<td style="padding:8px 10px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap">' + Number(r.need).toLocaleString('zh-CN') + '</td>' +
+        '<td style="padding:8px 10px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;color:' + ((r.stock || 0) < 0 ? '#dc2626' : 'inherit') + '">' + Number(r.stock).toLocaleString('zh-CN') + '</td>' +
+        '<td style="padding:8px 10px;text-align:right;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;color:' + (on ? '#dc2626' : 'var(--sub)') + '">' + (on ? Number(r.net).toLocaleString('zh-CN') : '\u2014') + '</td>' +
+        '<td style="padding:8px 10px;text-align:center;color:var(--sub);white-space:nowrap">' + r.orders + '</td></tr>';
     }
     h += '</tbody></table>' +
       '<div style="margin-top:10px;font-size:13px">\u51c0\u7f3a\u53e3\u5408\u8ba1\uff1a<b style="color:#dc2626">' + Number(tot).toLocaleString('zh-CN') + '</b> \u4ef6</div></div>';
@@ -2288,18 +2288,18 @@ function renderPMCTree(items, title) {
   html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap"><div style="font-size:13px;color:var(--sub)">' + (title||'') + '</div>' + summaryTag + '</div>';
 
   // BOM 表
-  html += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f3f4f6">';
-  html += '<th style="padding:7px 8px;text-align:left">品号</th>';
-  html += '<th style="padding:7px 4px;text-align:center">层</th>';
-  html += '<th style="padding:7px 4px;text-align:right">需求</th>';
-  html += '<th style="padding:7px 4px;text-align:right">销售未出</th>';
-  html += '<th style="padding:7px 4px;text-align:right">原材料仓</th>';
-  html += '<th style="padding:7px 4px;text-align:right">生产仓</th>';
-  html += '<th style="padding:7px 4px;text-align:right">在途采购</th>';
-  html += '<th style="padding:7px 4px;text-align:right">在单请购</th>';
-  html += '<th style="padding:7px 4px;text-align:right">合计</th>';
-  html += '<th style="padding:7px 4px;text-align:right;min-width:80px">缺口</th>';
-  html += '<th style="padding:7px 4px;text-align:center">调整</th>';
+  html += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:1300px"><thead><tr style="background:#f3f4f6">';
+  html += '<th style="padding:8px 10px;text-align:left;min-width:300px">品号</th>';
+  html += '<th style="padding:8px 8px;text-align:center;white-space:nowrap;min-width:64px">层</th>';
+  html += '<th style="padding:8px 8px;text-align:right;white-space:nowrap;min-width:96px">需求</th>';
+  html += '<th style="padding:8px 8px;text-align:right;white-space:nowrap;min-width:104px">销售未出</th>';
+  html += '<th style="padding:8px 8px;text-align:right;white-space:nowrap;min-width:104px">原材料仓</th>';
+  html += '<th style="padding:8px 8px;text-align:right;white-space:nowrap;min-width:96px">生产仓</th>';
+  html += '<th style="padding:8px 8px;text-align:right;white-space:nowrap;min-width:104px">在途采购</th>';
+  html += '<th style="padding:8px 8px;text-align:right;white-space:nowrap;min-width:104px">在单请购</th>';
+  html += '<th style="padding:8px 8px;text-align:right;white-space:nowrap;min-width:96px">合计</th>';
+  html += '<th style="padding:8px 8px;text-align:right;white-space:nowrap;min-width:160px">缺口</th>';
+  html += '<th style="padding:8px 8px;text-align:center;white-space:nowrap;min-width:80px">调整</th>';
   html += '</tr></thead><tbody>';
 
   var depthColors = ['#1d4ed8','#16a34a','#d97706','#ea580c','#dc2626'];
@@ -2333,7 +2333,7 @@ function renderPMCTree(items, title) {
       var netTxt = Number(prdNet).toLocaleString('zh-CN');
       var netTip = '该品号跨 ' + (r.prd_orders || 1) + ' 张待分析单：需求合计 ' +
         Number(r.prd_need || 0).toLocaleString('zh-CN') + ' − 库存 ' + Number(r.prd_stock || 0).toLocaleString('zh-CN') + ' = 净缺口 ' + netTxt;
-      gapHtml += '<div title="' + escAttr(netTip) + '" style="font-size:11px;margin-top:1px;white-space:nowrap;color:' +
+      gapHtml += '<div title="' + escAttr(netTip) + '" style="font-size:12px;margin-top:1px;white-space:nowrap;color:' +
         (prdNet > 0 ? '#b45309' : '#16a34a') + '">品号净缺 ' + (prdNet > 0 ? netTxt : '0') + '</div>';
     }
     // 销未出 / 在途 / 在单
@@ -2345,23 +2345,23 @@ function renderPMCTree(items, title) {
     var wayTip = (wayQty <= 0 && poolWay > 0) ? ' title="该品号在途采购池 ' + Number(poolWay).toLocaleString('zh-CN') + '，挂的是别的单 → 本单不分摊"' : '';
     var odrTip = (odrQty <= 0 && poolOdr > 0) ? ' title="该品号在单请购池 ' + Number(poolOdr).toLocaleString('zh-CN') + '，挂的是别的单 → 本单不分摊"' : '';
     html += '<tr style="border-bottom:1px solid #f3f4f6;background:' + bg + '">';
-    html += '<td style="padding:7px 8px"><span style="display:inline-block;margin-left:' + indent + 'px"></span><b style="font-variant-numeric:tabular-nums">' + escHtml(r.prd_no||'') + '</b> <span style="font-size:13px;color:var(--name)">' + escHtml(r.prd_name||'') + '</span></td>';
-    html += '<td style="padding:7px 4px;text-align:center"><span style="font-size:10px;font-weight:700;color:#fff;background:' + depthColor + ';padding:2px 5px;border-radius:10px">' + depthLabel + '</span></td>';
-    html += '<td style="padding:7px 4px;text-align:right;font-weight:600;font-variant-numeric:tabular-nums">' + Number(realDemand).toLocaleString('zh-CN') + '</td>';
-    html += '<td style="padding:7px 4px;text-align:right;font-variant-numeric:tabular-nums">' + soRemainHtml + '</td>';
-    html += '<td style="padding:7px 4px;text-align:right;color:#16a34a;cursor:' + (!isFg ? 'pointer' : 'default') + ';font-variant-numeric:tabular-nums" ' + (!isFg ? 'onclick="pmcOpenAdjust(\'' + escAttr(r.prd_no||'') + '\',\'\',\'mat\',' + matQty + ')"' : '') + '>' + Number(matQty).toLocaleString('zh-CN') + '</td>';
-    html += '<td style="padding:7px 4px;text-align:right;color:#16a34a;font-variant-numeric:tabular-nums" title="\u751f\u4ea7\u4ed3\u4e0d\u53ef调\u6574">' + Number(prodQty).toLocaleString('zh-CN') + '</td>';
-    html += '<td style="padding:7px 4px;text-align:right;font-variant-numeric:tabular-nums"' + wayTip + '>' + wayHtml + '</td>';
-    html += '<td style="padding:7px 4px;text-align:right;font-variant-numeric:tabular-nums"' + odrTip + '>' + odrHtml + '</td>';
-    html += '<td style="padding:7px 4px;text-align:right;font-weight:600;font-variant-numeric:tabular-nums">' + Number(totalStock).toLocaleString('zh-CN') + '</td>';
-    html += '<td style="padding:7px 4px;text-align:right;min-width:80px">' + gapHtml + '</td>';
-    html += '<td style="padding:7px 4px;text-align:center">' + adjBtn + '</td>';
+    html += '<td style="padding:8px 10px"><div style="max-width:min(44vw,760px);white-space:normal;overflow-wrap:anywhere" title="' + escAttr((r.prd_no||'') + ' ' + (r.prd_name||'')) + '"><span style="display:inline-block;margin-left:' + indent + 'px"></span><b style="font-variant-numeric:tabular-nums">' + escHtml(r.prd_no||'') + '</b> <span style="font-size:13px;color:var(--name)">' + escHtml(r.prd_name||'') + '</span></div></td>';
+    html += '<td style="padding:8px 8px;text-align:center;white-space:nowrap"><span style="font-size:10px;font-weight:700;color:#fff;background:' + depthColor + ';padding:2px 5px;border-radius:10px">' + depthLabel + '</span></td>';
+    html += '<td style="padding:8px 8px;text-align:right;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap">' + Number(realDemand).toLocaleString('zh-CN') + '</td>';
+    html += '<td style="padding:8px 8px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap">' + soRemainHtml + '</td>';
+    html += '<td style="padding:8px 8px;text-align:right;color:#16a34a;cursor:' + (!isFg ? 'pointer' : 'default') + ';font-variant-numeric:tabular-nums;white-space:nowrap" ' + (!isFg ? 'onclick="pmcOpenAdjust(\'' + escAttr(r.prd_no||'') + '\',\'\',\'mat\',' + matQty + ')"' : '') + '>' + Number(matQty).toLocaleString('zh-CN') + '</td>';
+    html += '<td style="padding:8px 8px;text-align:right;color:#16a34a;font-variant-numeric:tabular-nums;white-space:nowrap" title="\u751f\u4ea7\u4ed3\u4e0d\u53ef调\u6574">' + Number(prodQty).toLocaleString('zh-CN') + '</td>';
+    html += '<td style="padding:8px 8px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap"' + wayTip + '>' + wayHtml + '</td>';
+    html += '<td style="padding:8px 8px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap"' + odrTip + '>' + odrHtml + '</td>';
+    html += '<td style="padding:8px 8px;text-align:right;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap">' + Number(totalStock).toLocaleString('zh-CN') + '</td>';
+    html += '<td style="padding:8px 8px;text-align:right;min-width:160px">' + gapHtml + '</td>';
+    html += '<td style="padding:8px 8px;text-align:center;white-space:nowrap">' + adjBtn + '</td>';
     html += '</tr>';
   }
   html += '</tbody></table></div>';
 
   // 说明
-  html += '<div style="margin-top:10px;font-size:11px;color:var(--sub);display:flex;gap:14px;flex-wrap:wrap">';
+  html += '<div style="margin-top:10px;font-size:12px;color:var(--sub);display:flex;gap:14px;flex-wrap:wrap">';
   html += '<span>销未出=<span style="color:#6366f1;font-weight:600">销售未出</span></span>';
   html += '<span>在途=<span style="color:#f59e0b;font-weight:600">原材料在途采购</span>（只算挂本单的）</span>';
   html += '<span>在单请购=<span style="color:#8b5cf6;font-weight:600">原材料在单请购</span>（只算挂本单的）</span>';
