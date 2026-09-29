@@ -5,7 +5,8 @@
   需求基准 = 销售未出（POS.QTY-QTYPS），不是订单原始数量
   ① 需求按「BOM 边」分配 —— 同一料号挂多个母件时，每一处都有各自的 父件缺口×配比
   ② 顶层带成品自身合计 —— 子件需求 = (销售未出 − 成品合计) × 配比
-  ③ 在单请购 = 各仓之和（不是排序后第一行）
+  ③ 在途采购 + 在单请购 = 视图 QTY_ON_WAY（VW_PO_QTY 的两个来源拆开算，和必须对得上）
+     ⚠ QTY_ON_ODR 是「销售未出货量」(VW_SO_QTY)，不是请购，别拿来当供给扣
   ④ 缺口 = 需求 − 合计（合计已含在途 + 在单请购）
   ⑥ 合计 = 原材料仓 + 生产仓 + 在途采购 + 在单请购
 
@@ -50,13 +51,13 @@ def main():
             continue
         stock = M._v2_stock([prd] + [c[0] for c in comp], conn)
         det = M._v2_stock_detail([r['prd_no'] for r in api], conn)
+        split = M._v2_odr_split([r['prd_no'] for r in api], conn)
 
         def avail(p):
-            """独立参考实现：合计 = 原材料仓+生产仓+在途采购+在单请购（各仓求和）"""
+            """独立参考实现：合计 = 原材料仓+生产仓+在途采购+在单请购（后两者按品号取）"""
             e = stock.get(p, {})
-            return (float(e.get('mat_qty', 0)) + float(e.get('prod_qty', 0))
-                    + float(e.get('mat_qty_on_way', 0)) + float(e.get('prod_qty_on_way', 0))
-                    + sum(x[4] for x in det.get(p, [])) + sum(x[5] for x in det.get(p, [])))
+            po, qts = split.get(p, (0.0, 0.0))
+            return (float(e.get('mat_qty', 0)) + float(e.get('prod_qty', 0)) + po + qts)
 
         edges = {}
         for i, c in enumerate(comp):
@@ -81,9 +82,12 @@ def main():
             # ④ 缺口 = 需求 − 合计
             if abs(round(r['real_demand'] - r['total_avail'], 2) - r['gap']) > 0.01:
                 fails.append(f'{tag}: 缺口 {r["gap"]:.1f} ≠ 需求-合计 {r["real_demand"]-r["total_avail"]:.1f}')
-            # ③ 在单请购 = 各仓之和
-            if abs(sum(x[5] for x in det.get(r['prd_no'], [])) - r['qty_on_odr']) > 0.5:
-                fails.append(f'{tag}: 在单请购≠各仓之和')
+            # 在途采购 + 在单请购 == 库存视图的 QTY_ON_WAY（拆开算的两半必须等于 ERP 原值）
+            e = stock.get(r['prd_no'], {})
+            view_way = float(e.get('mat_qty_on_way', 0)) + float(e.get('prod_qty_on_way', 0))
+            if abs(r['qty_on_way'] + r['qty_on_odr'] - view_way) > 0.5:
+                fails.append(f'{tag}: 在途{r["qty_on_way"]:.0f}+在单请购{r["qty_on_odr"]:.0f} '
+                             f'≠ 视图 QTY_ON_WAY {view_way:.0f}')
             # 需求基准 = 销售未出
             if r['is_fg'] and abs(r['real_demand'] - remain) > 0.01:
                 fails.append(f'{tag}: 成品需求 {r["real_demand"]:.1f} ≠ 销售未出 {remain:.1f}')

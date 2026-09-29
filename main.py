@@ -3127,6 +3127,41 @@ async def pmc_pos_unanalyzed(
     }
 
 
+def _v2_odr_split(prd_nos, db_conn):
+    """按品号取「在途采购」与「在单请购」两个**供给**量。
+
+    ⚠ 库存视图 VW_STOCK_DETAIL2 里没有「请购在单」这一列，别搞错：
+      - QTY_ON_WAY = 采购未回量（VW_PO_QTY）＝ 采购单未回 ∪ 请购单(QTS,QT_ID='QD')数量
+      - QTY_ON_ODR = **销售未出货量**（VW_SO_QTY，SUM(POS.QTY-SAQTY)），不是请购。
+        拿它当供给扣，等于把「需求」又减一遍，整棵 BOM 树会被扣成全 0。
+    这里按 VW_PO_QTY 的原定义拆开：采购单部分 = 在途采购，请购单部分 = 在单请购。
+    两者之和 == 视图的 QTY_ON_WAY。
+    返回 {prd_no: (采购未回, 请购在单)}
+    """
+    if not prd_nos:
+        return {}
+    cur = db_conn.cursor()
+    ph = ','.join(['%s'] * len(prd_nos))
+    args = tuple(prd_nos)
+    po, qts = {}, {}
+    cur.execute(f"""
+        SELECT PRD_NO, SUM(QTY - ISNULL(PSQTY,0)) FROM VW_POS WITH(NOLOCK)
+        WHERE PRD_NO IN ({ph}) AND USABLE=1 AND CLS_ID=0 AND OS_ID='PO' AND QTY > ISNULL(PSQTY,0)
+        GROUP BY PRD_NO
+    """, args)
+    for r in cur.fetchall():
+        po[str(r[0]).strip()] = float(r[1] or 0)
+    cur.execute(f"""
+        SELECT PRD_NO, SUM(QTY) FROM QTS WITH(NOLOCK)
+        WHERE PRD_NO IN ({ph}) AND QT_ID='QD' AND USABLE=1 AND CLS_ID=0
+        GROUP BY PRD_NO
+    """, args)
+    for r in cur.fetchall():
+        qts[str(r[0]).strip()] = float(r[1] or 0)
+    return {str(p).strip(): (round(po.get(str(p).strip(), 0), 2), round(qts.get(str(p).strip(), 0), 2))
+            for p in prd_nos}
+
+
 def _so_line_remain(so_no_itm, db_conn):
     """该销售订单行的「销售未出」= QTY - QTYPS。
 
@@ -3163,6 +3198,7 @@ async def pmc_preview_mps(
     all_prds = [prd_no] + [r[0] for r in comp_rows]
     stock_map = _v2_stock(all_prds, conn)
     stock_detail = _v2_stock_detail(all_prds, conn)
+    odr_split = _v2_odr_split(all_prds, conn)
     conn.close()
 
     # 库存汇总
@@ -3174,15 +3210,14 @@ async def pmc_preview_mps(
         sm = stock_map_entry or {}
         mat_qty   = round(sm.get('mat_qty', 0), 2)
         prod_qty  = round(sm.get('prod_qty', 0), 2)
-        mat_way   = round(sm.get('mat_qty_on_way', 0), 2)
-        prod_way  = round(sm.get('prod_qty_on_way', 0), 2)
-        total_way = mat_way + prod_way
         det = stock_det or []
-        # ③ 在单请购 = 所有仓之和（原来只取排序后第一行，其余仓的在单请购被丢掉）
-        qty_on_odr = round(sum(x[5] for x in det), 2)
+        # 「在途采购」/「在单请购」都按品号取（VW_PO_QTY 的两个来源），
+        # 不用 det 里那些按仓行。原来读的是 QTY_ON_ODR = 销售未出货量，不是请购。
+        qty_on_way, qty_on_odr = odr_split.get(c_prd, (0.0, 0.0))
+        total_way = round(qty_on_way, 2)
+        total_stock = mat_qty + prod_qty
         # ④ 缺口要扣在途 + 在单请购；⑥ 合计 = 库存 + 在途 + 在单请购
         real_demand = max(0, c_qty - mat_qty - prod_qty)
-        total_stock = mat_qty + prod_qty
         total_avail = round(total_stock + total_way + qty_on_odr, 2)
         gap = round(real_demand - total_avail, 2)
         # wh_detail: 全部明细（兼容前端调整弹窗）
@@ -3213,8 +3248,9 @@ async def pmc_preview_mps(
 
     # ITM=1 成品行
     det = stock_detail.get(prd_no, [])
-    fg_way = round(fg_stock.get('mat_qty_on_way', 0) + fg_stock.get('prod_qty_on_way', 0), 2)
-    fg_on_odr = round(sum(x[5] for x in det), 2)
+    fg_way, fg_on_odr = odr_split.get(prd_no, (0.0, 0.0))   # 在途采购 / 在单请购（品号级，真实供给）
+    fg_way = round(fg_way, 2)
+    fg_on_odr = round(fg_on_odr, 2)
     fg_raw = round(fg_stock.get('mat_qty', 0) + fg_stock.get('prod_qty', 0), 2)
     fg_real_demand = max(0, demand_qty - fg_stock.get('mat_qty', 0) - fg_stock.get('prod_qty', 0))
     fg_total_stock = fg_raw
