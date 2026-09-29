@@ -4237,6 +4237,9 @@ async def pmc_make_qd(
 
         qd_no = _next_serial(cur, "QD", "QTS", "QT_NO")
 
+        # ponytail: 每行一次 PRDT 查询 + 一次 INSERT。实测量级：300 行 ≈ 25s，
+        # 常规请购（几十行）几秒，够用。真嫌慢就把 PRDT 查询并成一条 IN (...) 批量取。
+
         lines, itm = [], 0
         for it in items:
             prd_no = str(it["prd_no"]).strip()
