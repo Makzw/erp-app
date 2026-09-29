@@ -41,11 +41,12 @@ def g(v) -> str:
     """
     if v is None:
         return ""
-    if isinstance(v, bytes):
+    if isinstance(v, (bytes, bytearray)):
+        # varbinary 取出的真 GBK 字节（BOM.PRD_NO 含中文括号的料号走这条路）
         try:
-            return v.encode("latin-1").decode("gbk", errors="replace")
+            return bytes(v).decode("gbk")
         except Exception:
-            return str(v)
+            return bytes(v).decode("latin-1", errors="replace")
     if hasattr(v, "strftime"):  # datetime
         return v.strftime("%Y-%m-%d")
     s = str(v)
@@ -2925,16 +2926,17 @@ def _mps_bom_tree(fg_no, db_conn, qty=1, depth=0, parent=None, _seen=None):
     if _seen is None: _seen = set()
     if fg_no in _seen or depth >= 8: return []
     _seen.add(fg_no)
-    # 找 LEV=0 header
-    cur.execute("SELECT GUID FROM BOM WITH(NOLOCK) WHERE PRD_NO=%s AND LEV=0", (fg_no,))
+    # 找 LEV=0 header（PRD_NO 是 GBK varchar，含中文的料号必须传 GBK 字节才命中）
+    prd_param = fg_no.encode("gbk", errors="replace") if isinstance(fg_no, str) else fg_no
+    cur.execute("SELECT GUID FROM BOM WITH(NOLOCK) WHERE PRD_NO=%s AND LEV=0", (prd_param,))
     hdr = cur.fetchone()
     if not hdr:
         return []
     hdr_guid = hdr[0]
 
-    # 取 LEV=1 直接子件
+    # 取 LEV=1 直接子件（PRD_NO 走 varbinary，避免 GBK 字节在 fetchall 里炸 utf-8 解码）
     cur.execute("""
-        SELECT b.PRD_NO, p.NAME, b.QTY, b.KND, b.QTY_BAS
+        SELECT CONVERT(varbinary(60), b.PRD_NO), CONVERT(varbinary(600), p.NAME), b.QTY, b.KND, b.QTY_BAS
         FROM BOM b WITH(NOLOCK)
         LEFT JOIN PRDT p WITH(NOLOCK) ON p.PRD_NO = b.PRD_NO
         WHERE b.UPGUID=%s AND b.LEV=1 AND ISNULL(b.删除,0)=0
