@@ -2192,11 +2192,11 @@ async function pmcShowSummary(refresh) {
       '<button onclick="pmcSumBack()" style="padding:6px 12px;border-radius:16px;border:1px solid var(--border);background:#fff;font-size:12px;cursor:pointer">\u2190 \u8fd4\u56de\u5217\u8868</button>' +
       '<button onclick="pmcShowSummary(1)" style="padding:6px 12px;border-radius:16px;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;font-size:12px;font-weight:600;cursor:pointer">\u91cd\u7b97</button>' +
       '<div style="font-size:12px;color:var(--sub)">\u57fa\u4e8e ' + (d.orders || 0) + ' \u5f20\u5f85\u5206\u6790\u5355\u3001' + it.length + ' \u4e2a\u54c1\u53f7' + (d.ts ? '\uff0c\u7b97\u4e8e ' + new Date(d.ts * 1000).toLocaleTimeString('zh-CN') : '') + '</div></div>' +
-      '<div style="font-size:12px;color:var(--sub);margin-bottom:8px">\u51c0\u7f3a\u53e3 = \u9700\u6c42\u5408\u8ba1 \u2212 \u6302\u672c\u5355\u7684\u6599 \u2212 \u5e93\u5b58\uff08\u8de8\u5355\u53bb\u91cd\uff0c\u5e93\u5b58\u53ea\u6263\u4e00\u6b21\uff09\u3002\u73b0\u5728\u5c31\u662f<b>\u4e0b\u91c7\u8d2d/\u8bf7\u8d2d\u7528\u8fd9\u4e00\u5217</b>\u3002</div>' +
-      '<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:1080px">' +
+      '<div style="font-size:12px;color:var(--sub);margin-bottom:8px">\u51c0\u7f3a\u53e3 = \u9700\u6c42\u5408\u8ba1 \u2212 \u5728\u9014/\u5728\u5355\u8bf7\u8d2d\uff08\u5168\u5382\uff0c\u542b\u522b\u7684\u5355\u5df2\u4e0b\u7684\uff09 \u2212 \u5e93\u5b58\uff08\u8de8\u5355\u53bb\u91cd\uff0c\u5e93\u5b58\u53ea\u6263\u4e00\u6b21\uff09\u3002\u73b0\u5728\u5c31\u662f<b>\u4e0b\u91c7\u8d2d/\u8bf7\u8d2d\u7528\u8fd9\u4e00\u5217</b>\u3002</div>' +
+      '<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:1220px">' +
       '<thead><tr style="background:#f9fafb;color:var(--sub)">' +
       '<th style="text-align:left;padding:8px 10px;white-space:nowrap;min-width:150px">\u54c1\u53f7</th><th style="text-align:left;padding:8px 10px">\u54c1\u540d</th>' +
-      '<th style="text-align:right;padding:8px 10px;white-space:nowrap;min-width:104px">\u9700\u6c42\u5408\u8ba1</th><th style="text-align:right;padding:8px 10px;white-space:nowrap;min-width:112px">\u5e93\u5b58</th>' +
+      '<th style="text-align:right;padding:8px 10px;white-space:nowrap;min-width:104px">\u9700\u6c42\u5408\u8ba1</th><th style="text-align:right;padding:8px 10px;white-space:nowrap;min-width:124px">\u5728\u9014+\u5728\u5355\u8bf7\u8d2d</th><th style="text-align:right;padding:8px 10px;white-space:nowrap;min-width:112px">\u5e93\u5b58</th>' +
       '<th style="text-align:right;padding:8px 10px;white-space:nowrap;min-width:104px">\u51c0\u7f3a\u53e3</th><th style="text-align:center;padding:8px 10px;white-space:nowrap;min-width:64px">\u5355\u6570</th></tr></thead><tbody>';
     for (var j = 0; j < it.length; j++) {
       var r = it[j], on = (r.net || 0) > 0;
@@ -2204,6 +2204,7 @@ async function pmcShowSummary(refresh) {
         '<td style="padding:8px 10px;font-weight:600;white-space:nowrap">' + escHtml(r.prd_no) + '</td>' +
         '<td style="padding:8px 10px"><div style="max-width:min(42vw,700px);white-space:normal;overflow-wrap:anywhere;color:var(--name)" title="' + escAttr(r.prd_name||'') + '">' + escHtml(r.prd_name) + '</div></td>' +
         '<td style="padding:8px 10px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap">' + Number(r.need).toLocaleString('zh-CN') + '</td>' +
+        '<td style="padding:8px 10px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;color:' + ((r.pool || 0) > 0 ? '#f59e0b' : 'inherit') + '">' + Number(r.pool || 0).toLocaleString('zh-CN') + '</td>' +
         '<td style="padding:8px 10px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;color:' + ((r.stock || 0) < 0 ? '#dc2626' : 'inherit') + '">' + Number(r.stock).toLocaleString('zh-CN') + '</td>' +
         '<td style="padding:8px 10px;text-align:right;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;color:' + (on ? '#dc2626' : 'var(--sub)') + '">' + (on ? Number(r.net).toLocaleString('zh-CN') : '\u2014') + '</td>' +
         '<td style="padding:8px 10px;text-align:center;color:var(--sub);white-space:nowrap">' + r.orders + '</td></tr>';
@@ -2309,12 +2310,15 @@ function renderPMCTree(items, title) {
     var depth = r.depth || 0;
     var matQty = r.mat_qty || 0;
     var prodQty = r.prod_qty || 0;
-    var wayQty = r.qty_on_way || 0;
-    var odrQty = r.qty_on_odr || 0;
-    var totalStock = (r.total_avail === undefined || r.total_avail === null) ? (r.total_stock || 0) : r.total_avail;   // 合计 = 挂本单的在途+在单请购（库存不分摊）
+    // 在途/在单请购改成「全厂池」（含别的单已经下、还没回来的）：昨天买了 7000，今天只该买剩下的
+    var wayQty = (r.pool_way === undefined || r.pool_way === null) ? (r.qty_on_way || 0) : r.pool_way;
+    var odrQty = (r.pool_odr === undefined || r.pool_odr === null) ? (r.qty_on_odr || 0) : r.pool_odr;
+    var totalStock = (r.pool_total === undefined || r.pool_total === null) ? (wayQty + odrQty) : r.pool_total;   // 合计 = 全厂在途 + 全厂在单请购
     var realDemand = r.real_demand || 0;
     var soRemain = r.so_remain || 0;
-    var gap = r.gap || 0;
+    // 缺口 = 需求 − 合计(池) − 库存（下单口径；同品号多单时以品号净缺口为准）
+    var gap = (r.net_gap === undefined || r.net_gap === null) ? (r.gap || 0) : r.net_gap;
+    var supply = totalStock + matQty + prodQty;
     var bg = isFg ? '#dbeafe' : (gap > 0 ? '#fef9c3' : '');
     // ponytail: 取消缩进，全部并排显示
     var indent = 0;
@@ -2322,17 +2326,19 @@ function renderPMCTree(items, title) {
     var depthLabel = isFg ? '成品' : 'L' + depth;
     var adjBtn = !isFg && depth > 0 ? '<button onclick="pmcOpenAdjust(\'' + escAttr(r.prd_no||'') + '\',\'\',\'mat\',' + matQty + ')" style="padding:3px 6px;background:#f3f4f6;border:1px solid #d1d5db;border-radius:4px;font-size:11px;cursor:pointer;color:#374151">调整</button>' : '';
     // 缺口进度条
-    var barPct = realDemand > 0 ? Math.min(100, Math.round((totalStock/realDemand)*100)) : 0;
+    var barPct = realDemand > 0 ? Math.min(100, Math.round((supply/realDemand)*100)) : 0;
     var barColor = gap > 0 ? '#dc2626' : '#16a34a';
     var gapHtml = gap > 0
       ? '<div style="display:flex;align-items:center;gap:4px"><div style="flex:1;height:5px;background:#f3f4f6;border-radius:3px;overflow:hidden"><div style="width:' + barPct + '%;height:100%;background:' + barColor + ';border-radius:3px"></div></div><span style="font-weight:700;color:' + barColor + ';font-size:11px;min-width:24px;text-align:right;font-variant-numeric:tabular-nums">' + gap + '</span></div>'
       : '<span style="color:#16a34a;font-weight:700">✓</span>';
     // 品号级净缺口（跨单，库存只扣一次）：缓存算好才有；单层缺口只是「不含公共库存」的本单数
     var prdNet = r.prd_net;
-    if (prdNet !== undefined && prdNet !== null) {
+    // 品号净缺 = 跨单去重后的下单数。只有跟本行缺口不同（同品号多单/同单多行）才多显示一行，免得重复噪音
+    if (prdNet !== undefined && prdNet !== null && Math.abs(Number(prdNet) - gap) > 0.01) {
       var netTxt = Number(prdNet).toLocaleString('zh-CN');
       var netTip = '该品号跨 ' + (r.prd_orders || 1) + ' 张待分析单：需求合计 ' +
-        Number(r.prd_need || 0).toLocaleString('zh-CN') + ' − 库存 ' + Number(r.prd_stock || 0).toLocaleString('zh-CN') + ' = 净缺口 ' + netTxt;
+        Number(r.prd_need || 0).toLocaleString('zh-CN') + ' − 在途/在单请购 ' + Number(r.prd_pool || 0).toLocaleString('zh-CN') +
+        ' − 库存 ' + Number(r.prd_stock || 0).toLocaleString('zh-CN') + ' = 净缺口 ' + netTxt;
       gapHtml += '<div title="' + escAttr(netTip) + '" style="font-size:12px;margin-top:1px;white-space:nowrap;color:' +
         (prdNet > 0 ? '#b45309' : '#16a34a') + '">品号净缺 ' + (prdNet > 0 ? netTxt : '0') + '</div>';
     }
@@ -2340,10 +2346,10 @@ function renderPMCTree(items, title) {
     var soRemainHtml = isFg && soRemain > 0 ? '<span style="color:#6366f1;font-weight:600;font-variant-numeric:tabular-nums">' + Number(soRemain).toLocaleString('zh-CN') + '</span>' : '<span style="font-variant-numeric:tabular-nums">-</span>';
     var wayHtml = wayQty > 0 ? '<span style="color:#f59e0b;font-weight:600;font-variant-numeric:tabular-nums">' + Number(wayQty).toLocaleString('zh-CN') + '</span>' : '<span style="font-variant-numeric:tabular-nums">-</span>';
     var odrHtml = odrQty > 0 ? '<span style="color:#8b5cf6;font-weight:600;font-variant-numeric:tabular-nums">' + Number(odrQty).toLocaleString('zh-CN') + '</span>' : '<span style="font-variant-numeric:tabular-nums">-</span>';
-    // 池子有量但挂的不是本单 → 不分摊给本单，鼠标悬停说明
-    var poolWay = r.pool_way || 0, poolOdr = r.pool_odr || 0;
-    var wayTip = (wayQty <= 0 && poolWay > 0) ? ' title="该品号在途采购池 ' + Number(poolWay).toLocaleString('zh-CN') + '，挂的是别的单 → 本单不分摊"' : '';
-    var odrTip = (odrQty <= 0 && poolOdr > 0) ? ' title="该品号在单请购池 ' + Number(poolOdr).toLocaleString('zh-CN') + '，挂的是别的单 → 本单不分摊"' : '';
+    // 在途/在单请购现在是「全厂池」：鼠标悬停说明这里面有多少是挂本单的
+    var ownWay = r.qty_on_way || 0, ownOdr = r.qty_on_odr || 0;
+    var wayTip = wayQty > 0 ? ' title="全厂在途采购 ' + Number(wayQty).toLocaleString('zh-CN') + '（含别的单已下的；其中挂本单 ' + Number(ownWay).toLocaleString('zh-CN') + '）"' : '';
+    var odrTip = odrQty > 0 ? ' title="全厂在单请购 ' + Number(odrQty).toLocaleString('zh-CN') + '（含别的单已请的；其中挂本单 ' + Number(ownOdr).toLocaleString('zh-CN') + '）"' : '';
     html += '<tr style="border-bottom:1px solid #f3f4f6;background:' + bg + '">';
     html += '<td style="padding:8px 10px"><div style="max-width:min(44vw,760px);white-space:normal;overflow-wrap:anywhere" title="' + escAttr((r.prd_no||'') + ' ' + (r.prd_name||'')) + '"><span style="display:inline-block;margin-left:' + indent + 'px"></span><b style="font-variant-numeric:tabular-nums">' + escHtml(r.prd_no||'') + '</b> <span style="font-size:13px;color:var(--name)">' + escHtml(r.prd_name||'') + '</span></div></td>';
     html += '<td style="padding:8px 8px;text-align:center;white-space:nowrap"><span style="font-size:10px;font-weight:700;color:#fff;background:' + depthColor + ';padding:2px 5px;border-radius:10px">' + depthLabel + '</span></td>';
@@ -2363,10 +2369,10 @@ function renderPMCTree(items, title) {
   // 说明
   html += '<div style="margin-top:10px;font-size:12px;color:var(--sub);display:flex;gap:14px;flex-wrap:wrap">';
   html += '<span>销未出=<span style="color:#6366f1;font-weight:600">销售未出</span></span>';
-  html += '<span>在途=<span style="color:#f59e0b;font-weight:600">原材料在途采购</span>（只算挂本单的）</span>';
-  html += '<span>在单请购=<span style="color:#8b5cf6;font-weight:600">原材料在单请购</span>（只算挂本单的）</span>';
-  html += '<span>合计=<span style="font-weight:600">挂本单的在途+在单请购</span></span>';
-  html += '<span>缺口=需求−合计，<span style="color:var(--sub)">公共库存不分摊、不扣（同品号多单时看品号净缺口）</span></span>';
+  html += '<span>在途=<span style="color:#f59e0b;font-weight:600">全厂在途采购</span>（含别的单已下的）</span>';
+  html += '<span>在单请购=<span style="color:#8b5cf6;font-weight:600">全厂在单请购</span>（含别的单已请的）</span>';
+  html += '<span>合计=<span style="font-weight:600">在途+在单请购</span></span>';
+  html += '<span>缺口=需求−合计−库存，<span style="color:var(--sub)">这就是该买多少（同品号多单时看品号净缺）</span></span>';
   html += '</div>';
 
   // 生成 MPS 按钮

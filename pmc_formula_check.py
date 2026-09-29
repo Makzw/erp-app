@@ -9,6 +9,8 @@
      挂别的单、或挂不上的库存 ← 不分摊）。两者之和 ≤ 该品号池子总量
      ⚠ QTY_ON_ODR 是「销售未出货量」(VW_SO_QTY)，不是请购，别拿来当供给扣
   ④ 缺口 = 需求 − 合计（合计 = 挂本单的在途 + 在单请购；公共库存不分摊、不扣）
+  ⑤ 屏上「缺口」(net_gap) = 需求 − 全厂池(在途+在单请购) − 库存 —— 下单口径，
+     就是「昨天买了 7000，今天只该买 3000」；品号汇总的净缺口用同一算式
 
 用法：cd /home/Mak/erp-app && python3 pmc_formula_check.py [单数，默认全量]
 退出码 0 = 全过；1 = 有断言失败。
@@ -80,9 +82,15 @@ def main():
             # 挂本单的量不能超过池子总量
             if r['qty_on_way'] > r.get('pool_way', 0) + 0.5 or r['qty_on_odr'] > r.get('pool_odr', 0) + 0.5:
                 fails.append(f'{tag}: 挂本单的量超过池子总量')
-            # 缺口 = 需求 − 合计
+            # 缺口 = 需求 − 合计（本单口径，保留给屏上对照）
             if abs(round(r['real_demand'] - r['total_avail'], 2) - r['gap']) > 0.01:
                 fails.append(f'{tag}: 缺口 {r["gap"]:.1f} ≠ 需求-合计 {r["real_demand"]-r["total_avail"]:.1f}')
+            # ⑤ 屏上下单口径：net_gap = 需求 − 全厂池 − 库存，且 pool_total = 池合计
+            if abs(round((r.get('pool_way') or 0) + (r.get('pool_odr') or 0), 2) - r['pool_total']) > 0.01:
+                fails.append(f'{tag}: 合计(池) {r["pool_total"]:.1f} ≠ 在途{r.get("pool_way")}+在单{r.get("pool_odr")}')
+            want_net = max(0.0, round(r['real_demand'] - r['pool_total'] - r['total_stock'], 2))
+            if abs(want_net - r['net_gap']) > 0.01:
+                fails.append(f'{tag}: 净缺口 {r["net_gap"]:.1f} ≠ 需求{ r["real_demand"]:.1f}-池{r["pool_total"]:.1f}-库存{r["total_stock"]:.1f}={want_net:.1f}')
             # 需求基准 = 销售未出
             if r['is_fg'] and abs(r['real_demand'] - remain) > 0.01:
                 fails.append(f'{tag}: 成品需求 {r["real_demand"]:.1f} ≠ 销售未出 {remain:.1f}')
@@ -90,6 +98,15 @@ def main():
             if i and abs(want.get(i - 1, 0) - r['real_demand']) > 0.5:
                 fails.append(f'{tag}: 需求 {r["real_demand"]:.1f} ≠ 应为 {want.get(i-1,0):.1f}')
     conn.close()
+    # ⑥ 品号汇总自洽：net = max(0, need − pool − stock)
+    try:
+        summ = get(f'{BASE}/api/pmc/prd_summary')
+        for r in (summ.get('items') or []):
+            want_net = max(0.0, round(r['need'] - r.get('pool', 0) - r['stock'], 2))
+            if abs(want_net - r['net']) > 0.01:
+                fails.append(f"汇总 {r['prd_no']}: 净缺口 {r['net']:.1f} ≠ 需求{r['need']:.1f}-池{r.get('pool',0):.1f}-库存{r['stock']:.1f}={want_net:.1f}")
+    except Exception as e:
+        print('（品号汇总自洽检查跳过：%s）' % e)
     print(f'检查 {len(items)} 单 / {rows} 行，失败 {len(fails)} 条')
     for f in fails[:20]:
         print('  ✗', f)
