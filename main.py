@@ -42,11 +42,26 @@ def g(v) -> str:
     if v is None:
         return ""
     if isinstance(v, (bytes, bytearray)):
-        # varbinary 取出的真 GBK 字节（BOM.PRD_NO 含中文括号的料号走这条路）
-        try:
-            return bytes(v).decode("gbk")
-        except Exception:
-            return bytes(v).decode("latin-1", errors="replace")
+        # varbinary 取出的字节：正常行是 nvarchar 的 UTF-16LE 字节，历史脏行是原始 GBK 字节。
+        # 不能只看有没有 NUL：纯中文的 UTF-16LE 名（如「产品自粘标签」）一个 NUL 都没有。
+        # 两种都试，按「控制字符少 + 可打印字符多」挑。
+        b = bytes(v)
+        best, best_score = None, None
+        for enc in ("utf-16le", "gbk"):
+            if enc == "utf-16le" and len(b) % 2:
+                continue
+            try:
+                s = b.decode(enc).rstrip("\x00")
+            except Exception:
+                continue
+            bad = sum(1 for ch in s if ord(ch) < 32 and ch != "\t")
+            good = sum(1 for ch in s if 32 <= ord(ch) < 127 or 0x4E00 <= ord(ch) <= 0x9FFF)
+            sc = (bad, -good)
+            if best_score is None or sc < best_score:
+                best, best_score = s, sc
+        if best is not None:
+            return best
+        return b.decode("latin-1", errors="replace")
     if hasattr(v, "strftime"):  # datetime
         return v.strftime("%Y-%m-%d")
     s = str(v)
