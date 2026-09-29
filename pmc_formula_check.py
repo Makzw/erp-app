@@ -5,10 +5,10 @@
   需求基准 = 销售未出（POS.QTY-QTYPS），不是订单原始数量
   ① 需求按「BOM 边」分配 —— 同一料号挂多个母件时，每一处都有各自的 父件缺口×配比
   ② 顶层带成品自身合计 —— 子件需求 = (销售未出 − 成品合计) × 配比
-  ③ 在途采购 + 在单请购 = 视图 QTY_ON_WAY（VW_PO_QTY 的两个来源拆开算，和必须对得上）
+  ③ 在途采购 / 在单请购 = **只算挂到本单的**（池子行按 指令单号/成品编号/SO行 挂单；
+     挂别的单、或挂不上的库存 ← 不分摊）。两者之和 ≤ 该品号池子总量
      ⚠ QTY_ON_ODR 是「销售未出货量」(VW_SO_QTY)，不是请购，别拿来当供给扣
-  ④ 缺口 = 需求 − 合计（合计已含在途 + 在单请购）
-  ⑥ 合计 = 原材料仓 + 生产仓 + 在途采购 + 在单请购
+  ④ 缺口 = 需求 − 合计（合计 = 挂本单的在途 + 在单请购；公共库存不分摊、不扣）
 
 用法：cd /home/Mak/erp-app && python3 pmc_formula_check.py [单数，默认全量]
 退出码 0 = 全过；1 = 有断言失败。
@@ -41,7 +41,7 @@ def main():
     for it in items:
         prd, so_itm = it['prd_no'], it['so_no_itm']
         qty = float(it['qty'])
-        remain = M._so_line_remain(so_itm, conn)   # 销售未出
+        remain, ref = M._so_line_info(so_itm, conn)
         if remain is None:
             remain = qty
         api = get(f"{BASE}/api/pmc/preview_mps?so_no_itm={so_itm}&prd_no={prd}&qty={qty}")['items']
@@ -51,13 +51,12 @@ def main():
             continue
         stock = M._v2_stock([prd] + [c[0] for c in comp], conn)
         det = M._v2_stock_detail([r['prd_no'] for r in api], conn)
-        split = M._v2_odr_split([r['prd_no'] for r in api], conn)
+        split = M._v2_odr_split([r['prd_no'] for r in api], conn, ref=ref, fg=prd, so_itm=so_itm)
 
         def avail(p):
-            """独立参考实现：合计 = 原材料仓+生产仓+在途采购+在单请购（后两者按品号取）"""
-            e = stock.get(p, {})
-            po, qts = split.get(p, (0.0, 0.0))
-            return (float(e.get('mat_qty', 0)) + float(e.get('prod_qty', 0)) + po + qts)
+            """独立参考实现：本单专属供给 = 挂本单的采购未回 + 请购在单（库存不分摊）"""
+            sp = split.get(p) or {}
+            return float(sp.get('po', 0)) + float(sp.get('qts', 0))
 
         edges = {}
         for i, c in enumerate(comp):
@@ -75,19 +74,15 @@ def main():
         for i, r in enumerate(api):
             rows += 1
             tag = f'{prd}/{r["prd_no"]} L{r["depth"]}'
-            # ⑥ 合计构成
-            s = r['mat_qty'] + r['prod_qty'] + r['qty_on_way'] + r['qty_on_odr']
-            if abs(s - r['total_avail']) > 0.01:
-                fails.append(f'{tag}: 合计 {r["total_avail"]:.1f} ≠ 四列之和 {s:.1f}')
-            # ④ 缺口 = 需求 − 合计
+            # 合计 = 挂本单的在途 + 在单请购（库存不分摊，不进合计）
+            if abs((r['qty_on_way'] + r['qty_on_odr']) - r['total_avail']) > 0.01:
+                fails.append(f'{tag}: 合计 {r["total_avail"]:.1f} ≠ 挂本单在途{r["qty_on_way"]:.0f}+在单{r["qty_on_odr"]:.0f}')
+            # 挂本单的量不能超过池子总量
+            if r['qty_on_way'] > r.get('pool_way', 0) + 0.5 or r['qty_on_odr'] > r.get('pool_odr', 0) + 0.5:
+                fails.append(f'{tag}: 挂本单的量超过池子总量')
+            # 缺口 = 需求 − 合计
             if abs(round(r['real_demand'] - r['total_avail'], 2) - r['gap']) > 0.01:
                 fails.append(f'{tag}: 缺口 {r["gap"]:.1f} ≠ 需求-合计 {r["real_demand"]-r["total_avail"]:.1f}')
-            # 在途采购 + 在单请购 == 库存视图的 QTY_ON_WAY（拆开算的两半必须等于 ERP 原值）
-            e = stock.get(r['prd_no'], {})
-            view_way = float(e.get('mat_qty_on_way', 0)) + float(e.get('prod_qty_on_way', 0))
-            if abs(r['qty_on_way'] + r['qty_on_odr'] - view_way) > 0.5:
-                fails.append(f'{tag}: 在途{r["qty_on_way"]:.0f}+在单请购{r["qty_on_odr"]:.0f} '
-                             f'≠ 视图 QTY_ON_WAY {view_way:.0f}')
             # 需求基准 = 销售未出
             if r['is_fg'] and abs(r['real_demand'] - remain) > 0.01:
                 fails.append(f'{tag}: 成品需求 {r["real_demand"]:.1f} ≠ 销售未出 {remain:.1f}')

@@ -3127,55 +3127,106 @@ async def pmc_pos_unanalyzed(
     }
 
 
-def _v2_odr_split(prd_nos, db_conn):
-    """按品号取「在途采购」与「在单请购」两个**供给**量。
+def _v2_odr_split(prd_nos, db_conn, ref=None, fg=None, so_itm=None):
+    """按品号取「本单专属」和「池子总量」两套在途/在单请购。
 
     ⚠ 库存视图 VW_STOCK_DETAIL2 里没有「请购在单」这一列，别搞错：
       - QTY_ON_WAY = 采购未回量（VW_PO_QTY）＝ 采购单未回 ∪ 请购单(QTS,QT_ID='QD')数量
       - QTY_ON_ODR = **销售未出货量**（VW_SO_QTY，SUM(POS.QTY-SAQTY)），不是请购。
         拿它当供给扣，等于把「需求」又减一遍，整棵 BOM 树会被扣成全 0。
-    这里按 VW_PO_QTY 的原定义拆开：采购单部分 = 在途采购，请购单部分 = 在单请购。
-    两者之和 == 视图的 QTY_ON_WAY。
-    返回 {prd_no: (采购未回, 请购在单)}
+
+    池子行（采购单 VW_POS / 请购单 QTS）上带 指令单号、成品编号、SO行 —— 也就是
+    「这笔料是给哪张单下的」，数据里写着。**按这些字段挂单**：挂本单的才算本单供给；
+    挂别的单、或挂不上的（「X/库存」里的库存份额、纯库存）**不分摊**，本单不扣。
+
+    返回 {prd_no: {'po','qts','po_all','qts_all'}}
+      po / qts        = 挂到本单的 采购未回 / 请购在单
+      po_all / qts_all = 该品号池子总量（给屏上「池 xxx」小注用）
     """
     if not prd_nos:
         return {}
     cur = db_conn.cursor()
     ph = ','.join(['%s'] * len(prd_nos))
     args = tuple(prd_nos)
-    po, qts = {}, {}
+    like = f'%{ref}%' if ref else None
+    out = {str(p).strip(): {'po': 0.0, 'qts': 0.0, 'po_all': 0.0, 'qts_all': 0.0} for p in prd_nos}
+
     cur.execute(f"""
         SELECT PRD_NO, SUM(QTY - ISNULL(PSQTY,0)) FROM VW_POS WITH(NOLOCK)
         WHERE PRD_NO IN ({ph}) AND USABLE=1 AND CLS_ID=0 AND OS_ID='PO' AND QTY > ISNULL(PSQTY,0)
         GROUP BY PRD_NO
     """, args)
     for r in cur.fetchall():
-        po[str(r[0]).strip()] = float(r[1] or 0)
+        k = str(r[0]).strip()
+        if k in out:
+            out[k]['po_all'] = round(float(r[1] or 0), 2)
     cur.execute(f"""
         SELECT PRD_NO, SUM(QTY) FROM QTS WITH(NOLOCK)
         WHERE PRD_NO IN ({ph}) AND QT_ID='QD' AND USABLE=1 AND CLS_ID=0
         GROUP BY PRD_NO
     """, args)
     for r in cur.fetchall():
-        qts[str(r[0]).strip()] = float(r[1] or 0)
-    return {str(p).strip(): (round(po.get(str(p).strip(), 0), 2), round(qts.get(str(p).strip(), 0), 2))
-            for p in prd_nos}
+        k = str(r[0]).strip()
+        if k in out:
+            out[k]['qts_all'] = round(float(r[1] or 0), 2)
+
+    if like:
+        cur.execute(f"""
+            SELECT PRD_NO, SUM(QTY - ISNULL(PSQTY,0)) FROM VW_POS WITH(NOLOCK)
+            WHERE PRD_NO IN ({ph}) AND USABLE=1 AND CLS_ID=0 AND OS_ID='PO' AND QTY > ISNULL(PSQTY,0)
+                  AND [指令单号] LIKE %s
+            GROUP BY PRD_NO
+        """, args + (like,))
+        for r in cur.fetchall():
+            k = str(r[0]).strip()
+            if k in out:
+                out[k]['po'] = round(float(r[1] or 0), 2)
+
+    # 请购单挂单：指令单号命中 → 挂本单；指令单号空白时才用「成品编号」兜底
+    # （成品编号只说明「为哪个成品请的」，同产品多张单时区分不出来，所以不是首选）；
+    # SO行命中 → 挂本单。
+    cond, cargs = [], []
+    if like:
+        cond.append('[指令单号] LIKE %s'); cargs.append(like)
+    if fg:
+        cond.append("(ISNULL(NULLIF(LTRIM(RTRIM([指令单号])),''),'')='' AND [成品编号] = %s)")
+        cargs.append(fg)
+    if so_itm:
+        cond.append('SO_NO_ITM = %s'); cargs.append(so_itm)
+    if cond:
+        cur.execute(f"""
+            SELECT PRD_NO, SUM(QTY) FROM QTS WITH(NOLOCK)
+            WHERE PRD_NO IN ({ph}) AND QT_ID='QD' AND USABLE=1 AND CLS_ID=0
+                  AND ({' OR '.join(cond)})
+            GROUP BY PRD_NO
+        """, args + tuple(cargs))
+        for r in cur.fetchall():
+            k = str(r[0]).strip()
+            if k in out:
+                out[k]['qts'] = round(float(r[1] or 0), 2)
+    return out
 
 
-def _so_line_remain(so_no_itm, db_conn):
-    """该销售订单行的「销售未出」= QTY - QTYPS。
+def _so_line_info(so_no_itm, db_conn):
+    """该销售订单行的「销售未出」和「指令单号」。
 
-    需求基准必须用这个，不能用订单原始数量：已部分出货的单，未出部分才是还要
-    采购/生产的量。前端传的 qty 是订单原始数量（PMC 列表里的「订单量」）。
-    查不到该行时返回 None，调用方回落用传入的 qty。
+    销售未出 = QTY − QTYPS（需求基准，不是订单原始数量：已部分出货的单只算未出部分）。
+    指令单号用来把在途/在单请购挂到单上。查不到返回 (None, '')。
     """
     cur = db_conn.cursor()
     cur.execute("""
-        SELECT ISNULL(QTY,0)-ISNULL(QTYPS,0) FROM VW_POS WITH(NOLOCK)
+        SELECT ISNULL(QTY,0)-ISNULL(QTYPS,0), ISNULL([指令单号],'') FROM VW_POS WITH(NOLOCK)
         WHERE SO_NO_ITM=%s
     """, (so_no_itm,))
     r = cur.fetchone()
-    return float(r[0] or 0) if r else None
+    if not r:
+        return None, ''
+    return float(r[0] or 0), str(r[1] or '').strip()
+
+
+def _so_line_remain(so_no_itm, db_conn):
+    """只要销售未出（兼容旧调用）"""
+    return _so_line_info(so_no_itm, db_conn)[0]
 
 
 @app.get("/api/pmc/preview_mps")
@@ -3190,35 +3241,39 @@ async def pmc_preview_mps(
     """
     db_name = "T041" if db.lower() == "t041" else "C041"
     conn = get_conn(db=db_name)
-    # 需求基准 = 销售未出（QTY-QTYPS），不是订单原始数量：已部分出货的单只算未出部分
-    demand_qty = _so_line_remain(so_no_itm, conn)
+    # 需求基准 = 销售未出（QTY-QTYPS）；指令单号用来把在途/在单请购挂到本单
+    demand_qty, ref = _so_line_info(so_no_itm, conn)
     if demand_qty is None:
         demand_qty = qty
+        ref = ref or ''
     comp_rows = _mps_bom_tree(prd_no, conn, qty=demand_qty)
     all_prds = [prd_no] + [r[0] for r in comp_rows]
     stock_map = _v2_stock(all_prds, conn)
     stock_detail = _v2_stock_detail(all_prds, conn)
-    odr_split = _v2_odr_split(all_prds, conn)
+    odr_split = _v2_odr_split(all_prds, conn, ref=ref, fg=prd_no, so_itm=so_no_itm)
     conn.close()
 
     # 库存汇总
     fg_stock = stock_map.get(prd_no, {})
 
     def make_row(c_prd, c_name, c_qty, c_depth, c_knd, stock_map_entry, stock_det):
-        """统一公式：需求=父件缺口×配比；缺口=需求-合计；
-        合计=原材料仓+生产仓+在途采购+在单请购（④⑥）"""
+        """需求 = 父件缺口 × BOM配比（毛需求，不看公共库存）。
+
+        不分摊（MAK 2026-09-29 定）：公共库存不进「合计」，单层缺口只扣
+        「挂到本单」的在途采购 / 在单请购 —— 按指令单号/成品编号/SO行挂。
+        净缺口看品号汇总（库存只在品号层扣一次）。"""
         sm = stock_map_entry or {}
         mat_qty   = round(sm.get('mat_qty', 0), 2)
         prod_qty  = round(sm.get('prod_qty', 0), 2)
         det = stock_det or []
-        # 「在途采购」/「在单请购」都按品号取（VW_PO_QTY 的两个来源），
-        # 不用 det 里那些按仓行。原来读的是 QTY_ON_ODR = 销售未出货量，不是请购。
-        qty_on_way, qty_on_odr = odr_split.get(c_prd, (0.0, 0.0))
-        total_way = round(qty_on_way, 2)
+        sp = odr_split.get(c_prd) or {}
+        qty_on_way = round(float(sp.get('po', 0)), 2)     # 挂本单的采购未回
+        qty_on_odr = round(float(sp.get('qts', 0)), 2)    # 挂本单的请购在单
+        pool_way = round(float(sp.get('po_all', 0)), 2)   # 该品号池子总量（显示用）
+        pool_odr = round(float(sp.get('qts_all', 0)), 2)
         total_stock = mat_qty + prod_qty
-        # ④ 缺口要扣在途 + 在单请购；⑥ 合计 = 库存 + 在途 + 在单请购
-        real_demand = max(0, c_qty - mat_qty - prod_qty)
-        total_avail = round(total_stock + total_way + qty_on_odr, 2)
+        real_demand = c_qty                                # 毛需求
+        total_avail = round(qty_on_way + qty_on_odr, 2)    # 本单专属供给（不含公共库存）
         gap = round(real_demand - total_avail, 2)
         # wh_detail: 全部明细（兼容前端调整弹窗）
         # mat_detail / prod_detail: 原材料仓/生产仓分组（显示用）
@@ -3230,9 +3285,10 @@ async def pmc_preview_mps(
             "qty_on_odr": qty_on_odr,
             "real_demand": round(real_demand, 4),
             "mat_qty": mat_qty, "prod_qty": prod_qty,
-            "qty_on_way": round(total_way, 2),
+            "qty_on_way": qty_on_way,
             "total_stock": round(total_stock, 2),
             "total_avail": total_avail,
+            "pool_way": pool_way, "pool_odr": pool_odr,
             "gap": gap,
             "is_fg": False, "depth": c_depth,
             "knd": c_knd,
@@ -3248,13 +3304,15 @@ async def pmc_preview_mps(
 
     # ITM=1 成品行
     det = stock_detail.get(prd_no, [])
-    fg_way, fg_on_odr = odr_split.get(prd_no, (0.0, 0.0))   # 在途采购 / 在单请购（品号级，真实供给）
-    fg_way = round(fg_way, 2)
-    fg_on_odr = round(fg_on_odr, 2)
+    fg_sp = odr_split.get(prd_no) or {}
+    fg_way = round(float(fg_sp.get('po', 0)), 2)      # 挂本单的采购未回
+    fg_on_odr = round(float(fg_sp.get('qts', 0)), 2)  # 挂本单的请购在单
+    fg_pool_way = round(float(fg_sp.get('po_all', 0)), 2)
+    fg_pool_odr = round(float(fg_sp.get('qts_all', 0)), 2)
     fg_raw = round(fg_stock.get('mat_qty', 0) + fg_stock.get('prod_qty', 0), 2)
-    fg_real_demand = max(0, demand_qty - fg_stock.get('mat_qty', 0) - fg_stock.get('prod_qty', 0))
+    fg_real_demand = demand_qty                       # 毛需求（库存不分摊）
     fg_total_stock = fg_raw
-    fg_total_avail = round(fg_raw + fg_way + fg_on_odr, 2)   # ④⑥ 合计含在途+在单请购
+    fg_total_avail = round(fg_way + fg_on_odr, 2)     # 本单专属供给
 
     os_no = so_no_itm[:-3] if len(so_no_itm) > 3 else so_no_itm
     rows = [{
@@ -3267,6 +3325,7 @@ async def pmc_preview_mps(
         "qty_on_way": fg_way,
         "total_stock": round(fg_total_stock, 2),
         "total_avail": fg_total_avail,
+        "pool_way": fg_pool_way, "pool_odr": fg_pool_odr,
         "gap": round(fg_real_demand - fg_total_avail, 2),
         "is_fg": True, "depth": 0,
         "knd": None,
@@ -3288,9 +3347,9 @@ async def pmc_preview_mps(
     # 自顶向下 BOM 配比分需求
     #
     # 公式：子件需求 = 父件缺口 × BOM配比
-    # 父件缺口 = 父件需求 - 父件库存
-    # - KND=3 半成品：raw_stock = mat+prod 库存
-    # - KND=4 原料：raw_stock = mat+prod 库存
+    # 父件缺口 = 父件需求 − 父件「本单专属供给」（挂本单的在途/在单请购）
+    # 公共库存不分摊 → 不在这里扣（该品号净缺口看品号汇总）
+    # - KND=3 半成品 / KND=4 原料 都用同一个口径
     #
     # ponytail: 按「BOM 边（母件实例→子件实例）」分配，不按品号索引。
     # 同一料号会挂在多个母件下（50 单里有 54 个这样的料号），按品号索引
