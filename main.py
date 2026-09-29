@@ -3935,19 +3935,8 @@ async def pmc_generate(
 
     try:
         # 预分配单号
-        def _next_no(prefix, tbl, col):
-            prefix_str = f"{prefix}{today_yy}"
-            cur.execute(f"""
-                SELECT ISNULL(MAX(CAST(RIGHT({col},4) AS INT)), 0)
-                FROM {tbl} WITH(NOLOCK)
-                WHERE LEFT({col},{len(prefix_str)}) = %s AND LEN({col})={len(prefix_str)+4}
-            """, (prefix_str,))
-            row = cur.fetchone()
-            val = row[0] if row else 0
-            return f"{prefix}{today_yy}{(val or 0) + 1:04d}"
-
-        mo_no = _next_no("MO", "MOM", "MO_NO")
-        qd_no = _next_no("QD", "QTS", "QT_NO")
+        mo_no = _next_serial(cur, "MO", "MOM", "MO_NO")
+        qd_no = _next_serial(cur, "QD", "QTS", "QT_NO")
 
         mo_inserted = []
         qd_itm = 0
@@ -4167,6 +4156,129 @@ async def pmc_adjust_stock(
         "qty": qty,
         "msg": f"{'入库' if is_in else '出库'} IC={ic_no} 品号={prd_no} 仓库={wh} 数量={qty}"
     }
+
+
+# ── PMC 一键生成请购单（QD / QTS）─────────────────────────────────────────────
+def _next_serial(cur, prefix, tbl, col, width=4):
+    """当月流水号：QD26090040 / MO2609xxxx（YYMM + width 位流水）。"""
+    head = f"{prefix}{datetime.now().strftime('%y%m')}"
+    cur.execute(f"""
+        SELECT ISNULL(MAX(CAST(RIGHT(RTRIM({col}),{width}) AS INT)), 0)
+        FROM {tbl} WITH(NOLOCK)
+        WHERE LEFT(RTRIM({col}),{len(head)}) = %s
+          AND LEN(RTRIM({col})) = {len(head)+width}
+          AND RIGHT(RTRIM({col}),{width}) NOT LIKE '%[^0-9]%'
+    """, (head,))
+    r = cur.fetchone()
+    return f"{head}{(int(r[0]) if r and r[0] else 0) + 1:0{width}d}"
+
+
+@app.post("/api/pmc/make_qd")
+async def pmc_make_qd(
+    body: dict = Body(...),
+    db: str = Query(default="c041"),
+):
+    """PMC 在 MPS 树里勾原材料 + 填数量 → 生成一张请购单（QTS，QT_ID='QD'）。
+
+    body: {so_no_itm, fg_no, est_dd, dry, items: [{prd_no, qty, rem}]}
+      est_dd  交期（手填，必填）
+      dry=1   走完所有校验+INSERT 后 ROLLBACK（验证用，不留单）
+
+    写库口径（对齐桌面端真单 QD26090038/39，字段全部按真单形态）：
+      USR='0014'（PMC）· APP_ID=0（待审）· CLS_ID=0 · USABLE=1 · 删除=0
+      CUS_NO='20399' / CUS_NAME='待定'（采购审完才定厂）
+      PRD_NAME/UT 取 PRDT · AMT/UP 留空（＝未确认单价，采购才认领）
+      指令单号/客户代号/成品编号/订单数量/SO_NO_ITM 挂本单；REF_ITM 留空（app 不建派工单）
+    """
+    items = [it for it in (body.get("items") or []) if float(it.get("qty") or 0) > 0 and it.get("prd_no")]
+    if not items:
+        return {"error": "没有勾选请购的原材料（数量要大于 0）"}
+    est_dd = (body.get("est_dd") or "").strip()
+    if not est_dd:
+        return {"error": "请填写交期"}
+    so_no_itm = (body.get("so_no_itm") or "").strip()
+    fg_no = (body.get("fg_no") or "").strip()
+    dry = str(body.get("dry") or "") in ("1", "true", "True")
+    if not so_no_itm:
+        return {"error": "缺少 SO 行号（请从某张待分析单的 BOM 树里生成）"}
+
+    db_name = "T041" if db.lower() == "t041" else "C041"
+    conn = get_conn(db=db_name)
+    cur = conn.cursor()
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    try:
+        # 本单挂靠字段（订单行 → 指令单号 / 客户代号 / 订单数量）
+        # 客户代号：POS.客户代号 多数为空，真值是 POS.CUS_NAME（如 10003→KH003，历史 QD 全是 KH0xx 格式）
+        cur.execute("""
+            SELECT ISNULL(指令单号,''), ISNULL(NULLIF(客户代号,''), ISNULL(CUS_NAME,'')), ISNULL(QTY,0)
+            FROM POS WITH(NOLOCK) WHERE SO_NO_ITM=%s
+        """, (so_no_itm,))
+        pr = cur.fetchone()
+        order_ref = g(pr[0]) if pr else ""
+        cus_ref = g(pr[1]) if pr else ""
+        order_qty = float(pr[2] or 0) if pr else 0.0
+
+        qd_no = _next_serial(cur, "QD", "QTS", "QT_NO")
+
+        lines, itm = [], 0
+        for it in items:
+            prd_no = str(it["prd_no"]).strip()
+            qty = round(float(it.get("qty") or 0), 4)
+            cur.execute("SELECT CONVERT(varbinary(600), NAME), UT FROM PRDT WITH(NOLOCK) WHERE PRD_NO=%s",
+                        (prd_no.encode("gbk"),))
+            prow = cur.fetchone()
+            if not prow:
+                conn.rollback()
+                return {"error": f"PRDT 里没有品号 {prd_no}"}
+            prd_name = g(prow[0])
+            ut = g(prow[1])
+            itm += 1
+            rem1 = (it.get("rem") or "").strip() or (f"{fg_no} PMC请购" if fg_no else "PMC请购")
+            cur.execute("""
+                INSERT INTO QTS (QT_NO,QT_ID,QT_DD,USR,USABLE,CUS_NO,CUS_NAME,ITM,PRD_NO,PRD_NAME,UT,
+                                 QTY,EST_DD,CLS_ID,SO_NO_ITM,指令单号,客户代号,成品编号,订单数量,
+                                 REM1,EFF_DD,APP_ID,删除)
+                VALUES (%s,'QD',%s,%s,1,%s,%s,%s,%s,%s,%s,%s,%s,0,%s,%s,%s,%s,%s,%s,%s,0,0)
+            """, (
+                qd_no, now_str, "0014", "20399", "待定", itm, prd_no, prd_name, ut,
+                qty, est_dd, so_no_itm, order_ref, cus_ref, fg_no, order_qty,
+                rem1, now_str,
+            ))
+            lines.append({"itm": itm, "prd_no": prd_no, "prd_name": prd_name, "ut": ut, "qty": qty})
+
+        if dry:
+            conn.rollback()
+            return {"ok": True, "dry": True, "qd_no": qd_no, "itm_count": len(lines),
+                    "so_no_itm": so_no_itm, "指令单号": order_ref, "客户代号": cus_ref,
+                    "成品编号": fg_no, "订单数量": order_qty, "est_dd": est_dd, "lines": lines}
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        if getattr(e, "args", None) and e.args and e.args[0] == 2627:
+            return {"error": "单号已被占用，请重试（勿重复提交）"}
+        return {"error": str(e)}
+    finally:
+        conn.close()
+
+    # 回读校验（写入后立刻按单号读回，逐行核对品号/数量/交期）
+    try:
+        c2 = get_conn(db=db_name)
+        cur2 = c2.cursor()
+        cur2.execute("""
+            SELECT ISNULL(ITM,0), PRD_NO, QTY, UT, CONVERT(varchar(10),EST_DD,120), USR, CAST(APP_ID AS INT)
+            FROM QTS WITH(NOLOCK) WHERE QT_NO=%s ORDER BY ITM
+        """, (qd_no.encode("gbk"),))
+        back = [{"itm": r[0], "prd_no": g(r[1]), "qty": float(r[2] or 0), "ut": g(r[3]),
+                 "est_dd": r[4], "usr": g(r[5]), "app": r[6]} for r in cur2.fetchall()]
+        c2.close()
+    except Exception as e:
+        back = [{"error": str(e)}]
+
+    return {"ok": True, "dry": False, "qd_no": qd_no, "itm_count": len(lines),
+            "so_no_itm": so_no_itm, "指令单号": order_ref, "客户代号": cus_ref,
+            "成品编号": fg_no, "订单数量": order_qty, "est_dd": est_dd,
+            "lines": lines, "回读": back}
 
 
 if __name__ == "__main__":

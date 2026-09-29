@@ -2252,6 +2252,7 @@ async function pmcPreviewBatch() {
       var data = await api(BASE + '/pmc/preview_mps?' + new URLSearchParams({so_no_itm: it.so_no_itm, prd_no: it.prd_no, qty: it.qty}));
       if (data.items) allRows = allRows.concat(data.items);
     }
+    window.__pmcQdCtx = null;   // 合并树没有单一 SO 行 → 不提供请购生成
     renderPMCTree(allRows, '合并 ' + pmcSelected.length + ' 条指令单');
   } catch(e) { el.innerHTML = '<div class="error-msg">' + e.message + '</div>'; }
 }
@@ -2268,6 +2269,8 @@ async function pmcAnalyzeRow(soNoItm, prdNo, qty) {
     // 保存 BOM 行供调整弹窗用
     window.__pmcBomRows = items;
     window.__pmcPending = {soNoItm: soNoItm, prdNo: prdNo, qty: qty};
+    // 请购上下文：只有「单张单」的树才能生成请购单（合并树没有单一 SO 行，挂不上指令单号/客户）
+    window.__pmcQdCtx = {so_no_itm: soNoItm, fg_no: prdNo, qty: qty};
     renderPMCTree(items, soNoItm + ' ' + prdNo);
   } catch(e) { el.innerHTML = '<div class="error-msg">' + e.message + '</div>'; }
 }
@@ -2275,7 +2278,8 @@ async function pmcAnalyzeRow(soNoItm, prdNo, qty) {
 // PMC BOM 树渲染
 function renderPMCTree(items, title) {
   var el = $id('content');
-  if (!items || !items.length) { el.innerHTML = '<div class="state-msg">\u65e0 BOM \u6570\u636e</div>'; return; }
+  if (!items || !items.length) { el.innerHTML = '<div class="state-msg">\u65e0 BOM 数据</div>'; return; }
+  window.__pmcTreeItems = items;   // 生成请购单要按行取品号/数量
   var fgRow = items.find(function(r) { return r.is_fg; });
   var bomRows = items.filter(function(r) { return !r.is_fg; });
 
@@ -2290,7 +2294,7 @@ function renderPMCTree(items, title) {
   html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap"><div style="font-size:13px;color:var(--sub)">' + (title||'') + '</div>' + summaryTag + '</div>';
 
   // BOM 表
-  html += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:1300px"><thead><tr style="background:#f3f4f6">';
+  html += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:1470px"><thead><tr style="background:#f3f4f6">';
   html += '<th style="padding:8px 10px;text-align:left;min-width:300px">品号</th>';
   html += '<th style="padding:8px 8px;text-align:center;white-space:nowrap;min-width:64px">层</th>';
   html += '<th style="padding:8px 8px;text-align:right;white-space:nowrap;min-width:96px">需求</th>';
@@ -2301,6 +2305,7 @@ function renderPMCTree(items, title) {
   html += '<th style="padding:8px 8px;text-align:right;white-space:nowrap;min-width:104px">在单请购</th>';
   html += '<th style="padding:8px 8px;text-align:right;white-space:nowrap;min-width:96px">合计</th>';
   html += '<th style="padding:8px 8px;text-align:right;white-space:nowrap;min-width:160px">缺口</th>';
+  html += '<th style="padding:8px 8px;text-align:center;white-space:nowrap;min-width:170px" title="勾选原材料 + 填数量 → 生成请购单（QD）。数量默认填品号净缺口，没有则填本行缺口，都可以改">请购</th>';
   html += '<th style="padding:8px 8px;text-align:center;white-space:nowrap;min-width:80px">调整</th>';
   html += '</tr></thead><tbody>';
 
@@ -2344,6 +2349,19 @@ function renderPMCTree(items, title) {
       gapHtml += '<div title="' + escAttr(netTip) + '" style="font-size:12px;margin-top:1px;white-space:nowrap;color:' +
         (prdNet > 0 ? '#b45309' : '#16a34a') + '">品号净缺 ' + (prdNet > 0 ? netTxt : '0') + '</div>';
     }
+    // 请购列：只有采购件/原材料（knd=4）能请购，自制件（knd=3）走派工单
+    var canQd = !isFg && String(r.knd || '') === '4';
+    var qdDef = 0;
+    var pnet = Number(r.prd_net);
+    if (!isNaN(pnet) && pnet > 0) { qdDef = pnet; } else if (gap > 0) { qdDef = gap; }
+    var qdDefTxt = qdDef > 0 ? String(Math.round(qdDef * 1000) / 1000) : '';
+    var qdcHtml = canQd
+      ? '<div style="display:flex;align-items:center;gap:6px;justify-content:flex-end">' +
+        '<input type="checkbox" id="qdSel_' + i + '" onchange="pmcQdSync()" style="width:16px;height:16px;cursor:pointer" title="勾选后填数量">' +
+        '<input type="number" id="qdQty_' + i + '" data-def="' + qdDefTxt + '" value="' + qdDefTxt + '" oninput="pmcQdSync()" placeholder="0" style="width:92px;padding:4px 6px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;text-align:right;font-variant-numeric:tabular-nums">' +
+        '</div>'
+      : '<span style="color:var(--sub)" title="' + (isFg ? '成品行不可请购' : '自制件：走派工单，不请购') + '">—</span>';
+
     // 销未出 / 在途 / 在单
     // 毛需求 = 销售未出不扣任何库存/在途展开（成品行就是销售未出）；子件行也有，一眼看这张单总共要用多少
     var gross = (r.gross_demand === undefined || r.gross_demand === null) ? (isFg ? soRemain : 0) : r.gross_demand;
@@ -2365,6 +2383,7 @@ function renderPMCTree(items, title) {
     html += '<td style="padding:8px 8px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap"' + odrTip + '>' + odrHtml + '</td>';
     html += '<td style="padding:8px 8px;text-align:right;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap">' + Number(totalStock).toLocaleString('zh-CN') + '</td>';
     html += '<td style="padding:8px 8px;text-align:right;min-width:160px">' + gapHtml + '</td>';
+    html += '<td style="padding:8px 8px;text-align:center;white-space:nowrap">' + qdcHtml + '</td>';
     html += '<td style="padding:8px 8px;text-align:center;white-space:nowrap">' + adjBtn + '</td>';
     html += '</tr>';
   }
@@ -2377,7 +2396,20 @@ function renderPMCTree(items, title) {
   html += '<span>在单请购=<span style="color:#8b5cf6;font-weight:600">全厂在单请购</span>（含别的单已请的）</span>';
   html += '<span>合计=<span style="font-weight:600">在途+在单请购</span></span>';
   html += '<span>缺口=需求−合计−材料仓，<span style="color:var(--sub)">这就是该买多少；生产仓已被领走不扣（同品号多单时看品号净缺）</span></span>';
+  html += '<span>请购=<span style="color:#16a34a;font-weight:600">勾选原材料（自制件不请购）</span> + 数量，生成一张 QD 请购单</span>';
   html += '</div>';
+
+  // 生成请购单（只从单张单的树进入；合并树没有单一 SO 行）
+  if (fgRow && window.__pmcQdCtx && window.__pmcQdCtx.so_no_itm) {
+    html += '<div style="margin-top:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;background:#f9fafb;border:1px solid var(--border);border-radius:8px">' +
+      '<span style="font-size:13px;font-weight:600">生成请购单</span>' +
+      '<label style="font-size:13px;display:flex;align-items:center;gap:6px">交期 <input type="date" id="qdEstDd" style="padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px"></label>' +
+      '<button onclick="pmcQdAll()" style="padding:6px 12px;border-radius:16px;border:1px solid var(--border);background:#fff;font-size:12px;cursor:pointer">全选可请购</button>' +
+      '<button onclick="pmcQdNone()" style="padding:6px 12px;border-radius:16px;border:1px solid var(--border);background:#fff;font-size:12px;cursor:pointer">清空</button>' +
+      '<button id="qdGoBtn" onclick="pmcMakeQd()" style="background:#16a34a;color:#fff;border:none;border-radius:8px;padding:9px 20px;font-size:13px;font-weight:600;cursor:pointer;opacity:.5">生成请购单 (0)</button>' +
+      '<span style="font-size:12px;color:var(--sub)">勾选「请购」列的原材料 → 数量默认净缺口、可改 → 交期手填</span>' +
+      '</div>';
+  }
 
   // 生成 MPS 按钮
   if (fgRow) {
@@ -2386,6 +2418,154 @@ function renderPMCTree(items, title) {
 
   html += '</div>';
   el.innerHTML = html;
+}
+
+// ── PMC 生成请购单（原材料 → QTS / QD 单）────────────────────────────────────
+// 流程：树里勾「请购」列 + 填数量 → 交期（手填）→ 一键生成
+//   ① 先用 dry=1 跑一遍（后端做完所有校验和 INSERT 后 ROLLBACK）→ 把「将写入什么」摊在确认弹窗里
+//   ② 确认后再真写（一张 QD 单，多行 ITM）
+function pmcQdCollect() {
+  var out = [], items = window.__pmcTreeItems || [];
+  for (var i = 0; i < items.length; i++) {
+    var cb = $id('qdSel_' + i);
+    if (!cb || !cb.checked) continue;
+    var qi = $id('qdQty_' + i);
+    var q = qi ? parseFloat(qi.value) : 0;
+    if (!(q > 0)) continue;
+    out.push({prd_no: items[i].prd_no, prd_name: items[i].prd_name, ut: items[i].ut, qty: q});
+  }
+  return out;
+}
+function pmcQdSync() {
+  var n = pmcQdCollect().length;
+  var b = $id('qdGoBtn');
+  if (b) { b.textContent = '生成请购单 (' + n + ')'; b.style.opacity = n ? '1' : '.5'; }
+}
+function pmcQdAll() {
+  var items = window.__pmcTreeItems || [];
+  for (var i = 0; i < items.length; i++) {
+    var cb = $id('qdSel_' + i); if (!cb) continue;
+    cb.checked = true;
+    var qi = $id('qdQty_' + i);
+    if (qi && !(parseFloat(qi.value) > 0)) qi.value = qi.getAttribute('data-def') || '';
+  }
+  pmcQdSync();
+}
+function pmcQdNone() {
+  var items = window.__pmcTreeItems || [];
+  for (var i = 0; i < items.length; i++) { var cb = $id('qdSel_' + i); if (cb) cb.checked = false; }
+  pmcQdSync();
+}
+function pmcQdClose() { var o = $id('qdConfirmOv'); if (o && o.parentNode) o.parentNode.removeChild(o); }
+
+async function pmcMakeQd() {
+  var rows = pmcQdCollect();
+  if (!rows.length) { toast('请先勾选要请购的原材料并填数量'); return; }
+  var dd = $id('qdEstDd');
+  var est = dd ? (dd.value || '') : '';
+  if (!est) { toast('请先填交期（手填）'); return; }
+  var ctx = window.__pmcQdCtx || {};
+  // 校验期间不清树（清了会丢勾选/数量），只锁按钮
+  var btn0 = $id('qdGoBtn');
+  if (btn0) { btn0.disabled = true; btn0.textContent = '校验中\u2026'; }
+  var pre;
+  try {
+    pre = await api(BASE + '/pmc/make_qd', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({so_no_itm: ctx.so_no_itm, fg_no: ctx.fg_no, est_dd: est, dry: '1', items: rows})
+    });
+  } catch (e) {
+    if (btn0) btn0.disabled = false;
+    pmcQdSync();
+    toast('校验失败：' + (e.message || e));
+    return;
+  }
+  if (btn0) btn0.disabled = false;
+  pmcQdSync();
+  if (!pre || pre.error) { toast('校验失败：' + ((pre && pre.error) || '未知错误')); return; }
+  window.__pmcQdBody = {so_no_itm: ctx.so_no_itm, fg_no: ctx.fg_no, est_dd: est, items: rows};
+  pmcQdConfirmHtml(pre, rows);
+}
+
+function pmcQdConfirmHtml(pre, rows) {
+  // 表格用后端 dry-run 返回的 lines（带着 PRDT 的品名/单位），不用前端行（树行没有 ut）
+  var lines = (pre.lines && pre.lines.length) ? pre.lines : rows;
+  var trs = lines.map(function (r, n) {
+    return '<tr style="border-top:1px solid var(--border)">' +
+      '<td style="padding:6px 8px;text-align:center;color:var(--sub)">' + (n + 1) + '</td>' +
+      '<td style="padding:6px 8px;font-weight:600">' + escHtml(r.prd_no) + '</td>' +
+      '<td style="padding:6px 8px;color:var(--name)">' + escHtml(r.prd_name || '') + '</td>' +
+      '<td style="padding:6px 8px;text-align:center">' + escHtml(r.ut || '') + '</td>' +
+      '<td style="padding:6px 8px;text-align:right;font-weight:700;font-variant-numeric:tabular-nums">' + Number(r.qty).toLocaleString('zh-CN') + '</td></tr>';
+  }).join('');
+  var ov = document.createElement('div');
+  ov.id = 'qdConfirmOv';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:500;display:flex;align-items:center;justify-content:center;padding:16px';
+  ov.innerHTML = '<div style="background:#fff;border-radius:14px;max-width:min(92vw,1020px);max-height:90vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.25)">' +
+    '<div style="padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px">' +
+      '<div style="font-size:15px;font-weight:700;flex:1">确认生成请购单（' + rows.length + ' 行）</div>' +
+      '<button onclick="pmcQdClose()" style="padding:7px 18px;border-radius:16px;border:1px solid var(--border);background:#fff;font-size:13px;cursor:pointer">取消</button>' +
+      '<button onclick="pmcQdConfirm()" id="qdOkBtn" style="padding:7px 18px;border-radius:16px;border:none;background:#16a34a;color:#fff;font-size:13px;font-weight:600;cursor:pointer">确认生成</button></div>' +
+    '<div style="padding:12px 20px 0;font-size:12px;color:var(--sub);display:flex;gap:18px;flex-wrap:wrap">' +
+      '<span>单号 <b style="color:#1d4ed8">' + escHtml(pre.qd_no) + '</b>（还没写入）</span>' +
+      '<span>成品编号 <b style="color:var(--text)">' + escHtml(pre['成品编号'] || '') + '</b></span>' +
+      '<span>指令单号 <b style="color:var(--text)">' + escHtml(pre['指令单号'] || '') + '</b></span>' +
+      '<span>客户代号 <b style="color:var(--text)">' + escHtml(pre['客户代号'] || '') + '</b></span>' +
+      '<span>订单数量 <b style="color:var(--text)">' + Number(pre['订单数量'] || 0).toLocaleString('zh-CN') + '</b></span>' +
+      '<span>交期 <b style="color:var(--text)">' + escHtml(pre.est_dd || '') + '</b></span>' +
+      '<span>制单人 <b style="color:var(--text)">0014（PMC）</b> · 供应商 <b style="color:var(--text)">20399 待定</b></span>' +
+    '</div>' +
+    '<div style="padding:12px 20px 18px"><table style="width:100%;border-collapse:collapse;font-size:12px;background:#fff">' +
+      '<thead><tr style="background:#f3f4f6;color:var(--sub)"><th style="padding:6px 8px">#</th><th style="padding:6px 8px;text-align:left">品号</th>' +
+      '<th style="padding:6px 8px;text-align:left">品名</th><th style="padding:6px 8px">单位</th><th style="padding:6px 8px;text-align:right">请购数量</th></tr></thead>' +
+      '<tbody>' + trs + '</tbody></table></div></div>';
+  document.body.appendChild(ov);
+}
+
+async function pmcQdConfirm() {
+  var b = window.__pmcQdBody;
+  if (!b) { pmcQdClose(); return; }
+  var btn = $id('qdOkBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '写入中\u2026'; }
+  var res;
+  try {
+    res = await api(BASE + '/pmc/make_qd', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(b)
+    });
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = '确认生成'; }
+    toast('生成失败：' + (e.message || e)); return;
+  }
+  if (!res || res.error) {
+    if (btn) { btn.disabled = false; btn.textContent = '确认生成'; }
+    toast('生成失败：' + ((res && res.error) || '未知错误')); return;
+  }
+  pmcQdClose();
+  toast('✓ 请购单 ' + res.qd_no + ' 已生成（' + res.itm_count + ' 行）', 4000);
+  var el = $id('content');
+  var back = (res['回读'] || []).map(function (r) {
+    if (r.error) return '<tr><td colspan="5" style="padding:6px 8px;color:#dc2626">回读失败：' + escHtml(r.error) + '</td></tr>';
+    return '<tr style="border-top:1px solid var(--border)"><td style="padding:6px 8px;text-align:center;color:var(--sub)">' + r.itm + '</td>' +
+      '<td style="padding:6px 8px;font-weight:600">' + escHtml(r.prd_no) + '</td>' +
+      '<td style="padding:6px 8px;text-align:right;font-variant-numeric:tabular-nums">' + Number(r.qty).toLocaleString('zh-CN') + '</td>' +
+      '<td style="padding:6px 8px;text-align:center">' + escHtml(r.ut || '') + '</td>' +
+      '<td style="padding:6px 8px;text-align:center">' + escHtml(r.est_dd || '') + '</td>' +
+      '<td style="padding:6px 8px;text-align:center;color:var(--sub)">' + escHtml(r.usr || '') + '</td></tr>';
+  }).join('');
+  var ctx = window.__pmcQdCtx || {};
+  el.innerHTML = '<div style="padding:16px">' +
+    '<div style="font-size:16px;font-weight:700;color:#16a34a;margin-bottom:4px">✓ 请购单已生成</div>' +
+    '<div style="font-size:14px;font-weight:600;margin-bottom:2px">单号：' + escHtml(res.qd_no) + '　共 ' + res.itm_count + ' 行</div>' +
+    '<div style="font-size:12px;color:var(--sub);margin-bottom:12px">制单人 0014（PMC）· 待审 · 供应商 20399 待定 · 交期 ' + escHtml(res.est_dd || '') +
+      ' · 指令单号 ' + escHtml(res['指令单号'] || '') + ' · 客户代号 ' + escHtml(res['客户代号'] || '') + ' · 成品编号 ' + escHtml(res['成品编号'] || '') + '</div>' +
+    '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;background:#fff;border:1px solid var(--border);border-radius:8px">' +
+      '<thead><tr style="background:#f3f4f6;color:var(--sub)"><th style="padding:6px 8px">ITM</th><th style="padding:6px 8px;text-align:left">品号</th>' +
+      '<th style="padding:6px 8px;text-align:right">数量</th><th style="padding:6px 8px">单位</th><th style="padding:6px 8px">交期</th><th style="padding:6px 8px">制单人</th></tr></thead>' +
+      '<tbody>' + back + '</tbody></table></div>' +
+    '<div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap">' +
+      '<button onclick="pmcAnalyzeRow(\'' + escAttr(ctx.so_no_itm || '') + '\',\'' + escAttr(ctx.fg_no || '') + '\',' + (ctx.qty || 0) + ')" style="padding:8px 16px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:13px;font-weight:600;cursor:pointer">重看本单 BOM 树</button>' +
+      '<button onclick="loadPMC()" style="padding:8px 16px;border-radius:8px;border:1px solid var(--border);background:#fff;font-size:13px;cursor:pointer">返回 PMC 列表</button>' +
+    '</div></div>';
 }
 
 // PMC 库存调整弹窗（只调原材料仓）
