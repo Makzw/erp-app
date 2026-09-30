@@ -2457,14 +2457,15 @@ function renderPMCTree(items, title) {
     var poFree = Number(r.po_free || 0);
     var freeTxt = Number(wayFree).toLocaleString('zh-CN');
     var smallTxt = 'font-size:10px;color:var(--sub);margin-left:3px;white-space:nowrap';
+    // 这两格的数字永远表示「本单可用」（0 就是本单可用 0，不是别人的数），全厂池放小字里。
+    // 曾经把「别单」角标挂在 0 上 → 看着像这格在说别人的量（MAK 2026-09-30 纠正）。
+    var ownTag = '<span style="font-size:10px;color:var(--sub);margin-right:2px">本单</span>';
     var wayHtml = wayQty > 0
-      ? '<span style="color:' + (wayFree > 0 ? '#f59e0b' : '#9ca3af') + ';font-weight:' + (wayFree > 0 ? '600' : '400') + ';font-variant-numeric:tabular-nums">' + freeTxt +
-        (wayFree > 0 ? '' : '<sup style="font-size:9px;margin-left:2px">别单</sup>') + '</span>' +
+      ? ownTag + '<span style="color:' + (wayFree > 0 ? '#f59e0b' : '#9ca3af') + ';font-weight:' + (wayFree > 0 ? '600' : '400') + ';font-variant-numeric:tabular-nums">' + freeTxt + '</span>' +
         '<span style="' + smallTxt + '">全厂 ' + Number(wayQty).toLocaleString('zh-CN') + '</span>'
       : '<span style="font-variant-numeric:tabular-nums">-</span>';
     var odrHtml = odrQty > 0
-      ? '<span style="color:' + (ownOdr > 0 ? '#8b5cf6' : '#9ca3af') + ';font-weight:' + (ownOdr > 0 ? '600' : '400') + ';font-variant-numeric:tabular-nums">' + Number(ownOdr).toLocaleString('zh-CN') +
-        (ownOdr > 0 ? '' : '<sup style="font-size:9px;margin-left:2px">别单</sup>') + '</span>' +
+      ? ownTag + '<span style="color:' + (ownOdr > 0 ? '#8b5cf6' : '#9ca3af') + ';font-weight:' + (ownOdr > 0 ? '600' : '400') + ';font-variant-numeric:tabular-nums">' + Number(ownOdr).toLocaleString('zh-CN') + '</span>' +
         '<span style="' + smallTxt + '">全厂 ' + Number(odrQty).toLocaleString('zh-CN') + '</span>'
       : '<span style="font-variant-numeric:tabular-nums">-</span>';
     var wayTip = wayQty > 0
@@ -2498,7 +2499,7 @@ function renderPMCTree(items, title) {
   html += '<div style="margin-top:10px;font-size:12px;color:var(--sub);display:flex;gap:14px;flex-wrap:wrap">';
   html += '<span>毛需求=<span style="color:#6366f1;font-weight:600">全厂销售未出不扣料展开</span>（含前面单没出的，这个品号总共要用多少）</span>';
   html += '<span>在途=<span style="color:#f59e0b;font-weight:600">全厂在途采购</span>（含别的单已下的）</span>';
-  html += '<span>在单请购=<span style="color:#8b5cf6;font-weight:600">全厂在单请购</span>（含别的单已请的）</span>';
+  html += '<span>在途/在单请购=<span style="color:#8b5cf6;font-weight:600">本单可用</span>（小字是全厂池；0 就是本单可用 0）</span>';
   html += '<span>合计=<span style="font-weight:600">在途+在单请购</span></span>';
   html += '<span>缺口=需求 − 合计(本单可用在途+挂本单请购) − 材料仓，<span style="color:var(--sub)">在途只认挂本单的 + 别的单采购「多下」的那部分；生产仓已被领走不扣；同品号多行时以「品号净缺」为准</span></span>';
   html += '<span>请购=<span style="color:#16a34a;font-weight:600">勾选原材料（自制件不请购）</span> + 数量，生成一张 QD 请购单</span>';
