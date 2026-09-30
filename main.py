@@ -3090,11 +3090,15 @@ def _v2_stock_detail(prd_nos, db_conn):
 # ⚠ 销售未出必须用 SAQTY（= VW_SO_QTY / VW_STOCK_DETAIL2.QTY_ON_ODR 的口径）；
 #   VW_POS.QTYPS 在整库 850 行 SO 里全是 0/NULL，是废列 —— 用它会得到「整单量」，
 #   已部分出货的单需求虚高、已出完的单还会被列进待分析（实测 QTYPS≠SAQTY 有 129 行）
-# ⚠ CHK_MAN = 审核人；APP_ID/APP_MAN/APP_DD 是「核准」（默认 0，基本没用过），别拿它当审核
+# ⚠ 已系统审核 = APP_ID=1（MAK 2026-09-30 定，恢复原设计）。
+#   两个状态别混：CHK_MAN = 人工审核人（851 行 SO 里 156 行有）；APP_ID=1 + APP_MAN + APP_DD
+#   = 系统审核（551 行有，其中 181 行不带人）——POS 上没有任何触发器写这两列，都是桌面端按钮写的。
+#   只有 APP_ID=1 的单能排产：MPS_insert 触发器 WHERE ISNULL(POS.APP_ID,0)=0 → rollback transaction。
+#   （1f434b3 曾误改成 CHK_MAN<>'' → 列表里混进排不了的单，正是「能选不能生成」的第二层原因）
 # ⚠ 老单（指令单号 ≤7721）不排产；空/非数字的指令单号（含 TEST01）一律不要
 _PMC_POS_FILTER = """
     MP=0 AND USABLE=1 AND OS_NO LIKE 'SO%'
-      AND ISNULL(CHK_MAN,'') <> ''
+      AND ISNULL(APP_ID,0) = 1
       AND ISNULL(QTY,0) - ISNULL(SAQTY,0) > 0
       AND ISNUMERIC(指令单号) = 1 AND CAST(指令单号 AS INT) > 7721
 """
