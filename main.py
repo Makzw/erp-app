@@ -3687,6 +3687,21 @@ async def generate_mps(
     all_mps_rows = []
     itm_counter = 0
 
+    # 同品号库存按行顺序累计抵冲，扣完为止（照真单口径）
+    #   MP26070015/H20554-01-05：库存 2,600 → 头两行各 1,002 扣成 0、第三行 1,002−596=406，其余全额
+    #   MP26080031/P20365-01-03：库存 12,800 → 首行 27,200−12,800=14,400，其余全额
+    #   QTY_AV = 该行扣减前的剩余库存 − 本行毛需求（两例逐行都对得上）
+    # ⚠ 不做累计就会重复扣：同一个料挂在两个成品下时每行各扣一遍库存 → 净需求偏小
+    # ponytail: 内存字典足够（一张 MPS 单最多几百行）；跨单共用料不在这里扣，那是品号汇总的活
+    stock_left = {}
+
+    def _take_stock(prd, mat_qty, need):
+        """(本行净需求, 本行扣减前的剩余库存, 本行抵冲掉的库存)"""
+        left = stock_left.setdefault(prd, float(mat_qty or 0))
+        take = min(left, need)
+        stock_left[prd] = round(left - take, 4)
+        return round(max(0.0, need - take), 4), round(left, 4), round(take, 4)
+
     for so_no_itm, info in merged.items():
         prd_no = info["prd_no"]
         qty = info["qty"]
@@ -3696,6 +3711,7 @@ async def generate_mps(
         fg_mat = round(fg_stock.get('mat_qty', 0), 2)
 
         # 成品行 ITM：QTY_SO = 毛需求（本单销售未出）、QTY = 净需求、REF_ITM = 本 SO 行
+        fg_net, fg_left, fg_take = _take_stock(prd_no, fg_mat, qty)
         itm_counter += 1
         all_mps_rows.append({
             'itm': itm_counter,
@@ -3705,11 +3721,12 @@ async def generate_mps(
             'spc': fg_meta.get('spc') or '',
             'ut': fg_meta.get('ut') or '',
             'qty_so': round(qty, 4),
-            'qty': round(max(0.0, qty - fg_mat), 4),
+            'qty': fg_net,
+            'take': fg_take,
             'wh': fg_stock.get('prod_wh', '') or fg_stock.get('mat_wh', ''),
             'wh_name': '',
             'qty_wh': fg_mat,
-            'qty_av': round(fg_mat - qty, 2),
+            'qty_av': round(fg_left - qty, 2),
             'ref_itm': so_no_itm,
             'bom': 1 if fg_meta.get('has_bom') else 0,
             'so_no_itm': so_no_itm,
@@ -3733,6 +3750,7 @@ async def generate_mps(
             cs = sub_stock.get(c_prd, {})
             cm = sub_meta.get(c_prd, {})
             c_mat = round(cs.get('mat_qty', 0), 2)
+            c_net, c_left, c_take = _take_stock(c_prd, c_mat, c_qty)
             all_mps_rows.append({
                 'itm': itm_counter,
                 'prd_no': c_prd,
@@ -3741,11 +3759,12 @@ async def generate_mps(
                 'spc': cm.get('spc') or '',
                 'ut': cm.get('ut') or '',
                 'qty_so': round(c_qty, 4),
-                'qty': round(max(0.0, c_qty - c_mat), 4),
+                'qty': c_net,
+                'take': c_take,
                 'wh': cs.get('mat_wh', ''),
                 'wh_name': '',
                 'qty_wh': c_mat,
-                'qty_av': round(c_mat - c_qty, 2),
+                'qty_av': round(c_left - c_qty, 2),
                 'ref_itm': None,          # 子件行不填（同真单 MP26090046）
                 'bom': 1 if cm.get('has_bom') else 0,
                 'so_no_itm': so_no_itm,
