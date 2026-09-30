@@ -2258,6 +2258,9 @@ async function pmcPreviewBatch() {
     });
     allRows = (data && data.items) || [];
     window.__pmcBatchGroups = (data && data.groups) || null;
+    // ⚠ 调整弹窗(pmcOpenAdjust)从 __pmcBomRows 里取该料的仓库明细 —— 批量预览以前没设这个
+    //    变量，导致「调整」按钮全弹「该品号无原材料仓库存」（MAK 2026-09-30 报）
+    window.__pmcBomRows = allRows;
     window.__pmcQdCtx = null;   // 合并树没有单一 SO 行 → 不提供请购生成
     renderPMCTree(allRows, '合并 ' + pmcSelected.length + ' 条指令单');
   } catch(e) { el.innerHTML = '<div class="error-msg">' + e.message + '</div>'; }
@@ -2754,7 +2757,14 @@ async function pmcOpenAdjust(prdNo, prdName, type, totalQty) {
   var bomRows = window.__pmcBomRows || [];
   var row = bomRows.find(function(r) { return r.prd_no === prdNo; });
   var matDetail = (row && row.mat_detail) ? row.mat_detail : [];
-  if (!matDetail.length) { alert('\u8be5品号\u65e0\u539f\u6750\u6599\u4ed3\u5e93\u5b58\uff0c\u65e0\u6cd5调\u6574'); return; }
+  if (!matDetail.length) {
+    // 说清「为什么不能调」，别只丢一句「没库存」：这料可能在生产仓有货、或者全厂一条库存记录都没有
+    var pd = (row && row.prod_detail) ? row.prod_detail : [];
+    var other = pd.map(function(x) { return (x[0] || '') + ' ' + (x[1] || '') + ' ' + (x[2] || 0); }).join('；');
+    alert('「' + prdNo + '」在原材料仓没有库存记录，调整只能改原材料仓。' +
+          (other ? '\n（它在生产仓/别的仓有货：' + other + ' —— 那部分已被领走，不在这里调）' : '\n（全厂没有任何仓库有它的库存记录）'));
+    return;
+  }
 
   var whOpts = matDetail.map(function(m) {
     return '<option value="' + m[0] + '">' + m[0] + ' ' + (m[1]||'') + ' (' + (m[2]||0) + ')</option>';
