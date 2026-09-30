@@ -2432,9 +2432,9 @@ function renderPMCTree(items, title) {
     // 请购列：只有采购件/原材料（knd=4）能请购，自制件（knd=3）走派工单
     var canQd = !isFg && String(r.knd || '') === '4';
     var qdDef = 0;
-    var pnet = Number(r.prd_net);
-    // 默认数量按本单缺口（别人单的池子不能把本单的请购数量压成 0）；没有本单缺口才退回品号净缺
-    if (gap > 0) { qdDef = gap; } else if (!isNaN(pnet) && pnet > 0) { qdDef = pnet; }
+    // 默认数量 = 本单缺口（已扣材料仓/本单可用在途/挂本单请购）；缺口 ≤ 0 就留空
+    // （不再退回品号净缺：那是全厂口径，会把别人单的量当成自己要买的量）
+    if (gap > 0) { qdDef = gap; }
     var qdDefTxt = qdDef > 0 ? String(Math.round(qdDef * 1000) / 1000) : '';
     var qdcHtml = canQd
       ? '<div style="display:flex;align-items:center;gap:6px;justify-content:flex-end">' +
@@ -2500,7 +2500,7 @@ function renderPMCTree(items, title) {
   html += '<span>在途=<span style="color:#f59e0b;font-weight:600">全厂在途采购</span>（含别的单已下的）</span>';
   html += '<span>在单请购=<span style="color:#8b5cf6;font-weight:600">全厂在单请购</span>（含别的单已请的）</span>';
   html += '<span>合计=<span style="font-weight:600">在途+在单请购</span></span>';
-  html += '<span>缺口=本单需求 − 本单可用在途 − 挂本单请购，<span style="color:var(--sub)">在途只认挂本单的 + 别的单采购「多下」的那部分；别人按请购下的不算本单供给（材料仓在品号净缺里扣一次）</span></span>';
+  html += '<span>缺口=需求 − 合计(本单可用在途+挂本单请购) − 材料仓，<span style="color:var(--sub)">在途只认挂本单的 + 别的单采购「多下」的那部分；生产仓已被领走不扣；同品号多行时以「品号净缺」为准</span></span>';
   html += '<span>请购=<span style="color:#16a34a;font-weight:600">勾选原材料（自制件不请购）</span> + 数量，生成一张 QD 请购单</span>';
   html += '</div>';
 

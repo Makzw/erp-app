@@ -3474,7 +3474,8 @@ async def pmc_preview_mps(
         total_stock = mat_qty + prod_qty
         real_demand = c_qty                                # 毛需求
         total_avail = round(way_free + qty_on_odr, 2)      # 本单可用供给（不含公共库存）
-        gap = round(real_demand - total_avail, 2)
+        # 缺口 = 需求 − 本单可用(在途/请购) − 材料仓（与 allocate 的父件缺口同一算式）
+        gap = round(real_demand - total_avail - mat_qty, 2)
         # wh_detail: 全部明细（兼容前端调整弹窗）
         # mat_detail / prod_detail: 原材料仓/生产仓分组（显示用）
         mat_detail = [(x[0], x[1], x[2], x[3], x[4], x[5]) for x in det if not x[6]]
@@ -3535,7 +3536,7 @@ async def pmc_preview_mps(
         "total_stock": round(fg_total_stock, 2),
         "total_avail": fg_total_avail,
         "pool_way": fg_pool_way, "pool_odr": fg_pool_odr,
-        "gap": round(fg_real_demand - fg_total_avail, 2),
+        "gap": round(fg_real_demand - fg_total_avail - float(fg_stock.get('mat_qty', 0)), 2),
         "is_fg": True, "depth": 0,
         "knd": None,
         "raw_stock": fg_raw,
@@ -3575,8 +3576,15 @@ async def pmc_preview_mps(
         stack[crow[5]] = i
 
     def net_avail(row):
-        """参与扣减的供给 = 全厂在途/在单请购(池) + 材料仓。生产仓已被领走，不参与。"""
-        return float((row.get('pool_way') or 0) + (row.get('pool_odr') or 0) + (row.get('mat_qty') or 0))
+        """参与扣减的供给 = 本单可用 + 材料仓。生产仓已被领走，不参与。
+
+        ⚠ 本单可用 = 挂本单在途(含别人采购多下的 part) + 挂本单在单请购，
+          不再用「全厂池」：别人的请购不能把本单的需求抹成 0（MAK 2026-09-30）。
+        """
+        way_free = row.get('way_free')
+        if way_free is None:
+            way_free = row.get('qty_on_way') or 0
+        return float(way_free or 0) + float(row.get('qty_on_odr') or 0) + float(row.get('mat_qty') or 0)
 
     def allocate(parent_row, parent_idx, parent_demand, parent_gross, gkey='gross_demand'):
         """自顶向下分配 BOM 需求；父件缺口与屏上「缺口」列同口径。
@@ -3604,13 +3612,14 @@ async def pmc_preview_mps(
     if abs(plant_unshipped - demand_qty) > 1e-6:
         allocate(rows[0], -1, demand_qty, plant_unshipped, gkey='gross_plant')
 
-    # 计算最终 gap（④ 扣在途+在单请购）
+    # 计算最终 gap（④ 屏上「缺口」= 需求 − 本单可用(在途+请购) − 材料仓）
+    # ⚠ 这里是缺口唯一的落地点：make_row 里算过也没用，会被这个循环覆盖（踩过）。
+    #   与 allocate 的父件缺口 max(0, 父件需求 − net_avail(父件)) 同一算式，所以
+    #   「子件需求 = 父件缺口 × 配比」在屏上恒成立。
+    # 生产仓不扣：车间仓/外发仓的料已经被领去做别的单了（MAK 2026-09-29）。
+    # 同品号多行或多单时以品号汇总为准（那里跨单合并需求、池子和材料仓各只扣一次）。
     for r in rows:
-        r['gap'] = round(r['real_demand'] - r['total_avail'], 2)
-        # 屏上「缺口」= 需求 − 全厂在途/在单请购 − **材料仓**（下单口径，与品号汇总净缺口同源）。
-        # 生产仓不扣：车间仓/外发仓的料已经被领去做别的单了（MAK 2026-09-29）。
-        # gap 保留「本单口径」只用于屏上对照/自检；同品号多行或多单时以品号汇总为准
-        # （那里跨单合并需求、池子和材料仓各只扣一次）。
+        r['gap'] = round(r['real_demand'] - r['total_avail'] - (r.get('mat_qty') or 0), 2)
         r['pool_total'] = round((r.get('pool_way') or 0) + (r.get('pool_odr') or 0), 2)
         r['net_gap'] = round(max(0.0, r['real_demand'] - r['pool_total'] - (r.get('mat_qty') or 0)), 2)
         # 品号级净缺口（跨单，库存只扣一次）—— 缓存热了才有；冷的时候前端不显示

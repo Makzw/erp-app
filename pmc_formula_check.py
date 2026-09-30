@@ -10,7 +10,7 @@
   ③ 在途采购 / 在单请购的**全厂池**（po_all/qts_all）参与扣减；挂本单的量(po/qts)
      只用于屏上 tooltip，且 ≤ 池子总量
      ⚠ QTY_ON_ODR 是「销售未出货量」(VW_SO_QTY)，不是请购，别拿来当供给扣
-  ④ 本单口径 gap = 需求 − 本单可用（本单可用在途 = 挂本单未回 + 别人采购多下；+ 挂本单请购）
+  ④ 本单口径 gap = 需求 − 本单可用（在途=挂本单未回+别人采购多下；+挂本单请购）− 材料仓
      —— 屏上「缺口」列用它（MAK 2026-09-30：别人的请购不能把本单需求抹成 0）
   ⑤ 品号净缺 (net_gap) = 需求 − 全厂池 − 材料仓 —— 跨单去重口径，生产仓不参与；
      就是「昨天买了 7000，今天只该买 3000」；品号汇总的净缺口用同一算式
@@ -98,9 +98,9 @@ def main():
             # 挂本单的量不能超过池子总量
             if r['qty_on_way'] > r.get('pool_way', 0) + 0.5 or r['qty_on_odr'] > r.get('pool_odr', 0) + 0.5:
                 fails.append(f'{tag}: 挂本单的量超过池子总量')
-            # 缺口 = 需求 − 合计（本单口径，保留给屏上对照）
-            if abs(round(r['real_demand'] - r['total_avail'], 2) - r['gap']) > 0.01:
-                fails.append(f'{tag}: 缺口 {r["gap"]:.1f} ≠ 需求-合计 {r["real_demand"]-r["total_avail"]:.1f}')
+            # 缺口 = 需求 − 合计(本单可用在途+挂本单请购) − 材料仓（与 allocate 的父件缺口同一算式）
+            if abs(round(r['real_demand'] - r['total_avail'] - r['mat_qty'], 2) - r['gap']) > 0.01:
+                fails.append(f'{tag}: 缺口 {r["gap"]:.1f} ≠ 需求{r["real_demand"]:.1f}-合计{r["total_avail"]:.1f}-材料仓{r["mat_qty"]:.1f}')
             # ⑤ 屏上下单口径：net_gap = 需求 − 全厂池 − 库存，且 pool_total = 池合计
             if abs(round((r.get('pool_way') or 0) + (r.get('pool_odr') or 0), 2) - r['pool_total']) > 0.01:
                 fails.append(f'{tag}: 合计(池) {r["pool_total"]:.1f} ≠ 在途{r.get("pool_way")}+在单{r.get("pool_odr")}')
