@@ -2417,10 +2417,14 @@ function renderPMCTree(items, title) {
     var depthLabel = isFg ? '成品' : 'L' + depth;
     var adjBtn = !isFg && depth > 0 ? '<button onclick="pmcOpenAdjust(\'' + escAttr(r.prd_no||'') + '\',\'\',\'mat\',' + matQty + ')" style="padding:3px 6px;background:#f3f4f6;border:1px solid #d1d5db;border-radius:4px;font-size:11px;cursor:pointer;color:#374151">调整</button>' : '';
     // 全厂毛需求（原「毛需求」列，MAK 2026-09-30 把该列折进「需求」列 hover，列不再单独占位）
-    // 两级兜底：没有 gross_plant → 退回本单毛需求 gross_demand → 再退回本单未出/0
-    var grossAll = (r.gross_plant === undefined || r.gross_plant === null)
-      ? ((r.gross_demand === undefined || r.gross_demand === null) ? (isFg ? soRemain : 0) : r.gross_demand)
-      : r.gross_plant;
+    // 优先取全厂净需求接口的 gross[0]（滚算后的本层需求，2026-09-30 起毛需求也走滚算）
+    // 兜底：没有 → gross_plant → 本单毛需求 gross_demand → 本单未出/0
+    var _gnReq = (window.__gnMap || {})[r.prd_no];
+    var grossAll = (_gnReq && _gnReq[0] != null)
+      ? _gnReq[0]
+      : ((r.gross_plant === undefined || r.gross_plant === null)
+         ? ((r.gross_demand === undefined || r.gross_demand === null) ? (isFg ? soRemain : 0) : r.gross_demand)
+         : r.gross_plant);
     // 「全厂净需求」列：料行取全厂净需求（懒加载，数据没到显示「…」）；成品行取全厂未出
     // ⚠ 同品号在本树第 2 次出现时不再重复显示数字（跟 matBadgeHtml 同一套首次出现规则）
     var gapHtml;
@@ -2483,7 +2487,7 @@ function renderPMCTree(items, title) {
       ' style="border-bottom:1px solid #f3f4f6;background:' + bg + '">';
     html += '<td style="padding:8px 10px"><div style="max-width:min(44vw,760px);white-space:normal;overflow-wrap:anywhere" title="' + escAttr((r.prd_no||'') + ' ' + (r.prd_name||'')) + '"><span style="display:inline-block;margin-left:' + indent + 'px"></span><b style="font-variant-numeric:tabular-nums">' + escHtml(r.prd_no||'') + '</b> <span style="font-size:13px;color:var(--name)">' + escHtml(r.prd_name||'') + '</span>' + matBadgeHtml(r.prd_no||'') + '</div></td>';
     html += '<td style="padding:8px 8px;text-align:center;white-space:nowrap"><span style="font-size:10px;font-weight:700;color:#fff;background:' + depthColor + ';padding:2px 5px;border-radius:10px">' + depthLabel + '</span></td>';
-    html += '<td style="padding:8px 8px;text-align:right;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap" title="' + escAttr(
+    html += '<td data-gnreq="' + escAttr(r.prd_no||'') + '" style="padding:8px 8px;text-align:right;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap" title="' + escAttr(
       '本单需求 ' + Number(realDemand).toLocaleString('zh-CN') + '（父件缺口×配比往下推）\n全厂毛需求 ' + Number(grossAll).toLocaleString('zh-CN') +
       '（该成品全部未出展开；毛数不扣库存/在途；成品行=该成品全厂未出，料行=按它展开到本料的量）') + '">' + Number(realDemand).toLocaleString('zh-CN') + '</td>';
     html += '<td style="padding:8px 8px;text-align:right;color:#16a34a;cursor:' + (!isFg ? 'pointer' : 'default') + ';font-variant-numeric:tabular-nums;white-space:nowrap" ' + (!isFg ? 'onclick="pmcOpenAdjust(\'' + escAttr(r.prd_no||'') + '\',\'\',\'mat\',' + matQty + ')"' : '') + '>' + Number(matQty).toLocaleString('zh-CN') + '</td>';
@@ -3418,6 +3422,15 @@ function gnFill() {
     if (!p2 || rows[j].getAttribute('data-gnfg')) continue;
     rows[j].style.background = gnRowNet(p2) > 0.0001 ? '#fef9c3' : '';
   }
+  // 「需求」列 hover 里的全厂毛需求也要跟着回填（数据懒加载，首屏渲染时还是旧的）
+  var reqs = document.querySelectorAll('[data-gnreq]');
+  for (var k2 = 0; k2 < reqs.length; k2++) {
+    var pr2 = reqs[k2].getAttribute('data-gnreq') || '';
+    var gv = (window.__gnMap || {})[pr2];
+    if (!gv || gv[0] == null || !reqs[k2].title) continue;
+    reqs[k2].title = reqs[k2].title.replace(/全厂毛需求 [^\n（]*/,
+      '全厂毛需求 ' + Number(gv[0]).toLocaleString('zh-CN'));
+  }
   var ts = $id('gnTotalSpan');
   if (ts) ts.innerHTML = gnTotalTagHtml();
 }
@@ -3489,8 +3502,8 @@ function gnRenderRows() {
       + '<td style="padding:6px 8px;color:var(--sub);max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + gnEsc(r.name) + '">' + gnEsc(r.name || '—') + '</td>'
       + '<td style="padding:6px 8px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap">' + gnFmt(r.gross) + '</td>'
       + '<td style="padding:6px 8px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;color:' + ((r.mat_stock || 0) > 0 ? 'inherit' : 'var(--sub)') + '">' + gnFmt(r.mat_stock) + '</td>'
-      + '<td style="padding:6px 8px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--sub)" title="生产仓现存 ' + gnFmt(r.prod_stock) + '，其中抵归属母件 ' + gnFmt(r.prod_used) + '、回全局池 ' + gnFmt(r.prod_pool) + '">'
-      + gnFmt(r.prod_stock) + (r.prod_used ? '<span style="font-size:10px;color:#2563EB"> 抵' + gnFmt(r.prod_used, 0) + '</span>' : '') + '</td>'
+      + '<td style="padding:6px 8px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--sub)" title="生产仓现存 ' + gnFmt(r.prod_stock) + '（车间仓/外发仓；滚算时全部算该层可用，MAK 2026-09-30）">'
+      + gnFmt(r.prod_stock) + '</td>'
       + '<td style="padding:6px 8px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;color:' + ((r.onway || 0) > 0 ? '#7C3AED' : 'var(--sub)') + '">' + gnFmt(r.onway) + '</td>'
       + '<td style="padding:6px 8px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;color:' + ((r.qts || 0) > 0 ? '#0891B2' : 'var(--sub)') + '">' + gnFmt(r.qts) + '</td>'
       + '<td style="padding:6px 8px;text-align:right;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;color:' + (hot ? '#DC2626' : 'var(--sub)') + '">' + gnFmt(r.net) + '</td>'
@@ -3591,7 +3604,8 @@ function renderGlobalNet() {
     + '<span>材料 <b style="color:#111">' + (d.material_count || 0) + '</b></span>'
     + '<span>毛需求合计 <b style="color:#111">' + gnFmt(d.gross_total, 0) + '</b></span>'
     + '<span>净需求合计 <b style="color:#DC2626">' + gnFmt(d.net_total, 0) + '</b></span>'
-    + '<span>生产仓 ' + gnFmt(d.prod_total, 0) + '（已抵母件 ' + gnFmt(d.prod_used_total, 0) + ' / 回池 ' + gnFmt(d.prod_pool_total, 0) + ' / 未归属 ' + gnFmt(d.unowned_prod_total, 0) + '）</span>'
+    + '<span title="生产仓现存合计（车间仓+外发仓）。滚算时全部算可用，不再按 MOT 归属抵冲">生产仓 ' + gnFmt(d.prod_total, 0) + '（参考）</span>'
+    + '<span>未归属 ' + gnFmt(d.unowned_prod_total, 0) + '</span>'
     + '<span>其中 BOM 兜底归属 <b style="color:#0F766E">' + gnFmt(d.bom_owned_total, 0) + '</b>（' + ((d.bom_owned || []).length) + ' 个品号）</span>'
     + '<span>成品自有库存 <b style="color:#1D4ED8">' + gnFmt(d.fg_self_total, 0) + '</b>（' + ((d.fg_self || []).length) + ' 个，不参与抵冲）</span>'
     + '<span>算法耗时 ' + (d.cost || 0) + 's · 数据时间 ' + dt + ' · 缓存 10 分钟</span>'

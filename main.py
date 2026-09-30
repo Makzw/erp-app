@@ -6,6 +6,7 @@ import os
 import pymssql
 import re
 import time
+from collections import deque
 from datetime import datetime, timedelta
 from fastapi import FastAPI, Query, Body
 from fastapi.staticfiles import StaticFiles
@@ -3940,7 +3941,81 @@ def _calc_global_net(db_name="C041", refresh=0):
             gross[fgp] = gross.get(fgp, 0.0) + fgq
             no_bom_direct.append({"prd": fgp, "qty": fgq, "type": typ})
 
-    # ⑧ 生产仓归属判定 + 抵冲
+    # ⑦.5 滚算（方案 B，MAK 2026-09-30 拍板）
+    #   毛需求不再"Σ成品未出×系数一次展开"，改成逐层净算：
+    #     每层 需求 − 可用(材料仓+生产仓+在途+请购) = 要生产 → ×系数推给子件 → 逐层往下
+    #   母件有货 → 子件不再做（滚算核心）。共用件库存进全局池，不分（总量口径不需要分配规则）。
+    #   展开规则与 ⑦ 的 expand() 完全一致：系数=QTY/QTY_BAS，只有子件 KND∈{2,3} 才继续往下；
+    #   深度 ≤8 由 expand() 保证，环内品号由拓扑序天然排除（另报 bom_cycles）。
+    #   ⚠ gross 换血是唯一入口改动 → ⑨ 的 net 算式一个字不改。
+    _knds, _mg = {}, {}
+    for _guid, _lst in kids.items():
+        _pu = node.get(_guid, (None,))[0]
+        if not _pu:
+            continue
+        for _cprd, _cq, _cbas, _cknd in _lst:
+            # ⚠ kids 里存的是 (品号, QTY, QTY_BAS, KND)，不是算好的系数 —— 必须现场除
+            _ratio = (_cq / _cbas) if _cbas else _cq
+            _knds.setdefault(_cprd, set()).add(_cknd)      # 该品号作为子件出现过的所有 KND
+            _mg.setdefault(_pu, {})[_cprd] = max(_mg.get(_pu, {}).get(_cprd, 0.0), _ratio)
+
+    def _can_expand(p):
+        # 成品根总能往下展开；其余只有 组件/中间件(KND 2/3) 才继续。
+        # 判据用**确定性并集**：「任一 BOM 行里作为子件出现过 KND∈{2,3}」或「PRDT.KND∈{2,3}」。
+        # ⚠ 不能取"最后一次出现的 KND"（依赖查询行序）；也不能用"有 BOM 树"当判据
+        #    —— 有 BOM 树的外购件（WX-/LH- 系列）不该往下推，否则子件会多算。
+        if p in fg:
+            return True
+        if any(k in ('2', '3') for k in _knds.get(p, ())):
+            return True
+        return (prdt.get(p) or ('', '', '', '0', '0'))[4] in ('2', '3')
+
+    def _avail(p):
+        # 与 ⑨ 同口径：各分量先夹 0（负账面不放大需求），再求和
+        return max(0.0, mat_stock.get(p, 0.0)) + max(0.0, prod_stock.get(p, 0.0)) \
+            + max(0.0, onway.get(p, 0.0)) + max(0.0, qts.get(p, 0.0))
+
+    # 种子：成品全厂未出 + 无 BOM 的外购件/包材（与上面同规则）
+    dem = {}
+    for _fgp, _fgq in fg.items():
+        dem[_fgp] = dem.get(_fgp, 0.0) + _fgq
+    for _fgp, _fgq in no_bom:
+        if (prdt.get(_fgp) or ('', '', '', '0', '0'))[3] not in _GNET_MADE_TYPES:
+            dem[_fgp] = dem.get(_fgp, 0.0) + _fgq
+
+    # 拓扑排序（Kahn），父 → 子
+    _indeg = {}
+    for _pu, _cs in _mg.items():
+        for _c in _cs:
+            _indeg[_c] = _indeg.get(_c, 0) + 1
+    _dq = deque([p for p in _mg if _indeg.get(p, 0) == 0])
+    _order, _seen = [], set()
+    while _dq:
+        _p = _dq.popleft()
+        if _p in _seen:
+            continue
+        _seen.add(_p)
+        _order.append(_p)
+        for _c in _mg.get(_p, ()):
+            _indeg[_c] -= 1
+            if _indeg[_c] <= 0:
+                _dq.append(_c)
+    bom_cycles = sorted(p for p in _indeg if p not in _seen)
+
+    for _p in _order:
+        _need = dem.get(_p, 0.0)
+        if _need <= 0 or not _can_expand(_p):
+            continue
+        _rem = _need - min(_need, _avail(_p))          # 要生产
+        if _rem <= 0:
+            continue
+        for _c, _r in _mg.get(_p, {}).items():
+            dem[_c] = dem.get(_c, 0.0) + _rem * _r
+
+    gross = {p: v for p, v in dem.items() if v > 0}     # ★ 毛需求 = 滚算后的本层需求
+
+    # ⑧ 生产仓归属判定（**只作展示/报警**，不再影响净需求算式 —— MAK 2026-09-30）
+    #   滚算里生产仓按 _avail() 直接算该层可用；归属信息保留给 PMC 看"这批给谁做的"。
     owners, prod_used, prod_pool = {}, {}, {}
     multi_owner, unknown_owner, neg_clamped, bom_owned = [], [], [], []
     for p, s in prod_stock.items():
@@ -3991,8 +4066,10 @@ def _calc_global_net(db_name="C041", refresh=0):
             neg_clamped.append({"prd": p, "kind": "材料仓", "qty": ms})
             ms = 0.0
         ps_all = prod_stock.get(p, 0.0)
-        ps_use = ps_all if p in owners else 0.0     # 未归属的不参与计算
-        ow, qt = onway.get(p, 0.0), qts.get(p, 0.0)
+        # 生产仓全部算可用（含外发仓，MAK 2026-09-30）；归属只作展示，不再影响算式
+        # 负账面夹 0（与滚算 _avail() 同口径，不放大需求）
+        ps_use = max(0.0, ps_all)
+        ow, qt = max(0.0, onway.get(p, 0.0)), max(0.0, qts.get(p, 0.0))
         net = gq - (ms + ps_use + ow + qt)
         if net < 0:
             net = 0.0
@@ -4002,8 +4079,6 @@ def _calc_global_net(db_name="C041", refresh=0):
         fl = []
         if dirty:
             fl.append("库存脏数据")
-        if p in prod_pool and prod_pool[p] > 0:
-            fl.append("生产仓有回池")
         if typ not in _GNET_MADE_TYPES and p in hdr:
             fl.append("外购件直算")
         ub = used_by.get(p, [])
@@ -4023,7 +4098,9 @@ def _calc_global_net(db_name="C041", refresh=0):
     # 它们自己的库存（材料仓/生产仓）不属于「材料供给」，只在提示块里展示，由人判断要不要买。
     fg_self = []
     for fgp, fgq in fg.items():
-        if fgp in gross:
+        # ⚠ 滚算后成品根也在 gross 里，不能再拿 "fgp in gross" 当判据（会把成品自有货全过滤掉）
+        # 真正要排除的是「被别的品号当材料用到」的品号 → 用 ⑨ 建的 used_by
+        if fgp in used_by:
             continue
         ms = mat_stock.get(fgp, 0.0)
         ps = prod_stock.get(fgp, 0.0)
@@ -4059,6 +4136,7 @@ def _calc_global_net(db_name="C041", refresh=0):
         "fg_self": fg_self,
         "items": items,
         "alerts": {
+            "bom_cycles": bom_cycles,
             "multi_owner": sorted(multi_owner, key=lambda x: -x["qty"]),
             "unknown_owner": sorted(unknown_owner, key=lambda x: -x["qty"]),
             "no_bom_missing": sorted(no_bom_missing, key=lambda x: -x["qty"]),
