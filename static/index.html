@@ -2449,12 +2449,34 @@ function renderPMCTree(items, title) {
     var grossHtml = gross > 0 ? '<span style="color:#6366f1;font-weight:600;font-variant-numeric:tabular-nums" title="\u6bdb\u9700\u6c42 ' + Number(gross).toLocaleString('zh-CN') + '\uff08\u4e0d\u6263\u5e93\u5b58/\u5728\u9014\uff09">' + Number(gross).toLocaleString('zh-CN') + '</span>' : '<span style="font-variant-numeric:tabular-nums">-</span>';
     // 池子是「全厂」的：挂本单的那部分才算本单供给。一点都没挂本单的，灰色 + 别单角标，
     // 免得看到「在单请购 1499」以为这批料是自己的（其实是别的单请的）。
-    var wayHtml = wayQty > 0 ? '<span style="color:' + ((r.qty_on_way || 0) > 0 ? '#f59e0b' : '#9ca3af') + ';font-weight:' + ((r.qty_on_way || 0) > 0 ? '600' : '400') + ';font-variant-numeric:tabular-nums">' + Number(wayQty).toLocaleString('zh-CN') + ((r.qty_on_way || 0) > 0 ? '' : '<sup style="font-size:9px;margin-left:2px">别单</sup>') + '</span>' : '<span style="font-variant-numeric:tabular-nums">-</span>';
-    var odrHtml = odrQty > 0 ? '<span style="color:' + ((r.qty_on_odr || 0) > 0 ? '#8b5cf6' : '#9ca3af') + ';font-weight:' + ((r.qty_on_odr || 0) > 0 ? '600' : '400') + ';font-variant-numeric:tabular-nums">' + Number(odrQty).toLocaleString('zh-CN') + ((r.qty_on_odr || 0) > 0 ? '' : '<sup style="font-size:9px;margin-left:2px">别单</sup>') + '</span>' : '<span style="font-variant-numeric:tabular-nums">-</span>';
-    // 在途/在单请购现在是「全厂池」：鼠标悬停说明这里面有多少是挂本单的
+    // 在途/在单请购：大字显示「本单可用」，小字注明全厂池；一点都没挂本单又没多下的 → 灰字 + 别单
+    // 在途的本单可用 = 挂本单未回 + 别人单采购「多下」的部分（多多下的那 1000 谁都能用，MAK 2026-09-30）
     var ownWay = r.qty_on_way || 0, ownOdr = r.qty_on_odr || 0;
-    var wayTip = wayQty > 0 ? ' title="全厂在途采购 ' + Number(wayQty).toLocaleString('zh-CN') + '（含别的单已下的；其中挂本单 ' + Number(ownWay).toLocaleString('zh-CN') + '）"' : '';
-    var odrTip = odrQty > 0 ? ' title="全厂在单请购 ' + Number(odrQty).toLocaleString('zh-CN') + '（含别的单已请的；其中挂本单 ' + Number(ownOdr).toLocaleString('zh-CN') + '）"' : '';
+    var wayFree = (r.way_free === undefined || r.way_free === null) ? ownWay : Number(r.way_free);
+    var wayOthers = (r.way_others === undefined || r.way_others === null) ? Math.max(0, wayQty - wayFree) : Number(r.way_others);
+    var poFree = Number(r.po_free || 0);
+    var freeTxt = Number(wayFree).toLocaleString('zh-CN');
+    var smallTxt = 'font-size:10px;color:var(--sub);margin-left:3px;white-space:nowrap';
+    var wayHtml = wayQty > 0
+      ? '<span style="color:' + (wayFree > 0 ? '#f59e0b' : '#9ca3af') + ';font-weight:' + (wayFree > 0 ? '600' : '400') + ';font-variant-numeric:tabular-nums">' + freeTxt +
+        (wayFree > 0 ? '' : '<sup style="font-size:9px;margin-left:2px">别单</sup>') + '</span>' +
+        '<span style="' + smallTxt + '">全厂 ' + Number(wayQty).toLocaleString('zh-CN') + '</span>'
+      : '<span style="font-variant-numeric:tabular-nums">-</span>';
+    var odrHtml = odrQty > 0
+      ? '<span style="color:' + (ownOdr > 0 ? '#8b5cf6' : '#9ca3af') + ';font-weight:' + (ownOdr > 0 ? '600' : '400') + ';font-variant-numeric:tabular-nums">' + Number(ownOdr).toLocaleString('zh-CN') +
+        (ownOdr > 0 ? '' : '<sup style="font-size:9px;margin-left:2px">别单</sup>') + '</span>' +
+        '<span style="' + smallTxt + '">全厂 ' + Number(odrQty).toLocaleString('zh-CN') + '</span>'
+      : '<span style="font-variant-numeric:tabular-nums">-</span>';
+    var wayTip = wayQty > 0
+      ? ' title="在途采购：全厂 ' + Number(wayQty).toLocaleString('zh-CN') + '｜本单可用 ' + freeTxt +
+        (wayOthers > 0 ? '｜其中 ' + Number(wayOthers).toLocaleString('zh-CN') + ' 是别单按请购下的（不是本单的）' : '') +
+        (poFree > 0 ? '、' + Number(poFree).toLocaleString('zh-CN') + ' 是别的单采购多下、本单可以用的' : '') + '"'
+      : '';
+    var odrTip = odrQty > 0
+      ? ' title="在单请购：全厂 ' + Number(odrQty).toLocaleString('zh-CN') + '｜挂本单 ' + Number(ownOdr).toLocaleString('zh-CN') +
+        (ownOdr > 0 ? '' : '（都是别的单请的，不是本单的）') +
+        '｜请购数量是系统按缺口算的，没有「多请」，所以只认挂本单的部分"' + '"'
+      : '';
     html += '<tr style="border-bottom:1px solid #f3f4f6;background:' + bg + '">';
     html += '<td style="padding:8px 10px"><div style="max-width:min(44vw,760px);white-space:normal;overflow-wrap:anywhere" title="' + escAttr((r.prd_no||'') + ' ' + (r.prd_name||'')) + '"><span style="display:inline-block;margin-left:' + indent + 'px"></span><b style="font-variant-numeric:tabular-nums">' + escHtml(r.prd_no||'') + '</b> <span style="font-size:13px;color:var(--name)">' + escHtml(r.prd_name||'') + '</span>' + matBadgeHtml(r.prd_no||'') + '</div></td>';
     html += '<td style="padding:8px 8px;text-align:center;white-space:nowrap"><span style="font-size:10px;font-weight:700;color:#fff;background:' + depthColor + ';padding:2px 5px;border-radius:10px">' + depthLabel + '</span></td>';
@@ -2464,7 +2486,7 @@ function renderPMCTree(items, title) {
     html += '<td style="padding:8px 8px;text-align:right;color:#16a34a;font-variant-numeric:tabular-nums;white-space:nowrap" title="\u751f\u4ea7\u4ed3\uff08\u8f66\u95f4\u4ed3/\u5916\u53d1\u4ed3\uff09\u5df2\u88ab\u9886\u53bb\u505a\u522b\u7684\u5355\uff0c\u4e0d\u53c2\u4e0e\u7f3a\u53e3\u8ba1\u7b97\uff1b\u4e0d\u53ef\u8c03\u6574">' + Number(prodQty).toLocaleString('zh-CN') + '</td>';
     html += '<td style="padding:8px 8px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap"' + wayTip + '>' + wayHtml + '</td>';
     html += '<td style="padding:8px 8px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap"' + odrTip + '>' + odrHtml + '</td>';
-    html += '<td style="padding:8px 8px;text-align:right;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap">' + Number(totalStock).toLocaleString('zh-CN') + '</td>';
+    html += '<td style="padding:8px 8px;text-align:right;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap" title="本单可用合计 = 本单可用在途 + 挂本单在单请购（不含材料仓）">' + Number(wayFree + ownOdr).toLocaleString('zh-CN') + '</td>';
     html += '<td style="padding:8px 8px;text-align:right;min-width:160px">' + gapHtml + '</td>';
     html += '<td style="padding:8px 8px;text-align:center;white-space:nowrap">' + qdcHtml + '</td>';
     html += '<td style="padding:8px 8px;text-align:center;white-space:nowrap">' + adjBtn + '</td>';
@@ -2478,7 +2500,7 @@ function renderPMCTree(items, title) {
   html += '<span>在途=<span style="color:#f59e0b;font-weight:600">全厂在途采购</span>（含别的单已下的）</span>';
   html += '<span>在单请购=<span style="color:#8b5cf6;font-weight:600">全厂在单请购</span>（含别的单已请的）</span>';
   html += '<span>合计=<span style="font-weight:600">在途+在单请购</span></span>';
-  html += '<span>缺口=本单口径（本单需求 − 挂本单的在途/请购 − 材料仓），<span style="color:var(--sub)">这就是本单该买多少；别人的在途/请购只计入品号净缺小字，不算本单供给</span></span>';
+  html += '<span>缺口=本单需求 − 本单可用在途 − 挂本单请购，<span style="color:var(--sub)">在途只认挂本单的 + 别的单采购「多下」的那部分；别人按请购下的不算本单供给（材料仓在品号净缺里扣一次）</span></span>';
   html += '<span>请购=<span style="color:#16a34a;font-weight:600">勾选原材料（自制件不请购）</span> + 数量，生成一张 QD 请购单</span>';
   html += '</div>';
 

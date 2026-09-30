@@ -3296,7 +3296,7 @@ def _v2_odr_split(prd_nos, db_conn, ref=None, fg=None, so_itm=None):
     ph = ','.join(['%s'] * len(prd_nos))
     args = tuple(prd_nos)
     like = f'%{ref}%' if ref else None
-    out = {str(p).strip(): {'po': 0.0, 'qts': 0.0, 'po_all': 0.0, 'qts_all': 0.0} for p in prd_nos}
+    out = {str(p).strip(): {'po': 0.0, 'qts': 0.0, 'po_all': 0.0, 'qts_all': 0.0, 'po_free': 0.0} for p in prd_nos}
 
     cur.execute(f"""
         SELECT PRD_NO, SUM(QTY - ISNULL(PSQTY,0)) FROM VW_POS WITH(NOLOCK)
@@ -3351,6 +3351,37 @@ def _v2_odr_split(prd_nos, db_conn, ref=None, fg=None, so_itm=None):
             k = str(r[0]).strip()
             if k in out:
                 out[k]['qts'] = round(float(r[1] or 0), 2)
+
+    # 别人单采购「多下」的部分 = 通用料，本单可以用（MAK 2026-09-30 定）。
+    # 追溯链：PO 行 REF_ITM = 源请购单号 + 3 位行号（例 PO26080054/13 → QD26080036/006）
+    #   → 多下 = 采购未回量 − 源请购量，只取正数、只算还挂在途的部分（已到货的进了材料仓，不重复算）
+    # 挂本单的行不算（那本来就是本单的）；别人单按请购量下的那部分也不算（是别人单的需求）
+    # ⚠ VW_POS 上没有「成品编号」列（那是 QTS 的列），采购侧只能按指令单号/SO行挂
+    own_cond = []
+    if like:
+        own_cond.append('p.[指令单号] LIKE %s')
+        _po_own_args = [like]
+    else:
+        _po_own_args = []
+    if so_itm:
+        own_cond.append('p.SO_NO_ITM = %s')
+        _po_own_args.append(so_itm)
+    not_own = ('NOT (' + ' OR '.join(own_cond) + ')') if own_cond else '1=1'
+    cur.execute(f"""
+        SELECT RTRIM(p.PRD_NO),
+               SUM(CASE WHEN p.QTY - ISNULL(p.PSQTY,0) - ISNULL(q.QTY,0) > 0
+                        THEN p.QTY - ISNULL(p.PSQTY,0) - ISNULL(q.QTY,0) ELSE 0 END)
+        FROM VW_POS p WITH(NOLOCK)
+        LEFT JOIN QTS q WITH(NOLOCK)
+          ON RTRIM(q.QT_NO) + RIGHT('00' + CONVERT(varchar(6), q.ITM), 3) = RTRIM(p.REF_ITM)
+        WHERE p.PRD_NO IN ({ph}) AND p.USABLE=1 AND p.CLS_ID=0 AND p.OS_ID='PO'
+              AND p.QTY > ISNULL(p.PSQTY,0) AND {not_own}
+        GROUP BY RTRIM(p.PRD_NO)
+    """, args + tuple(_po_own_args))
+    for r in cur.fetchall():
+        k = str(r[0]).strip()
+        if k in out:
+            out[k]['po_free'] = round(float(r[1] or 0), 2)
     return out
 
 
@@ -3437,9 +3468,12 @@ async def pmc_preview_mps(
         qty_on_odr = round(float(sp.get('qts', 0)), 2)    # 挂本单的请购在单
         pool_way = round(float(sp.get('po_all', 0)), 2)   # 该品号池子总量（显示用）
         pool_odr = round(float(sp.get('qts_all', 0)), 2)
+        po_free = round(float(sp.get('po_free', 0)), 2)   # 别人单采购多下的、本单可用的在途
+        way_free = round(qty_on_way + po_free, 2)         # 本单可用在途 = 挂本单未回 + 别人多下的
+        way_others = round(max(0.0, pool_way - way_free), 2)  # 全厂在途里属于别人单的部分
         total_stock = mat_qty + prod_qty
         real_demand = c_qty                                # 毛需求
-        total_avail = round(qty_on_way + qty_on_odr, 2)    # 本单专属供给（不含公共库存）
+        total_avail = round(way_free + qty_on_odr, 2)      # 本单可用供给（不含公共库存）
         gap = round(real_demand - total_avail, 2)
         # wh_detail: 全部明细（兼容前端调整弹窗）
         # mat_detail / prod_detail: 原材料仓/生产仓分组（显示用）
@@ -3454,6 +3488,7 @@ async def pmc_preview_mps(
             "gross_plant": round(c_qty, 4),     # 全厂毛需求：全厂销售未出展开（屏上「毛需求」列用它）
             "mat_qty": mat_qty, "prod_qty": prod_qty,
             "qty_on_way": qty_on_way,
+            "way_free": way_free, "way_others": way_others, "po_free": po_free,
             "total_stock": round(total_stock, 2),
             "total_avail": total_avail,
             "pool_way": pool_way, "pool_odr": pool_odr,
@@ -3477,10 +3512,13 @@ async def pmc_preview_mps(
     fg_on_odr = round(float(fg_sp.get('qts', 0)), 2)  # 挂本单的请购在单
     fg_pool_way = round(float(fg_sp.get('po_all', 0)), 2)
     fg_pool_odr = round(float(fg_sp.get('qts_all', 0)), 2)
+    fg_po_free = round(float(fg_sp.get('po_free', 0)), 2)
+    fg_way_free = round(fg_way + fg_po_free, 2)               # 本单可用在途
+    fg_way_others = round(max(0.0, fg_pool_way - fg_way_free), 2)
     fg_raw = round(fg_stock.get('mat_qty', 0) + fg_stock.get('prod_qty', 0), 2)
     fg_real_demand = demand_qty                       # 毛需求（库存不分摊）
     fg_total_stock = fg_raw
-    fg_total_avail = round(fg_way + fg_on_odr, 2)     # 本单专属供给
+    fg_total_avail = round(fg_way_free + fg_on_odr, 2)   # 本单可用供给
 
     os_no = so_no_itm[:-3] if len(so_no_itm) > 3 else so_no_itm
     rows = [{
@@ -3493,6 +3531,7 @@ async def pmc_preview_mps(
         "mat_qty": round(fg_stock.get('mat_qty', 0), 2),
         "prod_qty": round(fg_stock.get('prod_qty', 0), 2),
         "qty_on_way": fg_way,
+        "way_free": fg_way_free, "way_others": fg_way_others, "po_free": fg_po_free,
         "total_stock": round(fg_total_stock, 2),
         "total_avail": fg_total_avail,
         "pool_way": fg_pool_way, "pool_odr": fg_pool_odr,
