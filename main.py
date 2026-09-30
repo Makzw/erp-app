@@ -972,11 +972,12 @@ async def completion_transfer_list(
         JOIN PRDT p WITH(NOLOCK) ON p.PRD_NO = t.PRD_NO
         LEFT JOIN MY_WH w WITH(NOLOCK) ON w.WH = t.WH1
         LEFT JOIN (
-            SELECT FLD1, SUM(QTY) AS done_qty
+            -- ⚠ 必须按品号分组：一张 KND=30 单含多个品号时，不按品号会把整单扣料算到每个品号头上
+            SELECT FLD1, PRD_NO, SUM(QTY) AS done_qty
             FROM IC WITH(NOLOCK)
             WHERE IC_KND = 23 AND ISNULL(FLD1, '') <> ''
-            GROUP BY FLD1
-        ) x ON x.FLD1 = t.IC_NO
+            GROUP BY FLD1, PRD_NO
+        ) x ON x.FLD1 = t.IC_NO AND x.PRD_NO = t.PRD_NO
         {where}
         GROUP BY t.IC_NO, t.PRD_NO, p.NAME, t.WH1, w.NAME, x.done_qty,
                  t.指令单号, t.客户, t.DDJH, t.单重, t.净重
@@ -1072,7 +1073,7 @@ async def completion_fg_detail(fg_no: str = Query(...), db: str = Query(default=
                ISNULL(SUM(y.QTY), 0) AS used_qty
         FROM IC t WITH(NOLOCK)
         LEFT JOIN MY_WH w WITH(NOLOCK) ON w.WH = t.WH1
-        LEFT JOIN IC y WITH(NOLOCK) ON y.IC_KND=23 AND y.FLD1=t.IC_NO AND ISNULL(y.FLD1,'')<>''
+        LEFT JOIN IC y WITH(NOLOCK) ON y.IC_KND=23 AND y.FLD1=t.IC_NO AND y.PRD_NO=t.PRD_NO AND ISNULL(y.FLD1,'')<>''
         WHERE t.IC_KND=30 AND t.USABLE=1 AND ISNULL(t.删除,0)=0
         GROUP BY t.PRD_NO, t.IC_NO, t.WH1, w.NAME, ISNULL(t.指令单号,''), ISNULL(t.客户,'')
         ORDER BY t.PRD_NO, t.IC_NO
@@ -1594,11 +1595,12 @@ async def completion_transfer_by_fg(fg_no: str = Query(...), db: str = Query(def
         JOIN PRDT p WITH(NOLOCK) ON p.PRD_NO = t.PRD_NO
         LEFT JOIN MY_WH w WITH(NOLOCK) ON w.WH = t.WH1
         LEFT JOIN (
-            SELECT FLD1, SUM(QTY) AS done_qty
+            -- ⚠ 必须按品号分组：一张 KND=30 单含多个品号时，不按品号会把整单扣料算到每个品号头上
+            SELECT FLD1, PRD_NO, SUM(QTY) AS done_qty
             FROM IC WITH(NOLOCK)
             WHERE IC_KND = 23 AND ISNULL(FLD1, '') <> ''
-            GROUP BY FLD1
-        ) x ON x.FLD1 = t.IC_NO
+            GROUP BY FLD1, PRD_NO
+        ) x ON x.FLD1 = t.IC_NO AND x.PRD_NO = t.PRD_NO
         WHERE t.IC_KND = 30
           AND t.USABLE = 1
           AND ISNULL(t.删除, 0) = 0
@@ -1633,10 +1635,54 @@ async def completion_transfer_by_fg(fg_no: str = Query(...), db: str = Query(def
     return {"items": items}
 
 
+def _comp_stock_err(cur, rows, tool_rows=None):
+    """完工扣料的库存校验（必须在写库同一事务内调用，INSERT 之前）。
+    rows = [(prd_no, need, transfer_ic_no)]
+    规则：① 调拨单必须存在（KND=30/USABLE=1/未删除）；② 该单**该品号**的剩余 ≥ 本次扣料量。
+         （剩余 = 该单调拨量 − 挂该单该品号已扣的 KND=23）
+    工具行（运输工具）只验品号存在，不校验库存（是搬运用具，不在 BOM 里）。
+    返回 '' 或错误文案（最多列 3 条）。
+    """
+    shorts = []
+    for prd_no, need, tic in rows:
+        try:
+            need = float(need or 0)
+        except (TypeError, ValueError):
+            need = 0.0
+        if not prd_no or need <= 0:
+            continue
+        if not tic:
+            shorts.append('%s 需 %g，未指定调拨单' % (prd_no, need))
+            continue
+        cur.execute("""SELECT ISNULL(SUM(QTY),0) FROM IC WITH(NOLOCK)
+                       WHERE IC_KND=30 AND PRD_NO=%s AND RTRIM(IC_NO)=%s AND USABLE=1 AND ISNULL(删除,0)=0""",
+                    (prd_no, tic))
+        total = float(cur.fetchone()[0] or 0)
+        if total <= 0:
+            shorts.append('%s 需 %g，调拨单 %s 不存在或已作废' % (prd_no, need, tic))
+            continue
+        cur.execute("""SELECT ISNULL(SUM(QTY),0) FROM IC WITH(NOLOCK)
+                       WHERE IC_KND=23 AND PRD_NO=%s AND FLD1=%s""", (prd_no, tic))
+        left = total - float(cur.fetchone()[0] or 0)
+        if left + 0.001 < need:
+            shorts.append('%s 需 %g，%s 剩余 %g' % (prd_no, need, tic, left))
+    for t in (tool_rows or []):
+        code = (t.get('code') or '').strip()
+        if not code:
+            continue
+        cur.execute('SELECT COUNT(*) FROM PRDT WITH(NOLOCK) WHERE PRD_NO=%s', (code,))
+        if not cur.fetchone()[0]:
+            shorts.append('工具品号 %s 不存在' % code)
+    if not shorts:
+        return ''
+    return '材料库存不足：' + '；'.join(shorts[:3]) + ('…' if len(shorts) > 3 else '')
+
+
 @app.post("/api/completion/confirm")
 async def completion_confirm(
     payload: dict = Body(...),
     db: str = Query(default="c041"),
+    dry: str = Query(default=""),
 ):
     """
     完工确认。
@@ -1663,6 +1709,17 @@ async def completion_confirm(
 
     conn = get_conn()
     cur = conn.cursor()
+
+    # 库存校验：前端能被绕过，这里是最后防线（不通过 → 一行都不写）
+    _rows = [(c.get("prd_no", ""), c.get("qty", 0), c.get("transfer_ic_no", "")) for c in components]
+    _err = _comp_stock_err(cur, _rows)
+    if _err:
+        conn.rollback(); conn.close()
+        return {"error": _err}
+    if str(dry).lower() in ("1", "true", "yes"):
+        conn.rollback(); conn.close()
+        return {"dry": True, "ok": True, "checked": len(_rows)}
+
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     today = datetime.now().strftime("%y%m")
 
@@ -1753,6 +1810,7 @@ async def completion_confirm(
 async def completion_batch(
     payload: dict = Body(...),
     db: str = Query(default="c041"),
+    dry: str = Query(default=""),
 ):
     """
     批量完工：多成品 → 入库单(KND=13) + 出库单(KND=23)。
@@ -1778,6 +1836,26 @@ async def completion_batch(
     if not items:
         return {"error": "缺少完工成品"}
     cur = conn.cursor()
+
+    # 库存校验：前端能被绕过，这里是最后防线（不通过 → 一行都不写）
+    _rows = []
+    for _item in items:
+        _fq = int(_item.get("qty") or 0)
+        for _m in (_item.get("materials") or []):
+            try:
+                _need = float(_m.get("ratio") or 0) * _fq
+            except (TypeError, ValueError):
+                _need = 0.0
+            if _need > 0:
+                _rows.append((_m.get("prd_no", ""), _need, _m.get("transfer_ic_no", "")))
+    _err = _comp_stock_err(cur, _rows, tool_rows)
+    if _err:
+        conn.rollback(); conn.close()
+        return {"error": _err}
+    if str(dry).lower() in ("1", "true", "yes"):
+        conn.rollback(); conn.close()
+        return {"dry": True, "ok": True, "checked": len(_rows), "items": len(items)}
+
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     today = datetime.now().strftime("%y%m")
 
