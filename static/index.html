@@ -2299,14 +2299,8 @@ function renderPMCTree(items, title) {
 
   var html = '<div style="padding:12px">';
   html += '<div style="margin-bottom:12px"><button onclick="loadPMC()" style="background:#6b7280;color:#fff;border:none;border-radius:6px;padding:6px 14px;cursor:pointer;font-size:13px">\u2190 \u8fd4\u56de\u5217\u8868</button></div>';
-  // 页头缺口 = 逐行 gap 相加 —— 材料仓/别人多下由后端 _StockAlloc 跨行跨单只抵一次，
-  // 所以这个和就是本次合计缺口（跟生成 MPS 落库同一套规则）
-  var _dedup = matGapTotal();
-  var totalGap = _dedup.net, gapCount = _dedup.cnt;
-  var summaryTag = fgRow ? (totalGap > 0
-    ? '<span style="background:#fee2e2;color:#dc2626;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:600">\u7f3a ' + totalGap.toLocaleString('zh-CN') + ' \u4ef6 \u00b7 ' + gapCount + ' \u4e2a\u54c1\u53f7\u7f3a\u53e3</span>'
-    : '<span style="background:#dcfce7;color:#16a34a;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:600">✓ \u5168\u90e8\u5145\u8db3</span>')
-    : '';
+  // 页头 = 全厂净需求合计（本树涉及的品号去重累加；成品行的 gross_plant 不计入——成品未出 ≠ 料净需求）
+  var summaryTag = fgRow ? '<span id="gnTotalSpan">' + gnTotalTagHtml() + '</span>' : '';
   html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap"><div style="font-size:13px;color:var(--sub)">' + (title||'') + '</div>' + summaryTag + matSumTag() + '</div>';
 
   // BOM 展开明细
@@ -2320,7 +2314,7 @@ function renderPMCTree(items, title) {
   html += '<th style="padding:8px 8px;text-align:right;white-space:nowrap;min-width:104px">在途采购</th>';
   html += '<th style="padding:8px 8px;text-align:right;white-space:nowrap;min-width:104px">在单请购</th>';
   html += '<th style="padding:8px 8px;text-align:right;white-space:nowrap;min-width:96px">合计</th>';
-  html += '<th style="padding:8px 8px;text-align:right;white-space:nowrap;min-width:160px">缺口</th>';
+  html += '<th style="padding:8px 8px;text-align:right;white-space:nowrap;min-width:160px" title="全厂口径：所有成品未出展开 − 材料仓 − 生产仓 − 在途 − 请购（料行）；成品行显示全厂未出（所有订单）">全厂净需求</th>';
   html += '<th style="padding:8px 8px;text-align:center;white-space:nowrap;min-width:170px" title="勾选原材料 + 填数量 → 生成请购单（QD）。数量默认填品号净缺口，没有则填本行缺口，都可以改">请购</th>';
   html += '<th style="padding:8px 8px;text-align:center;white-space:nowrap;min-width:80px">调整</th>';
   html += '</tr></thead><tbody>';
@@ -2348,24 +2342,8 @@ function renderPMCTree(items, title) {
       agg[mp].real += (mr.real_demand === undefined || mr.real_demand === null) ? (mr.gap || 0) : mr.real_demand;
       agg[mp].own = Math.max(agg[mp].own, (mr.qty_on_way || 0) + (mr.qty_on_odr || 0));
     }
-    for (var mpk in agg) {
-      // 净缺口 = 该品号各行缺口相加（后端已保证库存只抵一次）
-      agg[mpk].net = Math.max(0, agg[mpk].gapSum || 0);
-    }
     matAggCache = agg;
     return agg;
-  }
-  function matGapTotal() {
-    // 逐行缺口相加（库存只抵一次 → 可加）；cnt = 有缺口的不同品号数
-    var net = 0, cnt = 0, seen = {};
-    for (var gi = 0; gi < items.length; gi++) {
-      var gr = items[gi];
-      if (gr.is_fg) continue;
-      var g = gr.gap || 0;
-      net += g;
-      if (g > 0.0001 && !seen[gr.prd_no]) { seen[gr.prd_no] = 1; cnt++; }
-    }
-    return { net: net, cnt: cnt };
   }
   function matSumTag() {
     var agg = matAggOf(), repPrd = 0, repReal = 0;
@@ -2387,8 +2365,7 @@ function renderPMCTree(items, title) {
       return '<span style="margin-left:6px;background:#eef2ff;color:#4338ca;border-radius:4px;padding:1px 6px;font-size:11px;font-weight:600" title="' +
         escAttr('该料在本次选中的单里共 ' + a.n + ' 处：需求合计 ' + Number(a.real).toLocaleString('zh-CN') +
                 (a.gross ? '（全厂毛需求 ' + Number(a.gross).toLocaleString('zh-CN') + '）' : '') +
-                '，材料仓 ' + Number(a.mat).toLocaleString('zh-CN') + ' 只抵一次，去掉重复后净缺口 ' +
-                Number(a.net).toLocaleString('zh-CN')) +
+                '，材料仓 ' + Number(a.mat).toLocaleString('zh-CN') + ' 只抵一次') +
         '">同料 ' + a.n + ' 处 · 合并需求 ' + Number(a.real).toLocaleString('zh-CN') +
         (a.mat > 0 ? ' · 库存 ' + Number(a.mat).toLocaleString('zh-CN') + ' 只抵一次' : '') + '</span>';
     }
@@ -2415,59 +2392,35 @@ function renderPMCTree(items, title) {
     var totalStock = (r.pool_total === undefined || r.pool_total === null) ? (wayQty + odrQty) : r.pool_total;   // 合计 = 全厂在途 + 全厂在单请购
     var realDemand = r.real_demand || 0;
     var soRemain = r.so_remain || 0;
-    // 缺口 = 需求 − 合计(池) − 材料仓（下单口径；生产仓已被领走不扣；同品号多单时以品号净缺口为准）
-    // ⚠ 缺口 = 本单口径（需求 − 挂本单的池 − 材料仓）：别人的在途/在单请购不算本单供给。
-    //   曾经这里用 net_gap（品号级、全厂池）→ 别人的请购一挂就把本单缺口抹成 0、请购默认值也跟着变 0
-    //   （MAK 2026-09-30：一点料都不是自己的，却因为别人的请购导致我的需求为 0，不合理）。
-    //   全厂口径仍然保留在「品号净缺」小字 + 汇总页里。
-    var gap = (r.gap === undefined || r.gap === null) ? (r.net_gap || 0) : r.gap;
-    var supply = totalStock + matQty;   // 参与缺口的供给 = 在途/在单请购 + 材料仓（生产仓已被领走，不参与）
-    var bg = isFg ? '#dbeafe' : (gap > 0 ? '#fef9c3' : '');
+    // 缺口列已换成「全厂净需求」列（MAK 2026-09-30）：本单缺口不再上屏，后端 gap 字段仍在（要加回来随时能加）。
+    // 请购数量也改成手填，不再拿缺口当默认值。
+    var bg = isFg ? '#dbeafe' : (gnRowNet(r.prd_no || '') > 0.0001 ? '#fef9c3' : '');
     // ponytail: 取消缩进，全部并排显示
     var indent = 0;
     var depthColor = depthColors[Math.min(depth, depthColors.length-1)];
     var depthLabel = isFg ? '成品' : 'L' + depth;
     var adjBtn = !isFg && depth > 0 ? '<button onclick="pmcOpenAdjust(\'' + escAttr(r.prd_no||'') + '\',\'\',\'mat\',' + matQty + ')" style="padding:3px 6px;background:#f3f4f6;border:1px solid #d1d5db;border-radius:4px;font-size:11px;cursor:pointer;color:#374151">调整</button>' : '';
-    // 缺口进度条
-    var barPct = realDemand > 0 ? Math.min(100, Math.round((supply/realDemand)*100)) : 0;
-    var barColor = gap > 0 ? '#dc2626' : '#16a34a';
-    var gapHtml = gap > 0
-      ? '<div style="display:flex;align-items:center;gap:4px"><div style="flex:1;height:5px;background:#f3f4f6;border-radius:3px;overflow:hidden"><div style="width:' + barPct + '%;height:100%;background:' + barColor + ';border-radius:3px"></div></div><span style="font-weight:700;color:' + barColor + ';font-size:11px;min-width:24px;text-align:right;font-variant-numeric:tabular-nums">' + gap + '</span></div>'
-      : '<span style="color:#16a34a;font-weight:700">✓</span>';
-    // 品号级净缺口（跨单，库存只扣一次）：缓存算好才有；单层缺口只是「不含公共库存」的本单数
-    var prdNet = r.prd_net;
     // 毛需求 = 全厂该品号销售未出展开（前面单没出的 + 本单）；老数据没有 gross_plant 就退回本单口径
     var grossShow = (r.gross_plant === undefined || r.gross_plant === null) ? r.gross_demand : r.gross_plant;
-    // 品号净缺 = 跨单去重后的下单数。只有跟本行缺口不同（同品号多单/同单多行）才多显示一行，免得重复噪音
-    if (prdNet !== undefined && prdNet !== null && Math.abs(Number(prdNet) - gap) > 0.01) {
-      var netTxt = Number(prdNet).toLocaleString('zh-CN');
-      var netTip = '该品号跨 ' + (r.prd_orders || 1) + ' 张待分析单：需求合计 ' +
-        Number(r.prd_need || 0).toLocaleString('zh-CN') + ' − 全厂在途/在单请购 ' + Number(r.prd_pool || 0).toLocaleString('zh-CN') +
-        ' − 材料仓 ' + Number(r.prd_mat || 0).toLocaleString('zh-CN') + ' = 净缺口 ' + netTxt +
-        (Number(r.prd_mat || 0) !== Number(r.prd_stock || 0) ? '（生产仓 ' + Number((r.prd_stock || 0) - (r.prd_mat || 0)).toLocaleString('zh-CN') + ' 已被领走，不扣）' : '') +
-        (function() {
-          var ag = matAggOf()[r.prd_no || ''] || { own: 0 };
-          return Number(r.prd_pool || 0) > Number(ag.own || 0) + 0.01
-            ? '\n⚠ 池子里 ' + Number(Number(r.prd_pool || 0) - Number(ag.own || 0)).toLocaleString('zh-CN') + ' 是别的单请的/在途的，不一定能给你用（挂本单 ' + Number(ag.own || 0).toLocaleString('zh-CN') + '）'
-            : '';
-        })();
-      gapHtml += '<div title="' + escAttr(netTip) + '" style="font-size:12px;margin-top:1px;white-space:nowrap;color:' +
-        (prdNet > 0 ? '#b45309' : '#16a34a') + '">品号净缺 ' + (prdNet > 0 ? netTxt : '0') + '</div>';
-    }
-    // 全厂净需求（所有成品口径，新 tab 那套）折进缺口格下方：
-    // ⚠ 只做参考信息，绝不替换上面的 gap（缺口=本单口径，是请购默认值/MPS 落库的依据）
-    if (!isFg) {
-      gapHtml += (gnFirst[r.prd_no || ''] !== i)
-        ? '<div style="font-size:11px;color:#9ca3af;margin-top:1px;white-space:nowrap">· 已有相同物料信息</div>'
-        : gnNetHtml(r.prd_no || '');
+    // 「全厂净需求」列：料行取全厂净需求（懒加载，数据没到显示「…」）；成品行取全厂未出
+    // ⚠ 同品号在本树第 2 次出现时不再重复显示数字（跟 matBadgeHtml 同一套首次出现规则）
+    var gapHtml;
+    if (isFg) {
+      var fgAll = (r.gross_plant === undefined || r.gross_plant === null) ? (r.gross_demand || 0) : r.gross_plant;
+      gapHtml = '<div style="font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;color:' +
+        (fgAll > 0 ? '#1d4ed8' : 'var(--sub)') + '" title="' +
+        escAttr('全厂未出（所有订单）' + Number(fgAll).toLocaleString('zh-CN') + ' ｜ 本单 ' + Number(soRemain).toLocaleString('zh-CN') +
+                '\n成品只有一个毛数，不扣自己的库存（自己的库存看全局净需求 tab 的提示块）') + '">全厂要做 ' +
+        Number(fgAll).toLocaleString('zh-CN') + '</div>';
+    } else if (gnFirst[r.prd_no || ''] !== i) {
+      gapHtml = '<div style="font-size:11px;color:#9ca3af;white-space:nowrap">· 已有相同物料信息</div>';
+    } else {
+      gapHtml = gnNetHtml(r.prd_no || '');
     }
     // 请购列：只有采购件/原材料（knd=4）能请购，自制件（knd=3）走派工单
     var canQd = !isFg && String(r.knd || '') === '4';
-    var qdDef = 0;
-    // 默认数量 = 本单缺口（已扣材料仓/本单可用在途/挂本单请购）；缺口 ≤ 0 就留空
-    // （不再退回品号净缺：那是全厂口径，会把别人单的量当成自己要买的量）
-    if (gap > 0) { qdDef = gap; }
-    var qdDefTxt = qdDef > 0 ? String(Math.round(qdDef * 1000) / 1000) : '';
+    // 数量留空，由用户手填（MAK 2026-09-30：不再拿本单缺口当默认值，避免误填成全厂量）
+    var qdDefTxt = '';
     var qdcHtml = canQd
       ? '<div style="display:flex;align-items:center;gap:6px;justify-content:flex-end">' +
         '<input type="checkbox" id="qdSel_' + i + '" onchange="pmcQdSync()" style="width:16px;height:16px;cursor:pointer" title="勾选后填数量">' +
@@ -2510,7 +2463,8 @@ function renderPMCTree(items, title) {
         (ownOdr > 0 ? '' : '（都是别的单请的，不是本单的）') +
         '｜请购数量是系统按缺口算的，没有「多请」，所以只认挂本单的部分"' + '"'
       : '';
-    html += '<tr style="border-bottom:1px solid #f3f4f6;background:' + bg + '">';
+    html += '<tr data-gnrow="' + escAttr(r.prd_no || '') + '"' + (isFg ? ' data-gnfg="1"' : '') +
+      ' style="border-bottom:1px solid #f3f4f6;background:' + bg + '">';
     html += '<td style="padding:8px 10px"><div style="max-width:min(44vw,760px);white-space:normal;overflow-wrap:anywhere" title="' + escAttr((r.prd_no||'') + ' ' + (r.prd_name||'')) + '"><span style="display:inline-block;margin-left:' + indent + 'px"></span><b style="font-variant-numeric:tabular-nums">' + escHtml(r.prd_no||'') + '</b> <span style="font-size:13px;color:var(--name)">' + escHtml(r.prd_name||'') + '</span>' + matBadgeHtml(r.prd_no||'') + '</div></td>';
     html += '<td style="padding:8px 8px;text-align:center;white-space:nowrap"><span style="font-size:10px;font-weight:700;color:#fff;background:' + depthColor + ';padding:2px 5px;border-radius:10px">' + depthLabel + '</span></td>';
     html += '<td style="padding:8px 8px;text-align:right;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap">' + Number(realDemand).toLocaleString('zh-CN') + '</td>';
@@ -2533,7 +2487,7 @@ function renderPMCTree(items, title) {
   html += '<span>在途=<span style="color:#f59e0b;font-weight:600">全厂在途采购</span>（含别的单已下的）</span>';
   html += '<span>在途/在单请购=<span style="color:#8b5cf6;font-weight:600">本单可用</span>（小字是全厂池；0 就是本单可用 0）</span>';
   html += '<span>合计=<span style="font-weight:600">在途+在单请购</span></span>';
-  html += '<span>缺口=需求 − 合计(本单可用在途+挂本单请购) − 材料仓，<span style="color:var(--sub)">在途只认挂本单的 + 别的单采购「多下」的那部分；生产仓已被领走不扣；同品号多行时以「品号净缺」为准</span></span>';
+  html += '<span>全厂净需求=<span style="color:#b45309;font-weight:600">所有成品的未出展开 − 材料仓 − 生产仓 − 在途 − 请购</span>（料行；hover 看明细）｜ 成品行「全厂要做」=<span style="color:#1d4ed8;font-weight:600">全厂未出（所有订单）</span>｜ 同品号只在第一处显示</span>';
   html += '<span>请购=<span style="color:#16a34a;font-weight:600">勾选原材料（自制件不请购）</span> + 数量，生成一张 QD 请购单</span>';
   html += '<span>全厂净需求=<span style="color:#b45309;font-weight:600">所有成品的未出展开 − 材料仓 − 生产仓 − 在途 − 请购</span>（全厂口径，hover 看明细；同品号只在第一处显示，跟左边的「缺口」不是一回事）</span>';
   html += '</div>';
@@ -3406,6 +3360,32 @@ function gnEnsureMap() {
   return window.__gnLoading;
 }
 
+function gnRowNet(prd) {           // 料行全厂净需求（数据没到 → 0，不误触高亮）
+  var v = (window.__gnMap || {})[prd];
+  return v ? Number(v[5] || 0) : 0;
+}
+
+function gnTotalTagHtml() {        // 页头：本树涉及的品号（去重）全厂净需求合计
+  var items = window.__pmcTreeItems || [];
+  if (!window.__gnMap) {
+    return '<span style="background:#eef2ff;color:#4338ca;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:600">全厂净需求 计算中…</span>';
+  }
+  var seen = {}, tot = 0, cnt = 0;
+  for (var i = 0; i < items.length; i++) {
+    if (items[i].is_fg) continue;
+    var p = items[i].prd_no || '';
+    if (seen[p]) continue;
+    seen[p] = 1;
+    var n = gnRowNet(p);
+    tot += n;
+    if (n > 0.0001) cnt++;
+  }
+  var hot = tot > 0.0001;
+  return '<span style="background:' + (hot ? '#fee2e2' : '#dcfce7') + ';color:' + (hot ? '#dc2626' : '#16a34a') +
+    ';border-radius:12px;padding:2px 10px;font-size:12px;font-weight:600" title="本树涉及的品号（同一品号只算一次）全厂净需求合计；成品行的全厂未出不计入">全厂净需求合计 ' +
+    Number(tot).toLocaleString('zh-CN') + ' · ' + cnt + ' 个品号</span>';
+}
+
 function gnFill() {
   var nodes = document.querySelectorAll('[data-gnnet]');
   for (var i = 0; i < nodes.length; i++) {
@@ -3414,17 +3394,26 @@ function gnFill() {
     h.innerHTML = gnNetHtml(prd);
     if (h.firstChild) el.parentNode.replaceChild(h.firstChild, el);
   }
+  // 数据是懒加载的 → 行底色必须回填时一并改（不能被 gnRowNet 的 0 抢先）
+  var rows = document.querySelectorAll('[data-gnrow]');
+  for (var j = 0; j < rows.length; j++) {
+    var p2 = rows[j].getAttribute('data-gnrow') || '';
+    if (!p2 || rows[j].getAttribute('data-gnfg')) continue;
+    rows[j].style.background = gnRowNet(p2) > 0.0001 ? '#fef9c3' : '';
+  }
+  var ts = $id('gnTotalSpan');
+  if (ts) ts.innerHTML = gnTotalTagHtml();
 }
 
 // 缺口格下方那行小字：全厂净需求（所有成品的未出展开）。m = [毛需求,材料仓,生产仓,在途,请购,净需求]
 function gnNetHtml(prd) {
   var m = window.__gnMap;
   if (!m) {
-    return '<div data-gnnet="1" data-gnprd="' + gnEsc(prd) + '" style="font-size:11px;color:var(--sub);margin-top:1px;white-space:nowrap">全厂净需求 …</div>';
+    return '<div data-gnnet="1" data-gnprd="' + gnEsc(prd) + '" style="font-size:12px;color:var(--sub);white-space:nowrap">全厂净需求 …</div>';
   }
   var v = m[prd];
   if (!v) {
-    return '<div style="font-size:11px;color:var(--sub);margin-top:1px;white-space:nowrap" title="' +
+    return '<div style="font-size:12px;color:var(--sub);white-space:nowrap" title="' +
       gnEsc('该品号不在全厂净需求范围（没有全厂毛需求，也没有库存）') + '">全厂净需求 —</div>';
   }
   var g = Number(v[0] || 0), mt = Number(v[1] || 0), pd = Number(v[2] || 0), ow = Number(v[3] || 0), qt = Number(v[4] || 0), net = Number(v[5] || 0);
@@ -3434,8 +3423,8 @@ function gnNetHtml(prd) {
     '− 在途 ' + gnFmt(ow, 0) + '\n− 在单请购 ' + gnFmt(qt, 0) + '\n' +
     '= 净需求 ' + gnFmt(net, 0) + '\n\n' +
     '⚠ 这是全厂口径（所有成品），跟左边「缺口」不是一回事：缺口只算本单，是请购/MPS 落库的依据';
-  return '<div style="font-size:11px;margin-top:1px;white-space:nowrap;color:' + (net > 0.0001 ? '#b45309' : '#16a34a') +
-    '" title="' + gnEsc(tip) + '">全厂净需求 <b style="font-variant-numeric:tabular-nums">' + gnFmt(net, 0) + '</b></div>';
+  return '<div style="font-size:12px;white-space:nowrap;color:' + (net > 0.0001 ? '#b45309' : '#16a34a') +
+    '" title="' + gnEsc(tip) + '">全厂净需求 <b style="font-size:13px;font-variant-numeric:tabular-nums">' + gnFmt(net, 0) + '</b></div>';
 }
 
 async function loadGlobalNet(refresh) {
