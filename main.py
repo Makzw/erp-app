@@ -3424,18 +3424,37 @@ def _plant_unshipped(prd_no, db_conn):
     return round(float(r[0] or 0), 4)
 
 
-@app.get("/api/pmc/preview_mps")
-async def pmc_preview_mps(
-    so_no_itm: str = Query(...),
-    prd_no: str = Query(...),
-    qty: float = Query(...),
-    db: str = Query(default="c041")
-):
+class _StockAlloc:
+    """跨单共享的材料仓 / 「别人多下」分配器（P0 修复，MAK 2026-09-30）。
+
+    以前每张单各自把同一批材料仓扣一遍 —— 3 个成品一起预览时逐行缺口相加 = −78,665，
+    去重后却是 53,432（差 13 万），屏上的数加不起来。现在按「选中的单顺序 → 单内树行
+    顺序」累计抵冲、扣完为止，跟 generate_mps 落库用的 stock_left 同一套规则。
     """
-    返回 BOM 展开预览（不写库）。
-    """
-    db_name = "T041" if db.lower() == "t041" else "C041"
-    conn = get_conn(db=db_name)
+
+    def __init__(self):
+        self.mat = {}   # 品号 -> 还没被抵掉的材料仓
+        self.sur = {}   # 品号 -> 还没被抵掉的「别人单采购多下」在途
+
+    def take(self, prd, need, mat_qty, po_free):
+        """按顺序取：材料仓 → 别人多下，扣完为止。返回 (用了材料仓, 用了多下)。"""
+        if not need or need <= 0:
+            return 0.0, 0.0
+        # 负库存夹到 0：库里现存为负的品号（89 行）不该把缺口撑大
+        m = max(0.0, self.mat.setdefault(prd, float(mat_qty or 0)))
+        s = max(0.0, self.sur.setdefault(prd, float(po_free or 0)))
+        um = min(m, need)
+        m -= um
+        us = min(s, need - um)
+        s -= us
+        self.mat[prd], self.sur[prd] = m, s
+        return um, us
+
+
+def _pmc_preview_one(conn, so_no_itm, prd_no, qty, alloc=None):
+    """单个成品的 BOM 展开预览（不写库）。传 alloc 则与别的单共享同一批库存。"""
+    if alloc is None:
+        alloc = _StockAlloc()
     # 需求基准 = 销售未出（QTY-SAQTY）；指令单号用来把在途/在单请购挂到本单
     demand_qty, ref = _so_line_info(so_no_itm, conn)
     if demand_qty is None:
@@ -3448,7 +3467,6 @@ async def pmc_preview_mps(
     stock_map = _v2_stock(all_prds, conn)
     stock_detail = _v2_stock_detail(all_prds, conn)
     odr_split = _v2_odr_split(all_prds, conn, ref=ref, fg=prd_no, so_itm=so_no_itm)
-    conn.close()
 
     # 库存汇总
     fg_stock = stock_map.get(prd_no, {})
@@ -3575,23 +3593,29 @@ async def pmc_preview_mps(
         edges.setdefault(stack.get(crow[5] - 1, -1), []).append(i)
         stack[crow[5]] = i
 
-    def net_avail(row):
-        """参与扣减的供给 = 本单可用 + 材料仓。生产仓已被领走，不参与。
+    def net_avail(row, demand):
+        """参与扣减的供给 = 挂本单在途 + 挂本单在单请购 + 本次实际取到的公共库存。
 
-        ⚠ 本单可用 = 挂本单在途(含别人采购多下的 part) + 挂本单在单请购，
-          不再用「全厂池」：别人的请购不能把本单的需求抹成 0（MAK 2026-09-30）。
+        ⚠ 公共库存（材料仓、别人多下）由 alloc 跨单共享、扣完为止 —— 同一批库存只抵
+          一次（P0 修复：以前每张单各抵一遍，批量预览相加毫无意义）。
+          先扣挂本单的池，不够才动公共库存。
+        第二遍（全厂毛需求）不重复消耗：结果按行缓存。
         """
-        way_free = row.get('way_free')
-        if way_free is None:
-            way_free = row.get('qty_on_way') or 0
-        return float(way_free or 0) + float(row.get('qty_on_odr') or 0) + float(row.get('mat_qty') or 0)
+        if row.get('mat_used') is None:
+            way_own = float(row.get('qty_on_way') or 0)
+            odr = float(row.get('qty_on_odr') or 0)
+            need_left = max(0.0, float(demand or 0) - way_own - odr)
+            um, us = alloc.take(row['prd_no'], need_left, row.get('mat_qty'), row.get('po_free'))
+            row['mat_used'], row['sur_used'] = round(um, 2), round(us, 2)
+        return (float(row.get('qty_on_way') or 0) + float(row.get('qty_on_odr') or 0)
+                + float(row.get('mat_used') or 0) + float(row.get('sur_used') or 0))
 
     def allocate(parent_row, parent_idx, parent_demand, parent_gross, gkey='gross_demand'):
         """自顶向下分配 BOM 需求；父件缺口与屏上「缺口」列同口径。
         parent_gross = 毛需求（从销售未出不扣任何库存/在途展开）。
         gkey = 写哪个毛需求字段：gross_demand 本单口径（品号汇总用）/ gross_plant 全厂口径（只上屏）。
         两遍分发 real_demand 结果相同（只依赖父件缺口），所以可按字段跑两遍。"""
-        parent_gap = max(0.0, parent_demand - net_avail(parent_row))
+        parent_gap = max(0.0, parent_demand - net_avail(parent_row, parent_demand))
         for i in edges.get(parent_idx, []):
             child_row = rows[i + 1]
             ratio = comp_rows[i][6]
@@ -3619,7 +3643,11 @@ async def pmc_preview_mps(
     # 生产仓不扣：车间仓/外发仓的料已经被领去做别的单了（MAK 2026-09-29）。
     # 同品号多行或多单时以品号汇总为准（那里跨单合并需求、池子和材料仓各只扣一次）。
     for r in rows:
-        r['gap'] = round(r['real_demand'] - r['total_avail'] - (r.get('mat_qty') or 0), 2)
+        # 合计 = 实际能被扣到的（挂本单在途 + 挂本单请购 + 本次取到的别人多下）；
+        # 缺口 = 需求 − 合计 − 本次取到的材料仓 → 逐行缺口相加 = 本次合计缺口
+        r['total_avail'] = round(float(r.get('qty_on_way') or 0) + float(r.get('qty_on_odr') or 0)
+                                 + float(r.get('sur_used') or 0), 2)
+        r['gap'] = round(r['real_demand'] - r['total_avail'] - float(r.get('mat_used') or 0), 2)
         r['pool_total'] = round((r.get('pool_way') or 0) + (r.get('pool_odr') or 0), 2)
         r['net_gap'] = round(max(0.0, r['real_demand'] - r['pool_total'] - (r.get('mat_qty') or 0)), 2)
         # 品号级净缺口（跨单，库存只扣一次）—— 缓存热了才有；冷的时候前端不显示
@@ -3633,6 +3661,45 @@ async def pmc_preview_mps(
             r['prd_orders'] = s['orders']
 
     return {"items": rows, "so_no": os_no}
+
+
+@app.get("/api/pmc/preview_mps")
+async def pmc_preview_mps(
+    so_no_itm: str = Query(...),
+    prd_no: str = Query(...),
+    qty: float = Query(...),
+    db: str = Query(default="c041")
+):
+    """单张单预览（前端批量预览走 /api/pmc/preview_batch）。"""
+    conn = get_conn(db="T041" if db.lower() == "t041" else "C041")
+    try:
+        return _pmc_preview_one(conn, so_no_itm, prd_no, qty)
+    finally:
+        conn.close()
+
+
+@app.post("/api/pmc/preview_batch")
+async def pmc_preview_batch(payload: dict = Body(...), db: str = Query(default="c041")):
+    """批量预览：几个成品合在一起跑需求（不写库）。
+
+    材料仓 + 别人多下由 _StockAlloc 跨单共享，按 items 的顺序扣完为止 —— 所以
+    逐行缺口相加 = 本次合计缺口（跟生成 MPS 落库同一套规则）。
+    """
+    conn = get_conn(db="T041" if db.lower() == "t041" else "C041")
+    alloc = _StockAlloc()
+    all_rows, groups = [], []
+    try:
+        for it in (payload.get("items") or []):
+            so_no_itm = str(it.get("so_no_itm") or "")
+            prd_no = str(it.get("prd_no") or "")
+            if not so_no_itm or not prd_no:
+                continue
+            d = _pmc_preview_one(conn, so_no_itm, prd_no, float(it.get("qty") or 0), alloc)
+            all_rows.extend(d["items"])
+            groups.append({"so_no_itm": so_no_itm, "prd_no": prd_no, "count": len(d["items"])})
+    finally:
+        conn.close()
+    return {"items": all_rows, "groups": groups, "batch": True}
 
 
 def _prd_meta(prd_nos, db_conn):

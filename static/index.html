@@ -2250,11 +2250,14 @@ async function pmcPreviewBatch() {
   el.innerHTML = '<div class="state-msg"><div class="spinner"></div>加载中\u2026</div>';
   var allRows = [];
   try {
-    for (var i = 0; i < pmcSelected.length; i++) {
-      var it = pmcSelected[i];
-      var data = await api(BASE + '/pmc/preview_mps?' + new URLSearchParams({so_no_itm: it.so_no_itm, prd_no: it.prd_no, qty: it.qty}));
-      if (data.items) allRows = allRows.concat(data.items);
-    }
+    // 一次请求跑完整批：材料仓 / 别人多下跨单只抵一次 —— 跟生成 MPS 落库同一套规则
+    // （以前是逐单各请求一次、每单各抵一遍同一批库存，逐行缺口相加毫无意义）
+    var data = await api(BASE + '/pmc/preview_batch', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({items: pmcSelected})
+    });
+    allRows = (data && data.items) || [];
+    window.__pmcBatchGroups = (data && data.groups) || null;
     window.__pmcQdCtx = null;   // 合并树没有单一 SO 行 → 不提供请购生成
     renderPMCTree(allRows, '合并 ' + pmcSelected.length + ' 条指令单');
   } catch(e) { el.innerHTML = '<div class="error-msg">' + e.message + '</div>'; }
@@ -2288,8 +2291,9 @@ function renderPMCTree(items, title) {
 
   var html = '<div style="padding:12px">';
   html += '<div style="margin-bottom:12px"><button onclick="loadPMC()" style="background:#6b7280;color:#fff;border:none;border-radius:6px;padding:6px 14px;cursor:pointer;font-size:13px">\u2190 \u8fd4\u56de\u5217\u8868</button></div>';
-  // 页头缺口 = 去重口径（同一品号的材料仓/池只扣一次）；原来是逐行 gap 相加，同料重复时会偏小
-  var _dedup = matDedupTotal();
+  // 页头缺口 = 逐行 gap 相加 —— 材料仓/别人多下由后端 _StockAlloc 跨行跨单只抵一次，
+  // 所以这个和就是本次合计缺口（跟生成 MPS 落库同一套规则）
+  var _dedup = matGapTotal();
   var totalGap = _dedup.net, gapCount = _dedup.cnt;
   var summaryTag = fgRow ? (totalGap > 0
     ? '<span style="background:#fee2e2;color:#dc2626;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:600">\u7f3a ' + totalGap.toLocaleString('zh-CN') + ' \u4ef6 \u00b7 ' + gapCount + ' \u4e2a\u54c1\u53f7\u7f3a\u53e3</span>'
@@ -2297,7 +2301,69 @@ function renderPMCTree(items, title) {
     : '';
   html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap"><div style="font-size:13px;color:var(--sub)">' + (title||'') + '</div>' + summaryTag + matSumTag() + '</div>';
 
-  // BOM 表
+  // ① 按品号汇总（本次选中范围）—— PMC 下单看这张表
+  function matRollup() {
+    var roll = {}, order = [], curFg = '';
+    for (var ri = 0; ri < items.length; ri++) {
+      var rr = items[ri];
+      if (rr.is_fg) { curFg = rr.so_no_itm || ''; continue; }
+      var rp = rr.prd_no || '';
+      if (!roll[rp]) {
+        roll[rp] = { prd: rp, name: rr.prd_name || '', real: 0, mat: rr.mat_qty || 0,
+                     matUsed: 0, avail: 0, gap: 0, n: 0, fgs: {} };
+        order.push(rp);
+      }
+      var o = roll[rp];
+      o.n++;
+      o.real += (rr.real_demand || 0);
+      o.matUsed += (rr.mat_used || 0);
+      o.avail += (rr.total_avail || 0);
+      o.gap += (rr.gap || 0);
+      o.fgs[curFg] = 1;
+    }
+    var list = [];
+    for (var oi = 0; oi < order.length; oi++) list.push(roll[order[oi]]);
+    list.sort(function (a, b) { return b.gap - a.gap; });   // 缺得最多的排最前
+    return list;
+  }
+  var _roll = matRollup(), _rollRep = false, _rollNet = 0;
+  for (var _rj = 0; _rj < _roll.length; _rj++) { if (_roll[_rj].n > 1) _rollRep = true; _rollNet += _roll[_rj].gap; }
+  if ((window.__pmcBatchGroups || _rollRep) && _roll.length) {
+    var _rtr = '';
+    for (var _rk = 0; _rk < _roll.length; _rk++) {
+      var _q = _roll[_rk], _fgCnt = 0;
+      for (var _fk in _q.fgs) _fgCnt++;
+      _rtr += '<tr style="border-top:1px solid var(--border)">' +
+        '<td style="padding:6px 10px;font-weight:600;color:var(--name)">' + escHtml(_q.prd) + '</td>' +
+        '<td style="padding:6px 10px;color:var(--sub);white-space:nowrap">' + escHtml((_q.name || '').slice(0, 20)) + '</td>' +
+        '<td style="padding:6px 10px;text-align:right;font-variant-numeric:tabular-nums">' + Number(_q.real).toLocaleString('zh-CN') + '</td>' +
+        '<td style="padding:6px 10px;text-align:right;font-variant-numeric:tabular-nums">' + Number(_q.mat).toLocaleString('zh-CN') + '</td>' +
+        '<td style="padding:6px 10px;text-align:right;font-variant-numeric:tabular-nums;color:#4338ca">' + Number(_q.matUsed).toLocaleString('zh-CN') + '</td>' +
+        '<td style="padding:6px 10px;text-align:right;font-variant-numeric:tabular-nums">' + Number(_q.avail).toLocaleString('zh-CN') + '</td>' +
+        '<td style="padding:6px 10px;text-align:right;font-weight:700;font-variant-numeric:tabular-nums;color:' + (_q.gap > 0.0001 ? '#dc2626' : '#16a34a') + '">' + Number(_q.gap).toLocaleString('zh-CN') + '</td>' +
+        '<td style="padding:6px 10px;text-align:center;color:var(--sub)">' + _q.n + '</td>' +
+        '<td style="padding:6px 10px;text-align:center;color:var(--sub)">' + _fgCnt + '</td>' +
+      '</tr>';
+    }
+    html += '<div style="margin-bottom:14px;border:1px solid var(--border);border-radius:10px;overflow:hidden">' +
+      '<div style="padding:9px 12px;background:#f9fafb;font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+        '<span>① 按品号汇总 · 下单用</span>' +
+        '<span style="font-weight:600;color:#dc2626">合计缺口 ' + Number(_rollNet).toLocaleString('zh-CN') + '</span>' +
+        '<span style="font-weight:400;color:var(--sub)">' +
+          (window.__pmcBatchGroups ? '本次选中的 ' + window.__pmcBatchGroups.length + ' 条指令单 · ' : '') +
+          '材料仓 / 在途跨单跨行只抵一次（跟生成 MPS 落库同一套规则）</span>' +
+      '</div>' +
+      '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:1080px">' +
+      '<thead><tr style="background:#fff;color:var(--sub);border-bottom:1px solid var(--border)">' +
+      '<th style="padding:6px 10px;text-align:left">品号</th><th style="padding:6px 10px;text-align:left">品名</th>' +
+      '<th style="padding:6px 10px;text-align:right">合并需求</th><th style="padding:6px 10px;text-align:right">原材料仓</th>' +
+      '<th style="padding:6px 10px;text-align:right" title="本次真正扣到的材料仓（同一批库存只抵一次，所以多行时只有前面的行能抵到）">其中本次抵冲</th>' +
+      '<th style="padding:6px 10px;text-align:right" title="挂本单的在途采购 + 在单请购 + 别人多下的部分">合计(在途/请购)</th>' +
+      '<th style="padding:6px 10px;text-align:right">净缺口</th><th style="padding:6px 10px;text-align:center">出现处数</th>' +
+      '<th style="padding:6px 10px;text-align:center">涉及指令单</th></tr></thead><tbody>' + _rtr + '</tbody></table></div></div>';
+  }
+
+  // ② BOM 展开明细
   html += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:1470px"><thead><tr style="background:#f3f4f6">';
   html += '<th style="padding:8px 10px;text-align:left;min-width:300px">品号</th>';
   html += '<th style="padding:8px 8px;text-align:center;white-space:nowrap;min-width:64px">层</th>';
@@ -2330,24 +2396,28 @@ function renderPMCTree(items, title) {
       var mpool = (mr.pool_total === undefined || mr.pool_total === null) ? ((mr.pool_way || 0) + (mr.pool_odr || 0)) : mr.pool_total;
       if (!agg[mp]) agg[mp] = { n: 0, gross: 0, mat: mr.mat_qty || 0, pool: mpool, own: 0, real: 0 };
       agg[mp].n++;
+      agg[mp].gapSum = (agg[mp].gapSum || 0) + (mr.gap || 0);
       agg[mp].gross += mgross;
       // ⚠ 不能用 real_demand || gap：需求真的是 0 的行会退化成负数缺口，合并需求就成负数了
       agg[mp].real += (mr.real_demand === undefined || mr.real_demand === null) ? (mr.gap || 0) : mr.real_demand;
       agg[mp].own = Math.max(agg[mp].own, (mr.qty_on_way || 0) + (mr.qty_on_odr || 0));
     }
     for (var mpk in agg) {
-      // 每个品号都算：同一品号的材料仓只扣一次，且只扣「挂本单」的池
-      // （别人的在途/请购不是本单供给 —— MAK 2026-09-30：不能因为别人的请购把我的需求抹成 0）
-      agg[mpk].net = Math.max(0, agg[mpk].real - agg[mpk].mat - agg[mpk].own);
+      // 净缺口 = 该品号各行缺口相加（后端已保证库存只抵一次）
+      agg[mpk].net = Math.max(0, agg[mpk].gapSum || 0);
     }
     matAggCache = agg;
     return agg;
   }
-  function matDedupTotal() {
-    var agg = matAggOf(), net = 0, cnt = 0;
-    for (var kk in agg) {
-      net += agg[kk].net;
-      if (agg[kk].net > 0.0001) cnt++;
+  function matGapTotal() {
+    // 逐行缺口相加（库存只抵一次 → 可加）；cnt = 有缺口的不同品号数
+    var net = 0, cnt = 0, seen = {};
+    for (var gi = 0; gi < items.length; gi++) {
+      var gr = items[gi];
+      if (gr.is_fg) continue;
+      var g = gr.gap || 0;
+      net += g;
+      if (g > 0.0001 && !seen[gr.prd_no]) { seen[gr.prd_no] = 1; cnt++; }
     }
     return { net: net, cnt: cnt };
   }

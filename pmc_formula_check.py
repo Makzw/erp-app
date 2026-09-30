@@ -58,13 +58,22 @@ def main():
         det = M._v2_stock_detail([r['prd_no'] for r in api], conn)
         split = M._v2_odr_split([r['prd_no'] for r in api], conn, ref=ref, fg=prd, so_itm=so_itm)
 
-        def net_avail(p):
-            """独立参考实现：参与扣减的供给 = 全厂池(在途采购 po_all + 在单请购 qts_all) + 材料仓。
-            生产仓(prod_qty)已被领走，不参与；本单专属量(po/qts)只用于屏上 tooltip。"""
+        # 独立参考实现（照文档口径自己走一遍：池只认挂本单的；材料仓/多下按顺序消耗）
+        left = {}
+
+        def ref_avail(p, demand):
+            """返回 (挂本单池合计, 材料仓抵冲, 多下抵冲, 合计供给)。"""
             sp = split.get(p) or {}
             st = stock.get(p) or {}
-            return (float(sp.get('po_all', 0)) + float(sp.get('qts_all', 0))
-                    + float(st.get('mat_qty', 0)))
+            own = float(sp.get('po', 0)) + float(sp.get('qts', 0))
+            e = left.setdefault(p, [max(0.0, float(st.get('mat_qty', 0))),
+                                    max(0.0, float(sp.get('po_free', 0)))])
+            need = max(0.0, demand - own)
+            um = min(e[0], need)
+            e[0] -= um
+            us = min(e[1], need - um)
+            e[1] -= us
+            return own, um, us
 
         # 母件「实例」连线：comp 是 DFS 前序，某行的母件 = 前面最近的 depth-1 那一行（-1=成品）
         edges, stack = {}, {}
@@ -72,50 +81,77 @@ def main():
             edges.setdefault(stack.get(c[5] - 1, -1), []).append(i)
             stack[c[5]] = i
         want, want_gross = {}, {}
+        want_row = {}          # comp 下标 -> (需求, 合计, 缺口, 抵冲材料仓, 抵冲多下)
+        fg_own, fg_um, fg_us = ref_avail(prd, remain)
+        fg_avail = fg_own + fg_us          # 屏上「合计」不含材料仓（材料仓单独一列、在缺口里扣）
+        fg_gap = max(0.0, remain - fg_own - fg_um - fg_us)
 
-        def walk(parent_idx, demand, av, gross):
-            gap = max(0.0, demand - av)
+        def walk(parent_idx, parent_gap, gross):
             for i in edges.get(parent_idx, []):
-                d = gap * comp[i][6]
+                d = parent_gap * comp[i][6]
                 g = gross * comp[i][6]
+                own, um, us = ref_avail(comp[i][0], d)
+                avail = own + us               # 合计不含材料仓
+                g2 = max(0.0, d - own - um - us)
                 want[i] = d
                 want_gross[i] = g
-                walk(i, d, net_avail(comp[i][0]), g)
+                want_row[i] = (d, avail, g2, um, us)
+                walk(i, g2, g)
 
-        walk(-1, remain, net_avail(prd), remain)
+        walk(-1, fg_gap, remain)
+
         for i, r in enumerate(api):
             rows += 1
             tag = f'{prd}/{r["prd_no"]} L{r["depth"]}'
-            # 合计 = 本单可用（在途 = 挂本单未回 + 别人采购多下）+ 挂本单在单请购（库存不分摊，不进合计）
+            # 合计 = 挂本单在途 + 挂本单在单请购 + 本次抵到的别人多下
+            if abs((r['qty_on_way'] + r['qty_on_odr'] + (r.get('sur_used') or 0)) - r['total_avail']) > 0.01:
+                fails.append(f'{tag}: 合计 {r["total_avail"]:.1f} ≠ 挂本单在途{r["qty_on_way"]:.1f}+在单{r["qty_on_odr"]:.0f}+多下抵冲{r.get("sur_used", 0):.1f}')
+            # way_free = 挂本单未回 + 别人多下（显示用）；way_others + way_free 应等于全厂在途
             way_free = r.get('way_free', r['qty_on_way'])
-            if abs((way_free + r['qty_on_odr']) - r['total_avail']) > 0.01:
-                fails.append(f'{tag}: 合计 {r["total_avail"]:.1f} ≠ 本单可用在途{way_free:.1f}+在单{r["qty_on_odr"]:.0f}')
-            # way_free = 挂本单未回 + 别人多下；way_others + way_free 应等于全厂在途
             if abs((r['qty_on_way'] + r.get('po_free', 0)) - way_free) > 0.01:
                 fails.append(f'{tag}: 本单可用在途 {way_free:.1f} ≠ 挂本单{r["qty_on_way"]:.1f}+多下{r.get("po_free", 0):.1f}')
             if abs((r.get('way_others', 0) + way_free) - r.get('pool_way', 0)) > 0.5:
-                fails.append(f'{tag}: 别人{ r.get("way_others",0):.1f}+本单可用{way_free:.1f} ≠ 全厂在途{r.get("pool_way",0):.1f}')
+                fails.append(f'{tag}: 别人{r.get("way_others",0):.1f}+本单可用{way_free:.1f} ≠ 全厂在途{r.get("pool_way",0):.1f}')
             # 挂本单的量不能超过池子总量
             if r['qty_on_way'] > r.get('pool_way', 0) + 0.5 or r['qty_on_odr'] > r.get('pool_odr', 0) + 0.5:
                 fails.append(f'{tag}: 挂本单的量超过池子总量')
-            # 缺口 = 需求 − 合计(本单可用在途+挂本单请购) − 材料仓（与 allocate 的父件缺口同一算式）
-            if abs(round(r['real_demand'] - r['total_avail'] - r['mat_qty'], 2) - r['gap']) > 0.01:
-                fails.append(f'{tag}: 缺口 {r["gap"]:.1f} ≠ 需求{r["real_demand"]:.1f}-合计{r["total_avail"]:.1f}-材料仓{r["mat_qty"]:.1f}')
+            # 缺口 = 需求 − 合计 − 抵冲（抵冲 = 本次实际扣到的材料仓）
+            mat_used = r.get('mat_used')
+            if mat_used is None:
+                mat_used = r['mat_qty']
+            if abs(round(r['real_demand'] - r['total_avail'] - mat_used, 2) - r['gap']) > 0.01:
+                fails.append(f'{tag}: 缺口 {r["gap"]:.1f} ≠ 需求{r["real_demand"]:.1f}-合计{r["total_avail"]:.1f}-抵冲{mat_used:.1f}')
+            if mat_used > max(0.0, r['mat_qty']) + 0.01:
+                fails.append(f'{tag}: {r["prd_no"]} 抵冲 {mat_used:.1f} 超过材料仓 {r["mat_qty"]:.1f}')
             # ⑤ 屏上下单口径：net_gap = 需求 − 全厂池 − 库存，且 pool_total = 池合计
             if abs(round((r.get('pool_way') or 0) + (r.get('pool_odr') or 0), 2) - r['pool_total']) > 0.01:
                 fails.append(f'{tag}: 合计(池) {r["pool_total"]:.1f} ≠ 在途{r.get("pool_way")}+在单{r.get("pool_odr")}')
             want_net = max(0.0, round(r['real_demand'] - r['pool_total'] - r['mat_qty'], 2))
             if abs(want_net - r['net_gap']) > 0.01:
                 fails.append(f'{tag}: 净缺口 {r["net_gap"]:.1f} ≠ 需求{r["real_demand"]:.1f}-池{r["pool_total"]:.1f}-材料仓{r["mat_qty"]:.1f}={want_net:.1f}')
-            # 需求基准 = 销售未出
-            if r['is_fg'] and abs(r['real_demand'] - remain) > 0.01:
-                fails.append(f'{tag}: 成品需求 {r["real_demand"]:.1f} ≠ 销售未出 {remain:.1f}')
-            # ①② 需求(净) = 父件缺口×配比；毛需求 = 父件毛需求×配比（独立参考实现按边重算）
-            if i and abs(want.get(i - 1, 0) - r['real_demand']) > 0.5:
-                fails.append(f'{tag}: 需求 {r["real_demand"]:.1f} ≠ 应为 {want.get(i-1,0):.1f}')
-            if i and abs(want_gross.get(i - 1, 0) - r['gross_demand']) > 0.5:
-                fails.append(f'{tag}: 毛需求 {r["gross_demand"]:.1f} ≠ 应为 {want_gross.get(i-1,0):.1f}')
-            if not i and abs(r['gross_demand'] - remain) > 0.01:
+            # 需求基准 = 销售未出；成品行与参考实现逐项对齐
+            if r['is_fg']:
+                if abs(r['real_demand'] - remain) > 0.01:
+                    fails.append(f'{tag}: 成品需求 {r["real_demand"]:.1f} ≠ 销售未出 {remain:.1f}')
+                if abs(r['total_avail'] - fg_avail) > 0.5:
+                    fails.append(f'{tag}: 成品合计 {r["total_avail"]:.1f} ≠ 参考 {fg_avail:.1f}')
+                if abs(r['gap'] - fg_gap) > 0.5:
+                    fails.append(f'{tag}: 成品缺口 {r["gap"]:.1f} ≠ 参考 {fg_gap:.1f}')
+            # ①② 需求 = 父件缺口×配比；毛需求 = 父件毛需求×配比；合计/缺口/抵冲 = 参考实现
+            if i:
+                w = want_row.get(i - 1)
+                if w:
+                    if abs(r['real_demand'] - w[0]) > 0.5:
+                        fails.append(f'{tag}: 需求 {r["real_demand"]:.1f} ≠ 应为 {w[0]:.1f}')
+                    if abs(r['total_avail'] - w[1]) > 0.5:
+                        fails.append(f'{tag}: 合计 {r["total_avail"]:.1f} ≠ 应为 {w[1]:.1f}')
+                    if abs(r['gap'] - w[2]) > 0.5:
+                        fails.append(f'{tag}: 缺口 {r["gap"]:.1f} ≠ 应为 {w[2]:.1f}')
+                    if abs((r.get('mat_used') or 0) - w[3]) > 0.5:
+                        fails.append(f'{tag}: 抵冲材料仓 {r.get("mat_used", 0):.1f} ≠ 应为 {w[3]:.1f}')
+                if abs(r['gross_demand'] - want_gross.get(i - 1, 0)) > 0.5:
+                    fails.append(f'{tag}: 毛需求 {r["gross_demand"]:.1f} ≠ 应为 {want_gross.get(i-1,0):.1f}')
+            elif abs(r['gross_demand'] - remain) > 0.01:
                 fails.append(f'{tag}: 成品毛需求 {r["gross_demand"]:.1f} ≠ 销售未出 {remain:.1f}')
     conn.close()
     # ⑥ 品号汇总自洽：net = max(0, need − pool − stock)
