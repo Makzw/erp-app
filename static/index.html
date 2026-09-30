@@ -2132,16 +2132,20 @@ function renderPMCList(items, q) {
     var isSel = pmcSelected.some(function(x){return (x.so_no_itm||'')===(t.so_no_itm||'')&&(x.prd_no||'')===(t.prd_no||t.PRD_NO||'');});
     var cardContent = '<div style="flex:1;cursor:pointer;min-width:0" onclick="event.stopPropagation();pmcAnalyzeRow(\'' + escAttr(soItm) + '\',\'' + escAttr(prdNo) + '\',' + qty + ')"><div style="font-size:12px;color:var(--sub);margin-bottom:2px">' + escAttr(osNo) + '</div><div style="font-size:14px;font-weight:600;margin-bottom:2px">' + escAttr(prdNo) + '</div><div style="font-size:13px;color:var(--name);margin-bottom:4px;word-break:break-all">' + escAttr(prdName) + '</div>' + (cusName ? '<span style="font-size:11px;color:#374151;background:#f3f4f6;border-radius:3px;padding:1px 5px;margin-right:4px">' + escAttr(cusName) + '</span>' : '') + '</div>';
     var rightDiv = '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0"><div style="font-size:18px;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums">' + fmtQty + '</div><div style="font-size:11px;color:var(--sub)">\u4ef6</div>' + zhilianHtml + '</div>';
-    var checkbox = '<div style="display:flex;align-items:flex-start;padding-top:2px" onclick="event.stopPropagation();pmcToggleSel(' + i + ')"><input type="checkbox" ' + (isSel?'checked':'') + ' style="width:16px;height:16px;cursor:pointer;accent-color:var(--accent)"></div>';
+    var checkbox = '<div style="display:flex;align-items:flex-start;padding-top:2px" onclick="event.stopPropagation();pmcToggleSel(\'' + escAttr(soItm) + '\',\'' + escAttr(prdNo) + '\')"><input type="checkbox" ' + (isSel?'checked':'') + ' style="width:16px;height:16px;cursor:pointer;accent-color:var(--accent)"></div>';
     return '<div class="pmc-card' + (isSel?' pmc-card-sel':'') + '">' + checkbox + cardContent + rightDiv + '</div>';
   }).join('');
   var footer = selCount > 0 ? '<div style="position:sticky;bottom:0;padding:12px;background:rgba(255,255,255,.95);border-top:1px solid var(--border);display:flex;gap:8px;align-items:center"><div style="flex:1;display:flex;align-items:center;gap:8px"><span style="background:var(--accent);color:#fff;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:700">' + selCount + '</span><span style="font-size:13px;color:var(--text)">\u5df2\u9009</span></div><button onclick="pmcPreviewBatch()" style="background:var(--accent);color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:14px;font-weight:600;cursor:pointer">\u6279\u91cf\u9884\u89c8 (' + selCount + ')</button><button onclick="pmcSubmit()" style="background:#16a34a;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:14px;font-weight:600;cursor:pointer">\u751f成 MPS</button></div>' : '';
   el.innerHTML = toolbar + '<div style="padding:6px 0">' + cards + '</div>' + footer;
 }
 
-function pmcToggleSel(key, idx) {
+function pmcToggleSel(soNoItm, prdNo) {
+  // ⚠ 曾经是 pmcToggleSel(key, idx) + 卡片只传一个下标 → idx=undefined → items[NaN] → 直接 return，
+  //   勾选框点了完全没反应，底部「批量预览/生成 MPS」永不出现。按品号身份查，搜索筛选后也不怕错位。
   var items = window.__pmcItems || [];
-  var t = items[parseInt(idx)];
+  var t = items.filter(function(x) {
+    return (x.so_no_itm || '') === (soNoItm || '') && (x.prd_no || x.PRD_NO || '') === (prdNo || '');
+  })[0];
   if (!t) return;
   // pmcSelected is an array: [{so_no_itm, prd_no, qty}]
   var exists = pmcSelected.findIndex(function(x) {
@@ -2290,7 +2294,7 @@ function renderPMCTree(items, title) {
     ? '<span style="background:#fee2e2;color:#dc2626;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:600">\u7f3a ' + totalGap.toLocaleString('zh-CN') + ' \u4ef6 \u00b7 ' + gapCount + ' \u9879\u7f3a\u53e3</span>'
     : '<span style="background:#dcfce7;color:#16a34a;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:600">✓ \u5168\u90e8\u5145\u8db3</span>')
     : '';
-  html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap"><div style="font-size:13px;color:var(--sub)">' + (title||'') + '</div>' + summaryTag + '</div>';
+  html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap"><div style="font-size:13px;color:var(--sub)">' + (title||'') + '</div>' + summaryTag + matSumTag() + '</div>';
 
   // BOM 表
   html += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:1470px"><thead><tr style="background:#f3f4f6">';
@@ -2309,6 +2313,60 @@ function renderPMCTree(items, title) {
   html += '</tr></thead><tbody>';
 
   var depthColors = ['#1d4ed8','#16a34a','#d97706','#ea580c','#dc2626'];
+
+  // 同一张 MPS 里同品号会重复出现（照 ERP 粒度，不合并行）；库存只抵一次（排产口径），
+  // 所以把「这料在本单共几处 / 库存抵在哪一处」标出来，免得看着像重复算了两遍。
+  // 函数声明会提升 → 表头（比下面 depthColors 那行更早拼）也能叫它们，不用把整块搬上去
+  var matAggCache = null, matSeen = {};
+  function matAggOf() {
+    if (matAggCache) return matAggCache;
+    var agg = {};
+    for (var mi = 0; mi < items.length; mi++) {
+      var mr = items[mi];
+      if (mr.is_fg) continue;
+      var mp = mr.prd_no || '';
+      var mgross = (mr.gross_plant === undefined || mr.gross_plant === null) ? (mr.gross_demand || 0) : mr.gross_plant;
+      var mpool = (mr.pool_total === undefined || mr.pool_total === null) ? ((mr.pool_way || 0) + (mr.pool_odr || 0)) : mr.pool_total;
+      if (!agg[mp]) agg[mp] = { n: 0, gross: 0, mat: mr.mat_qty || 0, pool: mpool };
+      agg[mp].n++;
+      agg[mp].gross += mgross;
+    }
+    for (var mpk in agg) {
+      if (agg[mpk].n < 2) continue;
+      agg[mpk].net = Math.max(0, agg[mpk].gross - agg[mpk].mat - agg[mpk].pool);
+    }
+    matAggCache = agg;
+    return agg;
+  }
+  function matSumTag() {
+    var agg = matAggOf(), repPrd = 0, repGross = 0, repNet = 0;
+    for (var mpk2 in agg) {
+      if (agg[mpk2].n < 2) continue;
+      repPrd++; repGross += agg[mpk2].gross; repNet += agg[mpk2].net;
+    }
+    return repPrd > 0
+      ? '<span style="background:#eef2ff;color:#4338ca;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:600" title="' +
+        escAttr('同品号在多个成品下重复出现（照 ERP 不合并行）。这里的合计是去掉重复后该料真正要下的量') +
+        '">同料去重 ' + repPrd + ' 个品号 · 合并毛需求 ' + Number(repGross).toLocaleString('zh-CN') +
+        ' · 合并净缺口 ' + Number(repNet).toLocaleString('zh-CN') + '</span>'
+      : '';
+  }
+  function matBadgeHtml(prd) {
+    var a = matAggOf()[prd];
+    if (!a || a.n < 2) return '';
+    matSeen[prd] = (matSeen[prd] || 0) + 1;
+    if (matSeen[prd] === 1) {
+      return '<span style="margin-left:6px;background:#eef2ff;color:#4338ca;border-radius:4px;padding:1px 6px;font-size:11px;font-weight:600" title="' +
+        escAttr('该料在本次选中的单里共 ' + a.n + ' 处：毛需求合计 ' + Number(a.gross).toLocaleString('zh-CN') +
+                '，材料仓 ' + Number(a.mat).toLocaleString('zh-CN') + ' 只在第一处抵冲（排产口径），去掉重复后净缺口 ' +
+                Number(a.net).toLocaleString('zh-CN')) +
+        '">同料 ' + a.n + ' 处 · 合并毛需求 ' + Number(a.gross).toLocaleString('zh-CN') +
+        (a.mat > 0 ? ' · 库存 ' + Number(a.mat).toLocaleString('zh-CN') + ' 只抵一次' : '') + '</span>';
+    }
+    return '<span style="margin-left:6px;background:#f3f4f6;color:#6b7280;border-radius:4px;padding:1px 6px;font-size:11px" title="' +
+      escAttr('该料第 ' + matSeen[prd] + ' 次出现；材料仓的抵冲已经在上面第一处做过，这行的数量是全额毛需求') +
+      '">同料 · ' + (a.mat > 0 ? '库存已在上面的行抵冲' : '见上面的行') + '</span>';
+  }
   for (var i = 0; i < items.length; i++) {
     var r = items[i];
     var isFg = r.is_fg;
@@ -2374,7 +2432,7 @@ function renderPMCTree(items, title) {
     var wayTip = wayQty > 0 ? ' title="全厂在途采购 ' + Number(wayQty).toLocaleString('zh-CN') + '（含别的单已下的；其中挂本单 ' + Number(ownWay).toLocaleString('zh-CN') + '）"' : '';
     var odrTip = odrQty > 0 ? ' title="全厂在单请购 ' + Number(odrQty).toLocaleString('zh-CN') + '（含别的单已请的；其中挂本单 ' + Number(ownOdr).toLocaleString('zh-CN') + '）"' : '';
     html += '<tr style="border-bottom:1px solid #f3f4f6;background:' + bg + '">';
-    html += '<td style="padding:8px 10px"><div style="max-width:min(44vw,760px);white-space:normal;overflow-wrap:anywhere" title="' + escAttr((r.prd_no||'') + ' ' + (r.prd_name||'')) + '"><span style="display:inline-block;margin-left:' + indent + 'px"></span><b style="font-variant-numeric:tabular-nums">' + escHtml(r.prd_no||'') + '</b> <span style="font-size:13px;color:var(--name)">' + escHtml(r.prd_name||'') + '</span></div></td>';
+    html += '<td style="padding:8px 10px"><div style="max-width:min(44vw,760px);white-space:normal;overflow-wrap:anywhere" title="' + escAttr((r.prd_no||'') + ' ' + (r.prd_name||'')) + '"><span style="display:inline-block;margin-left:' + indent + 'px"></span><b style="font-variant-numeric:tabular-nums">' + escHtml(r.prd_no||'') + '</b> <span style="font-size:13px;color:var(--name)">' + escHtml(r.prd_name||'') + '</span>' + matBadgeHtml(r.prd_no||'') + '</div></td>';
     html += '<td style="padding:8px 8px;text-align:center;white-space:nowrap"><span style="font-size:10px;font-weight:700;color:#fff;background:' + depthColor + ';padding:2px 5px;border-radius:10px">' + depthLabel + '</span></td>';
     html += '<td style="padding:8px 8px;text-align:right;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap">' + Number(realDemand).toLocaleString('zh-CN') + '</td>';
     html += '<td style="padding:8px 8px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap">' + grossHtml + '</td>';
