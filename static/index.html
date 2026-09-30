@@ -2262,7 +2262,6 @@ async function pmcPreviewBatch() {
       body: JSON.stringify({items: pmcSelected})
     });
     allRows = (data && data.items) || [];
-    window.__pmcBatchGroups = (data && data.groups) || null;
     // ⚠ 调整弹窗(pmcOpenAdjust)从 __pmcBomRows 里取该料的仓库明细 —— 批量预览以前没设这个
     //    变量，导致「调整」按钮全弹「该品号无原材料仓库存」（MAK 2026-09-30 报）
     window.__pmcBomRows = allRows;
@@ -2310,69 +2309,7 @@ function renderPMCTree(items, title) {
     : '';
   html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap"><div style="font-size:13px;color:var(--sub)">' + (title||'') + '</div>' + summaryTag + matSumTag() + '</div>';
 
-  // ① 按品号汇总（本次选中范围）—— PMC 下单看这张表
-  function matRollup() {
-    var roll = {}, order = [], curFg = '';
-    for (var ri = 0; ri < items.length; ri++) {
-      var rr = items[ri];
-      if (rr.is_fg) { curFg = rr.so_no_itm || ''; continue; }
-      var rp = rr.prd_no || '';
-      if (!roll[rp]) {
-        roll[rp] = { prd: rp, name: rr.prd_name || '', real: 0, mat: rr.mat_qty || 0,
-                     matUsed: 0, avail: 0, gap: 0, n: 0, fgs: {} };
-        order.push(rp);
-      }
-      var o = roll[rp];
-      o.n++;
-      o.real += (rr.real_demand || 0);
-      o.matUsed += (rr.mat_used || 0);
-      o.avail += (rr.total_avail || 0);
-      o.gap += (rr.gap || 0);
-      o.fgs[curFg] = 1;
-    }
-    var list = [];
-    for (var oi = 0; oi < order.length; oi++) list.push(roll[order[oi]]);
-    list.sort(function (a, b) { return b.gap - a.gap; });   // 缺得最多的排最前
-    return list;
-  }
-  var _roll = matRollup(), _rollRep = false, _rollNet = 0;
-  for (var _rj = 0; _rj < _roll.length; _rj++) { if (_roll[_rj].n > 1) _rollRep = true; _rollNet += _roll[_rj].gap; }
-  if ((window.__pmcBatchGroups || _rollRep) && _roll.length) {
-    var _rtr = '';
-    for (var _rk = 0; _rk < _roll.length; _rk++) {
-      var _q = _roll[_rk], _fgCnt = 0;
-      for (var _fk in _q.fgs) _fgCnt++;
-      _rtr += '<tr style="border-top:1px solid var(--border)">' +
-        '<td style="padding:6px 10px;font-weight:600;color:var(--name)">' + escHtml(_q.prd) + '</td>' +
-        '<td style="padding:6px 10px;color:var(--sub);white-space:nowrap">' + escHtml((_q.name || '').slice(0, 20)) + '</td>' +
-        '<td style="padding:6px 10px;text-align:right;font-variant-numeric:tabular-nums">' + Number(_q.real).toLocaleString('zh-CN') + '</td>' +
-        '<td style="padding:6px 10px;text-align:right;font-variant-numeric:tabular-nums">' + Number(_q.mat).toLocaleString('zh-CN') + '</td>' +
-        '<td style="padding:6px 10px;text-align:right;font-variant-numeric:tabular-nums;color:#4338ca">' + Number(_q.matUsed).toLocaleString('zh-CN') + '</td>' +
-        '<td style="padding:6px 10px;text-align:right;font-variant-numeric:tabular-nums">' + Number(_q.avail).toLocaleString('zh-CN') + '</td>' +
-        '<td style="padding:6px 10px;text-align:right;font-weight:700;font-variant-numeric:tabular-nums;color:' + (_q.gap > 0.0001 ? '#dc2626' : '#16a34a') + '">' + Number(_q.gap).toLocaleString('zh-CN') + '</td>' +
-        '<td style="padding:6px 10px;text-align:center;color:var(--sub)">' + _q.n + '</td>' +
-        '<td style="padding:6px 10px;text-align:center;color:var(--sub)">' + _fgCnt + '</td>' +
-      '</tr>';
-    }
-    html += '<div style="margin-bottom:14px;border:1px solid var(--border);border-radius:10px;overflow:hidden">' +
-      '<div style="padding:9px 12px;background:#f9fafb;font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
-        '<span>① 按品号汇总 · 下单用</span>' +
-        '<span style="font-weight:600;color:#dc2626">合计缺口 ' + Number(_rollNet).toLocaleString('zh-CN') + '</span>' +
-        '<span style="font-weight:400;color:var(--sub)">' +
-          (window.__pmcBatchGroups ? '本次选中的 ' + window.__pmcBatchGroups.length + ' 条指令单 · ' : '') +
-          '材料仓 / 在途跨单跨行只抵一次（跟生成 MPS 落库同一套规则）</span>' +
-      '</div>' +
-      '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:1080px">' +
-      '<thead><tr style="background:#fff;color:var(--sub);border-bottom:1px solid var(--border)">' +
-      '<th style="padding:6px 10px;text-align:left">品号</th><th style="padding:6px 10px;text-align:left">品名</th>' +
-      '<th style="padding:6px 10px;text-align:right">合并需求</th><th style="padding:6px 10px;text-align:right">原材料仓</th>' +
-      '<th style="padding:6px 10px;text-align:right" title="本次真正扣到的材料仓（同一批库存只抵一次，所以多行时只有前面的行能抵到）">其中本次抵冲</th>' +
-      '<th style="padding:6px 10px;text-align:right" title="挂本单的在途采购 + 在单请购 + 别人多下的部分">合计(在途/请购)</th>' +
-      '<th style="padding:6px 10px;text-align:right">净缺口</th><th style="padding:6px 10px;text-align:center">出现处数</th>' +
-      '<th style="padding:6px 10px;text-align:center">涉及指令单</th></tr></thead><tbody>' + _rtr + '</tbody></table></div></div>';
-  }
-
-  // ② BOM 展开明细
+  // BOM 展开明细
   html += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:1470px"><thead><tr style="background:#f3f4f6">';
   html += '<th style="padding:8px 10px;text-align:left;min-width:300px">品号</th>';
   html += '<th style="padding:8px 8px;text-align:center;white-space:nowrap;min-width:64px">层</th>';
