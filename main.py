@@ -957,6 +957,7 @@ async def completion_transfer_list(
     cur.execute(f"""
         SELECT
             t.IC_NO,
+            CONVERT(VARCHAR(10), MIN(t.IC_DD), 120) AS ic_dd,   -- 调拨日期（KND=30 那行的单据日期）
             t.PRD_NO,
             p.NAME,
             t.WH1,
@@ -988,24 +989,25 @@ async def completion_transfer_list(
 
     items = []
     for r in rows:
-        total = float(r[5] or 0)
-        done = float(r[6] or 0)
+        total = float(r[6] or 0)      # 索引整体后移 1（SELECT 里 IC_NO 后插了 ic_dd）
+        done = float(r[7] or 0)
         remaining = total - done
         if remaining > 0:
             items.append({
                 "ic_no":         g(r[0]),
-                "prd_no":        g(r[1]),
-                "prd_name":      g(r[2]),
-                "wh1":           g(r[3]),
-                "wh1_name":      g(r[4]),
+                "ic_dd":         g(r[1]) or '',
+                "prd_no":        g(r[2]),
+                "prd_name":      g(r[3]),
+                "wh1":           g(r[4]),
+                "wh1_name":      g(r[5]),
                 "total_qty":     total,
                 "transfer_qty":  done,
                 "remaining_qty": remaining,
-                "ref":   g(r[7]),
-                "cus":   g(r[8]),
-                "ddjh":  g(r[9]),
-                "dzhw":  r[10] or 0,
-                "jzhw":  r[11] or 0,
+                "ref":   g(r[8]),
+                "cus":   g(r[9]),
+                "ddjh":  g(r[10]),
+                "dzhw":  r[11] or 0,
+                "jzhw":  r[12] or 0,
             })
     return {"items": items}
 

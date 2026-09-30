@@ -1183,6 +1183,7 @@ function renderCompletionList() {
     return `<tr style="cursor:pointer;${bg};border-bottom:1px solid var(--border)" onclick="openCompletionModal('${escJs(t.ic_no)}','${escJs(t.prd_no)}')">
       <td style="padding:8px 10px;font-size:12px;color:var(--sub)">${i+1}</td>
       <td style="padding:8px 10px;font-size:12px;font-weight:600">${fmt(t.ic_no)}</td>
+      <td style="padding:8px 10px;font-size:12px;text-align:center;color:var(--sub)">${fmt(t.ic_dd || '—')}</td>
       <td style="padding:8px 10px;font-size:12px">${fmt(t.prd_no)}</td>
       <td style="padding:8px 10px;font-size:13px;color:var(--name);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${fmt(t.prd_name||'')}">${fmt(t.prd_name||'').substring(0,15)}</td>
       <td style="padding:8px 10px;font-size:12px;text-align:center">${fmt(t.wh1_name||t.wh1||'')}</td>
@@ -1215,6 +1216,7 @@ ${stashedHtml}
       <tr style="background:var(--bg)">
         <th style="padding:8px 10px;text-align:left;font-size:11px;color:var(--sub);border-bottom:1px solid var(--border)">#</th>
         <th style="padding:8px 10px;text-align:left;font-size:11px;color:var(--sub);border-bottom:1px solid var(--border)">IC单号</th>
+        <th style="padding:8px 10px;text-align:center;font-size:11px;color:var(--sub);border-bottom:1px solid var(--border)">调拨日期</th>
         <th style="padding:8px 10px;text-align:left;font-size:11px;color:var(--sub);border-bottom:1px solid var(--border)">品号</th>
         <th style="padding:8px 10px;text-align:left;font-size:11px;color:var(--sub);border-bottom:1px solid var(--border)">品名</th>
         <th style="padding:8px 10px;text-align:center;font-size:11px;color:var(--sub);border-bottom:1px solid var(--border)">仓</th>
@@ -1321,7 +1323,8 @@ async function openCompletionModal(icNo, prdNo) {
       const status = thisOne ? (m.fulfilled ? '\u2705' : '\u26a0\ufe0f') : (m.fulfilled ? '\u2705' : '\u274c');
       const avail = thisOne ? (thisOne.available||0).toFixed(1) : (m.total_available||0).toFixed(1);
       fgRows += '<tr style="border-bottom:1px solid #f3f4f6;background:#fff">'
-        + '<td colspan="2" style="padding:5px 8px;font-size:12px;border-right:1px solid #e5e7eb">' + fmt(m.prd_no) + '</td>'
+        + '<td colspan="2" style="padding:5px 8px;font-size:12px;border-right:1px solid #e5e7eb">' + fmt(m.prd_no)
+        + (m.prd_name ? '<span style="color:var(--name);font-size:11px;margin-left:6px">' + fmt(m.prd_name) + '</span>' : '') + '</td>'
         + '<td style="padding:5px 8px;font-size:12px;text-align:right;font-weight:600;border-right:1px solid #e5e7eb">' + m.ratio + '</td>'
         + '<td style="padding:5px 8px;font-size:12px;text-align:right;border-right:1px solid #e5e7eb;color:' + (m.fulfilled ? '#16a34a' : '#d97706') + '">' + status + ' ' + avail + '</td>'
         + '</tr>';
@@ -1473,7 +1476,7 @@ async function openBatchCompletionModal() {
 
     // BOM sub-items header
     rows += '<tr style="background:#dbeafe;font-size:11px">'
-      + '<th style="padding:4px 8px;font-weight:600;color:#1e40af;text-align:left;border-bottom:1px solid #bfdbfe;border-right:1px solid #e5e7eb" colspan="2">品号</th>'
+      + '<th style="padding:4px 8px;font-weight:600;color:#1e40af;text-align:left;border-bottom:1px solid #bfdbfe;border-right:1px solid #e5e7eb" colspan="2">品号 / 品名</th>'
       + '<th style="padding:4px 8px;font-weight:600;color:#1e40af;text-align:right;border-bottom:1px solid #bfdbfe;border-right:1px solid #e5e7eb">配比</th>'
       + '<th style="padding:4px 8px;font-weight:600;color:#1e40af;text-align:right;border-bottom:1px solid #bfdbfe;border-right:1px solid #e5e7eb">×数量</th>'
       + '<th style="padding:4px 8px;font-weight:600;color:#1e40af;text-align:right;border-bottom:1px solid #bfdbfe;border-right:1px solid #e5e7eb">需用量</th>'
@@ -1496,7 +1499,8 @@ async function openBatchCompletionModal() {
         const tRow = compPickTransfer(m, need, item.transfer_ic_no);
         const ok = avail >= need;
         rows += '<tr style="border-bottom:1px solid #f3f4f6;background:#fff" data-item-idx="' + i + '" data-prd="' + m.prd_no + '">'
-          + '<td colspan="2" style="padding:5px 8px;font-size:12px;border-right:1px solid #e5e7eb">' + fmt(m.prd_no) + '</td>'
+          + '<td colspan="2" style="padding:5px 8px;font-size:12px;border-right:1px solid #e5e7eb">' + fmt(m.prd_no)
+          + (m.prd_name ? '<span style="color:var(--name);font-size:11px;margin-left:6px">' + fmt(m.prd_name) + '</span>' : '') + '</td>'
           + '<td style="padding:5px 8px;font-size:12px;text-align:right;font-weight:600;border-right:1px solid #e5e7eb">' + ratio + '</td>'
           + '<td style="padding:5px 8px;font-size:12px;text-align:right;border-right:1px solid #e5e7eb">×' + fgQty + '</td>'
           + '<td style="padding:5px 8px;font-size:12px;text-align:right;font-weight:700;color:#2563eb;border-right:1px solid #e5e7eb" class="bom-need">' + (fgQty > 0 ? need : '—') + '</td>'
