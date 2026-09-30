@@ -3372,6 +3372,23 @@ def _so_line_remain(so_no_itm, db_conn):
     return _so_line_info(so_no_itm, db_conn)[0]
 
 
+def _plant_unshipped(prd_no, db_conn):
+    """全厂该品号的「销售未出」合计（所有未出货的销售订单行，含本单、含系统未审单）。
+
+    口径同 ERP 的 VW_SO_QTY（USABLE=1 / CLS_ID=0 / OS_ID='SO' / WJ<>1 / QTY>SAQTY），
+    但**不套 VW_SO_QTY 的 APP_ID=1 限制**：PMC 待分析单本身常是 APP_ID=0（人工已审、系统未审），
+    套上去会把正在看的这张单漏掉，毛需求反而比本单需求还小。
+    """
+    cur = db_conn.cursor()
+    cur.execute("""
+        SELECT ISNULL(SUM(QTY - ISNULL(SAQTY,0)), 0) FROM VW_POS WITH(NOLOCK)
+        WHERE PRD_NO=%s AND USABLE=1 AND ISNULL(CLS_ID,0)=0 AND OS_ID='SO'
+          AND ISNULL(WJ,0)<>1 AND QTY > ISNULL(SAQTY,0)
+    """, (prd_no.encode("gbk"),))
+    r = cur.fetchone()
+    return round(float(r[0] or 0), 4)
+
+
 @app.get("/api/pmc/preview_mps")
 async def pmc_preview_mps(
     so_no_itm: str = Query(...),
@@ -3389,6 +3406,8 @@ async def pmc_preview_mps(
     if demand_qty is None:
         demand_qty = qty
         ref = ref or ''
+    # 全厂销售未出（含本单）：屏上「毛需求」列的根，见文件末尾 allocate 处的说明
+    plant_unshipped = _plant_unshipped(prd_no, conn)
     comp_rows = _mps_bom_tree(prd_no, conn, qty=demand_qty)
     all_prds = [prd_no] + [r[0] for r in comp_rows]
     stock_map = _v2_stock(all_prds, conn)
@@ -3427,7 +3446,8 @@ async def pmc_preview_mps(
             "qty": round(c_qty, 4),
             "qty_on_odr": qty_on_odr,
             "real_demand": round(real_demand, 4),
-            "gross_demand": round(c_qty, 4),    # 毛需求：由 allocate 填（父件毛需求×配比）；成品行 = 销售未出
+            "gross_demand": round(c_qty, 4),    # 本单毛需求：由 allocate 填（父件毛需求×配比）；成品行 = 本单销售未出
+            "gross_plant": round(c_qty, 4),     # 全厂毛需求：全厂销售未出展开（屏上「毛需求」列用它）
             "mat_qty": mat_qty, "prod_qty": prod_qty,
             "qty_on_way": qty_on_way,
             "total_stock": round(total_stock, 2),
@@ -3464,6 +3484,8 @@ async def pmc_preview_mps(
         "qty_on_odr": fg_on_odr,
         "so_remain": round(demand_qty, 4),   # 销售未出 = QTY-SAQTY
         "real_demand": round(fg_real_demand, 4),
+        "gross_demand": round(demand_qty, 4),        # 本单口径毛需求（品号汇总用）
+        "gross_plant": round(plant_unshipped, 4),    # 全厂口径毛需求（屏上「毛需求」列用）
         "mat_qty": round(fg_stock.get('mat_qty', 0), 2),
         "prod_qty": round(fg_stock.get('prod_qty', 0), 2),
         "qty_on_way": fg_way,
@@ -3513,23 +3535,31 @@ async def pmc_preview_mps(
         """参与扣减的供给 = 全厂在途/在单请购(池) + 材料仓。生产仓已被领走，不参与。"""
         return float((row.get('pool_way') or 0) + (row.get('pool_odr') or 0) + (row.get('mat_qty') or 0))
 
-    def allocate(parent_row, parent_idx, parent_demand, parent_gross):
+    def allocate(parent_row, parent_idx, parent_demand, parent_gross, gkey='gross_demand'):
         """自顶向下分配 BOM 需求；父件缺口与屏上「缺口」列同口径。
-        parent_gross = 毛需求（从销售未出不扣任何库存/在途展开），只上屏给「这张单总共要用多少料」。"""
+        parent_gross = 毛需求（从销售未出不扣任何库存/在途展开）。
+        gkey = 写哪个毛需求字段：gross_demand 本单口径（品号汇总用）/ gross_plant 全厂口径（只上屏）。
+        两遍分发 real_demand 结果相同（只依赖父件缺口），所以可按字段跑两遍。"""
         parent_gap = max(0.0, parent_demand - net_avail(parent_row))
         for i in edges.get(parent_idx, []):
             child_row = rows[i + 1]
             ratio = comp_rows[i][6]
             # 子件需求 = 父件缺口 × BOM配比；毛需求 = 父件毛需求 × BOM配比
             child_row['real_demand'] = round(parent_gap * ratio, 4)
-            child_row['gross_demand'] = round(parent_gross * ratio, 4)
-            allocate(child_row, i, child_row['real_demand'], child_row['gross_demand'])
+            child_row[gkey] = round(parent_gross * ratio, 4)
+            allocate(child_row, i, child_row['real_demand'], child_row[gkey], gkey)
 
     # FG 真实需求 = 销售未出；成品自身也先扣库存/池（货够就不用做，子件也不用要料）
-    # 毛需求起点 = 销售未出（不扣任何料）→ 屏上「毛需求」列不会被跨单乐观影响
+    # 毛需求起点 = 销售未出（不扣任何料）
     rows[0]['real_demand'] = demand_qty
     rows[0]['gross_demand'] = demand_qty
+    rows[0]['gross_plant'] = plant_unshipped
     allocate(rows[0], -1, demand_qty, demand_qty)
+    # 屏上「毛需求」= 全厂该品号销售未出展开（前面单没出的 + 本单）→ MAK 2026-09-29 定
+    # ⚠ gross_demand 保持本单口径不动：品号汇总 _calc_prd_summary 靠跨单加总它，
+    #    这里若换成全厂数，汇总会把同一个全厂数按单数重复计一遍。
+    if abs(plant_unshipped - demand_qty) > 1e-6:
+        allocate(rows[0], -1, demand_qty, plant_unshipped, gkey='gross_plant')
 
     # 计算最终 gap（④ 扣在途+在单请购）
     for r in rows:
