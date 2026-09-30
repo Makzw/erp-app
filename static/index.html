@@ -2328,13 +2328,16 @@ function renderPMCTree(items, title) {
       var mp = mr.prd_no || '';
       var mgross = (mr.gross_plant === undefined || mr.gross_plant === null) ? (mr.gross_demand || 0) : mr.gross_plant;
       var mpool = (mr.pool_total === undefined || mr.pool_total === null) ? ((mr.pool_way || 0) + (mr.pool_odr || 0)) : mr.pool_total;
-      if (!agg[mp]) agg[mp] = { n: 0, gross: 0, mat: mr.mat_qty || 0, pool: mpool };
+      if (!agg[mp]) agg[mp] = { n: 0, gross: 0, mat: mr.mat_qty || 0, pool: mpool, own: 0, real: 0 };
       agg[mp].n++;
       agg[mp].gross += mgross;
+      agg[mp].real += (mr.real_demand || mr.gap || 0);
+      agg[mp].own = Math.max(agg[mp].own, (mr.qty_on_way || 0) + (mr.qty_on_odr || 0));
     }
     for (var mpk in agg) {
-      // 每个品号都算：同一品号的材料仓/池只扣一次（去重口径）
-      agg[mpk].net = Math.max(0, agg[mpk].gross - agg[mpk].mat - agg[mpk].pool);
+      // 每个品号都算：同一品号的材料仓只扣一次，且只扣「挂本单」的池
+      // （别人的在途/请购不是本单供给 —— MAK 2026-09-30：不能因为别人的请购把我的需求抹成 0）
+      agg[mpk].net = Math.max(0, agg[mpk].real - agg[mpk].mat - agg[mpk].own);
     }
     matAggCache = agg;
     return agg;
@@ -2388,7 +2391,11 @@ function renderPMCTree(items, title) {
     var realDemand = r.real_demand || 0;
     var soRemain = r.so_remain || 0;
     // 缺口 = 需求 − 合计(池) − 材料仓（下单口径；生产仓已被领走不扣；同品号多单时以品号净缺口为准）
-    var gap = (r.net_gap === undefined || r.net_gap === null) ? (r.gap || 0) : r.net_gap;
+    // ⚠ 缺口 = 本单口径（需求 − 挂本单的池 − 材料仓）：别人的在途/在单请购不算本单供给。
+    //   曾经这里用 net_gap（品号级、全厂池）→ 别人的请购一挂就把本单缺口抹成 0、请购默认值也跟着变 0
+    //   （MAK 2026-09-30：一点料都不是自己的，却因为别人的请购导致我的需求为 0，不合理）。
+    //   全厂口径仍然保留在「品号净缺」小字 + 汇总页里。
+    var gap = (r.gap === undefined || r.gap === null) ? (r.net_gap || 0) : r.gap;
     var supply = totalStock + matQty;   // 参与缺口的供给 = 在途/在单请购 + 材料仓（生产仓已被领走，不参与）
     var bg = isFg ? '#dbeafe' : (gap > 0 ? '#fef9c3' : '');
     // ponytail: 取消缩进，全部并排显示
@@ -2410,9 +2417,15 @@ function renderPMCTree(items, title) {
     if (prdNet !== undefined && prdNet !== null && Math.abs(Number(prdNet) - gap) > 0.01) {
       var netTxt = Number(prdNet).toLocaleString('zh-CN');
       var netTip = '该品号跨 ' + (r.prd_orders || 1) + ' 张待分析单：需求合计 ' +
-        Number(r.prd_need || 0).toLocaleString('zh-CN') + ' − 在途/在单请购 ' + Number(r.prd_pool || 0).toLocaleString('zh-CN') +
+        Number(r.prd_need || 0).toLocaleString('zh-CN') + ' − 全厂在途/在单请购 ' + Number(r.prd_pool || 0).toLocaleString('zh-CN') +
         ' − 材料仓 ' + Number(r.prd_mat || 0).toLocaleString('zh-CN') + ' = 净缺口 ' + netTxt +
-        (Number(r.prd_mat || 0) !== Number(r.prd_stock || 0) ? '（生产仓 ' + Number((r.prd_stock || 0) - (r.prd_mat || 0)).toLocaleString('zh-CN') + ' 已被领走，不扣）' : '');
+        (Number(r.prd_mat || 0) !== Number(r.prd_stock || 0) ? '（生产仓 ' + Number((r.prd_stock || 0) - (r.prd_mat || 0)).toLocaleString('zh-CN') + ' 已被领走，不扣）' : '') +
+        (function() {
+          var ag = matAggOf()[r.prd_no || ''] || { own: 0 };
+          return Number(r.prd_pool || 0) > Number(ag.own || 0) + 0.01
+            ? '\n⚠ 池子里 ' + Number(Number(r.prd_pool || 0) - Number(ag.own || 0)).toLocaleString('zh-CN') + ' 是别的单请的/在途的，不一定能给你用（挂本单 ' + Number(ag.own || 0).toLocaleString('zh-CN') + '）'
+            : '';
+        })();
       gapHtml += '<div title="' + escAttr(netTip) + '" style="font-size:12px;margin-top:1px;white-space:nowrap;color:' +
         (prdNet > 0 ? '#b45309' : '#16a34a') + '">品号净缺 ' + (prdNet > 0 ? netTxt : '0') + '</div>';
     }
@@ -2420,7 +2433,8 @@ function renderPMCTree(items, title) {
     var canQd = !isFg && String(r.knd || '') === '4';
     var qdDef = 0;
     var pnet = Number(r.prd_net);
-    if (!isNaN(pnet) && pnet > 0) { qdDef = pnet; } else if (gap > 0) { qdDef = gap; }
+    // 默认数量按本单缺口（别人单的池子不能把本单的请购数量压成 0）；没有本单缺口才退回品号净缺
+    if (gap > 0) { qdDef = gap; } else if (!isNaN(pnet) && pnet > 0) { qdDef = pnet; }
     var qdDefTxt = qdDef > 0 ? String(Math.round(qdDef * 1000) / 1000) : '';
     var qdcHtml = canQd
       ? '<div style="display:flex;align-items:center;gap:6px;justify-content:flex-end">' +
@@ -2433,8 +2447,10 @@ function renderPMCTree(items, title) {
     // 毛需求 = 全厂该品号销售未出展开（含本单，一眼看这个品号总共要用多少料）
     var gross = (grossShow === undefined || grossShow === null) ? (isFg ? soRemain : 0) : grossShow;
     var grossHtml = gross > 0 ? '<span style="color:#6366f1;font-weight:600;font-variant-numeric:tabular-nums" title="\u6bdb\u9700\u6c42 ' + Number(gross).toLocaleString('zh-CN') + '\uff08\u4e0d\u6263\u5e93\u5b58/\u5728\u9014\uff09">' + Number(gross).toLocaleString('zh-CN') + '</span>' : '<span style="font-variant-numeric:tabular-nums">-</span>';
-    var wayHtml = wayQty > 0 ? '<span style="color:#f59e0b;font-weight:600;font-variant-numeric:tabular-nums">' + Number(wayQty).toLocaleString('zh-CN') + '</span>' : '<span style="font-variant-numeric:tabular-nums">-</span>';
-    var odrHtml = odrQty > 0 ? '<span style="color:#8b5cf6;font-weight:600;font-variant-numeric:tabular-nums">' + Number(odrQty).toLocaleString('zh-CN') + '</span>' : '<span style="font-variant-numeric:tabular-nums">-</span>';
+    // 池子是「全厂」的：挂本单的那部分才算本单供给。一点都没挂本单的，灰色 + 别单角标，
+    // 免得看到「在单请购 1499」以为这批料是自己的（其实是别的单请的）。
+    var wayHtml = wayQty > 0 ? '<span style="color:' + ((r.qty_on_way || 0) > 0 ? '#f59e0b' : '#9ca3af') + ';font-weight:' + ((r.qty_on_way || 0) > 0 ? '600' : '400') + ';font-variant-numeric:tabular-nums">' + Number(wayQty).toLocaleString('zh-CN') + ((r.qty_on_way || 0) > 0 ? '' : '<sup style="font-size:9px;margin-left:2px">别单</sup>') + '</span>' : '<span style="font-variant-numeric:tabular-nums">-</span>';
+    var odrHtml = odrQty > 0 ? '<span style="color:' + ((r.qty_on_odr || 0) > 0 ? '#8b5cf6' : '#9ca3af') + ';font-weight:' + ((r.qty_on_odr || 0) > 0 ? '600' : '400') + ';font-variant-numeric:tabular-nums">' + Number(odrQty).toLocaleString('zh-CN') + ((r.qty_on_odr || 0) > 0 ? '' : '<sup style="font-size:9px;margin-left:2px">别单</sup>') + '</span>' : '<span style="font-variant-numeric:tabular-nums">-</span>';
     // 在途/在单请购现在是「全厂池」：鼠标悬停说明这里面有多少是挂本单的
     var ownWay = r.qty_on_way || 0, ownOdr = r.qty_on_odr || 0;
     var wayTip = wayQty > 0 ? ' title="全厂在途采购 ' + Number(wayQty).toLocaleString('zh-CN') + '（含别的单已下的；其中挂本单 ' + Number(ownWay).toLocaleString('zh-CN') + '）"' : '';
@@ -2462,7 +2478,7 @@ function renderPMCTree(items, title) {
   html += '<span>在途=<span style="color:#f59e0b;font-weight:600">全厂在途采购</span>（含别的单已下的）</span>';
   html += '<span>在单请购=<span style="color:#8b5cf6;font-weight:600">全厂在单请购</span>（含别的单已请的）</span>';
   html += '<span>合计=<span style="font-weight:600">在途+在单请购</span></span>';
-  html += '<span>缺口=需求−合计−材料仓，<span style="color:var(--sub)">这就是该买多少；生产仓已被领走不扣（同品号多单时看品号净缺）</span></span>';
+  html += '<span>缺口=本单口径（本单需求 − 挂本单的在途/请购 − 材料仓），<span style="color:var(--sub)">这就是本单该买多少；别人的在途/请购只计入品号净缺小字，不算本单供给</span></span>';
   html += '<span>请购=<span style="color:#16a34a;font-weight:600">勾选原材料（自制件不请购）</span> + 数量，生成一张 QD 请购单</span>';
   html += '</div>';
 
