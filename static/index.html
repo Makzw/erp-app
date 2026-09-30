@@ -2288,10 +2288,11 @@ function renderPMCTree(items, title) {
 
   var html = '<div style="padding:12px">';
   html += '<div style="margin-bottom:12px"><button onclick="loadPMC()" style="background:#6b7280;color:#fff;border:none;border-radius:6px;padding:6px 14px;cursor:pointer;font-size:13px">\u2190 \u8fd4\u56de\u5217\u8868</button></div>';
-  var totalGap = 0, gapCount = 0;
-  for (var gi = 0; gi < items.length; gi++) { if ((items[gi].gap||0) > 0) { totalGap += items[gi].gap||0; gapCount++; } }
+  // 页头缺口 = 去重口径（同一品号的材料仓/池只扣一次）；原来是逐行 gap 相加，同料重复时会偏小
+  var _dedup = matDedupTotal();
+  var totalGap = _dedup.net, gapCount = _dedup.cnt;
   var summaryTag = fgRow ? (totalGap > 0
-    ? '<span style="background:#fee2e2;color:#dc2626;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:600">\u7f3a ' + totalGap.toLocaleString('zh-CN') + ' \u4ef6 \u00b7 ' + gapCount + ' \u9879\u7f3a\u53e3</span>'
+    ? '<span style="background:#fee2e2;color:#dc2626;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:600">\u7f3a ' + totalGap.toLocaleString('zh-CN') + ' \u4ef6 \u00b7 ' + gapCount + ' \u4e2a\u54c1\u53f7\u7f3a\u53e3</span>'
     : '<span style="background:#dcfce7;color:#16a34a;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:600">✓ \u5168\u90e8\u5145\u8db3</span>')
     : '';
   html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap"><div style="font-size:13px;color:var(--sub)">' + (title||'') + '</div>' + summaryTag + matSumTag() + '</div>';
@@ -2332,23 +2333,30 @@ function renderPMCTree(items, title) {
       agg[mp].gross += mgross;
     }
     for (var mpk in agg) {
-      if (agg[mpk].n < 2) continue;
+      // 每个品号都算：同一品号的材料仓/池只扣一次（去重口径）
       agg[mpk].net = Math.max(0, agg[mpk].gross - agg[mpk].mat - agg[mpk].pool);
     }
     matAggCache = agg;
     return agg;
   }
+  function matDedupTotal() {
+    var agg = matAggOf(), net = 0, cnt = 0;
+    for (var kk in agg) {
+      net += agg[kk].net;
+      if (agg[kk].net > 0.0001) cnt++;
+    }
+    return { net: net, cnt: cnt };
+  }
   function matSumTag() {
-    var agg = matAggOf(), repPrd = 0, repGross = 0, repNet = 0;
+    var agg = matAggOf(), repPrd = 0, repGross = 0;
     for (var mpk2 in agg) {
       if (agg[mpk2].n < 2) continue;
-      repPrd++; repGross += agg[mpk2].gross; repNet += agg[mpk2].net;
+      repPrd++; repGross += agg[mpk2].gross;
     }
     return repPrd > 0
       ? '<span style="background:#eef2ff;color:#4338ca;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:600" title="' +
         escAttr('同品号在多个成品下重复出现（照 ERP 不合并行）。这里的合计是去掉重复后该料真正要下的量') +
-        '">同料去重 ' + repPrd + ' 个品号 · 合并毛需求 ' + Number(repGross).toLocaleString('zh-CN') +
-        ' · 合并净缺口 ' + Number(repNet).toLocaleString('zh-CN') + '</span>'
+        '">同料去重 ' + repPrd + ' 个品号 · 合并毛需求 ' + Number(repGross).toLocaleString('zh-CN') + '</span>'
       : '';
   }
   function matBadgeHtml(prd) {
