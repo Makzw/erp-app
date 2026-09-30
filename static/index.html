@@ -2331,7 +2331,8 @@ function renderPMCTree(items, title) {
       if (!agg[mp]) agg[mp] = { n: 0, gross: 0, mat: mr.mat_qty || 0, pool: mpool, own: 0, real: 0 };
       agg[mp].n++;
       agg[mp].gross += mgross;
-      agg[mp].real += (mr.real_demand || mr.gap || 0);
+      // ⚠ 不能用 real_demand || gap：需求真的是 0 的行会退化成负数缺口，合并需求就成负数了
+      agg[mp].real += (mr.real_demand === undefined || mr.real_demand === null) ? (mr.gap || 0) : mr.real_demand;
       agg[mp].own = Math.max(agg[mp].own, (mr.qty_on_way || 0) + (mr.qty_on_odr || 0));
     }
     for (var mpk in agg) {
@@ -2351,15 +2352,15 @@ function renderPMCTree(items, title) {
     return { net: net, cnt: cnt };
   }
   function matSumTag() {
-    var agg = matAggOf(), repPrd = 0, repGross = 0;
+    var agg = matAggOf(), repPrd = 0, repReal = 0;
     for (var mpk2 in agg) {
       if (agg[mpk2].n < 2) continue;
-      repPrd++; repGross += agg[mpk2].gross;
+      repPrd++; repReal += agg[mpk2].real;
     }
     return repPrd > 0
       ? '<span style="background:#eef2ff;color:#4338ca;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:600" title="' +
         escAttr('同品号在多个成品下重复出现（照 ERP 不合并行）。这里的合计是去掉重复后该料真正要下的量') +
-        '">同料去重 ' + repPrd + ' 个品号 · 合并毛需求 ' + Number(repGross).toLocaleString('zh-CN') + '</span>'
+        '">同料去重 ' + repPrd + ' 个品号 · 合并需求 ' + Number(repReal).toLocaleString('zh-CN') + '</span>'
       : '';
   }
   function matBadgeHtml(prd) {
@@ -2368,15 +2369,16 @@ function renderPMCTree(items, title) {
     matSeen[prd] = (matSeen[prd] || 0) + 1;
     if (matSeen[prd] === 1) {
       return '<span style="margin-left:6px;background:#eef2ff;color:#4338ca;border-radius:4px;padding:1px 6px;font-size:11px;font-weight:600" title="' +
-        escAttr('该料在本次选中的单里共 ' + a.n + ' 处：毛需求合计 ' + Number(a.gross).toLocaleString('zh-CN') +
-                '，材料仓 ' + Number(a.mat).toLocaleString('zh-CN') + ' 只在第一处抵冲（排产口径），去掉重复后净缺口 ' +
+        escAttr('该料在本次选中的单里共 ' + a.n + ' 处：需求合计 ' + Number(a.real).toLocaleString('zh-CN') +
+                (a.gross ? '（全厂毛需求 ' + Number(a.gross).toLocaleString('zh-CN') + '）' : '') +
+                '，材料仓 ' + Number(a.mat).toLocaleString('zh-CN') + ' 只抵一次，去掉重复后净缺口 ' +
                 Number(a.net).toLocaleString('zh-CN')) +
-        '">同料 ' + a.n + ' 处 · 合并毛需求 ' + Number(a.gross).toLocaleString('zh-CN') +
+        '">同料 ' + a.n + ' 处 · 合并需求 ' + Number(a.real).toLocaleString('zh-CN') +
         (a.mat > 0 ? ' · 库存 ' + Number(a.mat).toLocaleString('zh-CN') + ' 只抵一次' : '') + '</span>';
     }
     return '<span style="margin-left:6px;background:#f3f4f6;color:#6b7280;border-radius:4px;padding:1px 6px;font-size:11px" title="' +
       escAttr('该料第 ' + matSeen[prd] + ' 次出现；材料仓的抵冲已经在上面第一处做过，这行的数量是全额毛需求') +
-      '">同料 · ' + (a.mat > 0 ? '库存已在上面的行抵冲' : '见上面的行') + '</span>';
+      '">同料 · 需求已合并（见上面的行）' + (a.mat > 0 ? ' · 库存已抵冲' : '') + '</span>';
   }
   for (var i = 0; i < items.length; i++) {
     var r = items[i];
