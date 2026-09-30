@@ -502,6 +502,7 @@
   <div class="tab-btn" data-tab="transfer">🔄 调拨</div>
   <div class="tab-btn" data-tab="completion">🏭 完工</div>
   <div class="tab-btn" data-tab="pmc">📊 PMC</div>
+  <div class="tab-btn" data-tab="globalnet">🌐 全局净需求</div>
 </div>
 
 <div class="search-bar" id="searchBar" style="display:none">
@@ -597,6 +598,8 @@ function handleSearch(v) {
     case 'qts':
       if (!q) { renderQts(rawData, ''); break; }
       renderQts(rawData.filter(r => JSON.stringify(r).toLowerCase().includes(q.toLowerCase())), q); break;
+    case 'globalnet':
+      gnQ = q; gnRenderRows(); break;
     case 'smo':
       if (!q) { loadSmo(); break; }
       loadStockSuggestions(q); break;
@@ -671,6 +674,8 @@ mainTabBar.addEventListener('click', e => {
         loadCompletion();
       } else if (curTab === 'pmc') {
         loadPMC();
+      } else if (curTab === 'globalnet') {
+        loadGlobalNet();
       } else {
         loadQts();
       }
@@ -3395,6 +3400,169 @@ function renderStockBatchTools() {
         oninput="stockBatchTools[${i}].qty=parseInt(this.value)||1">
       <button onclick="removeBatchTool(${i})" style="width:26px;height:26px;border-radius:50%;border:none;background:#FEE2E2;color:#DC2626;font-size:14px;cursor:pointer">×</button>
     </div>`).join('');
+}
+
+// ── 全局净需求（毛需求 − 供给）────────────────────────────────────────────────
+// 只读：所有成品销售未出 → BOM 展开加总 → 减 材料仓/生产仓/在途/请购。
+// 后端 GET /api/pmc/global_net（缓存 10 分钟，refresh=1 强制重算）
+let gnData = null;
+let gnQ = '';
+let gnOnlyNet = true;
+let gnOnlyAlert = false;
+
+function gnFmt(v, d) {
+  var n = Number(v == null ? 0 : v);
+  if (!isFinite(n)) return '—';
+  return n.toLocaleString('zh-CN', { maximumFractionDigits: (d === undefined ? 2 : d) });
+}
+function gnEsc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function gnAlertSoon() { return null; }
+function gnHasAlert(prd, alerts) {
+  var ks = ['multi_owner', 'unknown_owner', 'no_bom_missing', 'dirty'];
+  for (var i = 0; i < ks.length; i++) {
+    var arr = (alerts && alerts[ks[i]]) || [];
+    for (var j = 0; j < arr.length; j++) if (arr[j].prd === prd) return true;
+  }
+  return false;
+}
+
+async function loadGlobalNet(refresh) {
+  var el = $id('content');
+  if (!gnData || refresh) {
+    el.innerHTML = '<div class="state-msg"><div class="spinner"></div>正在全表展开 BOM…（几秒）</div>';
+  }
+  try {
+    var d = await api(BASE + '/pmc/global_net' + (refresh ? '?refresh=1' : ''));
+    if (d && d.err) { el.innerHTML = '<div class="error-msg">计算失败：' + gnEsc(d.err) + '</div>'; return; }
+    gnData = d || {};
+    renderGlobalNet();
+  } catch (e) {
+    el.innerHTML = '<div class="error-msg">' + gnEsc(e.message) + '</div>';
+  }
+}
+
+function gnRows() {
+  var items = (gnData && gnData.items) || [];
+  var alerts = (gnData && gnData.alerts) || {};
+  var q = (curSearch || '').toLowerCase();
+  return items.filter(function (r) {
+    if (gnOnlyNet && !(r.net > 0)) return false;
+    if (gnOnlyAlert && !gnHasAlert(r.prd, alerts)) return false;
+    if (q && !((r.prd || '').toLowerCase().indexOf(q) >= 0 || (r.name || '').toLowerCase().indexOf(q) >= 0)) return false;
+    return true;
+  });
+}
+
+function gnRenderRows() {
+  var tb = $id('gnTbody');
+  if (!tb) return;
+  var rows = gnRows();
+  var alerts = (gnData && gnData.alerts) || {};
+  var h = '';
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    var hot = r.net > 0;
+    var dirty = gnHasAlert(r.prd, alerts);
+    var flags = (r.flags || []).map(function (x) {
+      return '<span style="display:inline-block;padding:1px 5px;border-radius:4px;background:#FEF3C7;color:#92400E;font-size:10px;margin-right:3px">' + gnEsc(x) + '</span>';
+    }).join('');
+    h += '<tr style="border-bottom:1px solid var(--border)' + (dirty ? ';background:#FFF7ED' : '') + '">'
+      + '<td style="padding:6px 8px;white-space:nowrap;font-weight:600">' + gnEsc(r.prd) + '</td>'
+      + '<td style="padding:6px 8px;color:var(--sub);max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + gnEsc(r.name) + '">' + gnEsc(r.name || '—') + '</td>'
+      + '<td style="padding:6px 8px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap">' + gnFmt(r.gross) + '</td>'
+      + '<td style="padding:6px 8px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;color:' + ((r.mat_stock || 0) > 0 ? 'inherit' : 'var(--sub)') + '">' + gnFmt(r.mat_stock) + '</td>'
+      + '<td style="padding:6px 8px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--sub)" title="生产仓现存 ' + gnFmt(r.prod_stock) + '，其中抵归属母件 ' + gnFmt(r.prod_used) + '、回全局池 ' + gnFmt(r.prod_pool) + '">'
+      + gnFmt(r.prod_stock) + (r.prod_used ? '<span style="font-size:10px;color:#2563EB"> 抵' + gnFmt(r.prod_used, 0) + '</span>' : '') + '</td>'
+      + '<td style="padding:6px 8px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;color:' + ((r.onway || 0) > 0 ? '#7C3AED' : 'var(--sub)') + '">' + gnFmt(r.onway) + '</td>'
+      + '<td style="padding:6px 8px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;color:' + ((r.qts || 0) > 0 ? '#0891B2' : 'var(--sub)') + '">' + gnFmt(r.qts) + '</td>'
+      + '<td style="padding:6px 8px;text-align:right;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;color:' + (hot ? '#DC2626' : 'var(--sub)') + '">' + gnFmt(r.net) + '</td>'
+      + '<td style="padding:6px 8px;white-space:nowrap;color:#2563EB">' + gnEsc(r.owner || '—') + '</td>'
+      + '<td style="padding:6px 8px;color:var(--sub);white-space:nowrap" title="' + gnEsc((r.fg_top || []).join(', ')) + '">' + (r.fg_count || 0) + '</td>'
+      + '<td style="padding:6px 8px;white-space:nowrap">' + flags + '</td>'
+      + '</tr>';
+  }
+  tb.innerHTML = h || '<tr><td colspan="11" style="padding:18px;text-align:center;color:var(--sub)">没有符合条件的行</td></tr>';
+  var cnt = $id('gnCount');
+  if (cnt) cnt.textContent = rows.length + ' / ' + ((gnData.items || []).length) + ' 行';
+}
+
+function gnToggle(which, v) {
+  if (which === 'net') gnOnlyNet = v; else gnOnlyAlert = v;
+  gnRenderRows();
+}
+
+function gnAlertBlock(title, arr, cols, color) {
+  if (!arr || !arr.length) return '';
+  var sum = arr.reduce(function (a, x) { return a + Number(x.qty || 0); }, 0);
+  var h = '<details style="margin:6px 0;border:1px solid var(--border);border-radius:8px;background:#fff">'
+    + '<summary style="cursor:pointer;padding:8px 12px;font-size:13px;font-weight:600;color:' + color + '">'
+    + title + '：' + arr.length + ' 项 / 数量 ' + gnFmt(sum) + '</summary>'
+    + '<div style="max-height:340px;overflow:auto;padding:0 12px 10px">'
+    + '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="color:var(--sub)">'
+    + cols.map(function (c) { return '<th style="text-align:left;padding:4px 6px;border-bottom:1px solid var(--border)">' + c + '</th>'; }).join('')
+    + '</tr></thead><tbody>';
+  for (var i = 0; i < arr.length; i++) {
+    var x = arr[i];
+    h += '<tr><td style="padding:4px 6px;white-space:nowrap">' + gnEsc(x.prd) + '</td>'
+      + '<td style="padding:4px 6px;text-align:right;white-space:nowrap">' + gnFmt(x.qty) + '</td>'
+      + '<td style="padding:4px 6px;color:var(--sub)">' + gnEsc(x.extra || '') + '</td></tr>';
+  }
+  return h + '</tbody></table></div></details>';
+}
+
+function renderGlobalNet() {
+  var el = $id('content');
+  var d = gnData || {};
+  var a = d.alerts || {};
+  var dt = d.ts ? new Date(d.ts * 1000).toLocaleTimeString('zh-CN') : '—';
+
+  var multi = (a.multi_owner || []).map(function (x) { return { prd: x.prd, qty: x.qty, extra: (x.owners || []).join(' / ') }; });
+  var unk = (a.unknown_owner || []).map(function (x) { return { prd: x.prd, qty: x.qty, extra: 'MOT 无记录' }; });
+  var miss = (a.no_bom_missing || []).map(function (x) { return { prd: x.prd, qty: x.qty, extra: 'TYPE=' + x.type + '，缺 BOM，需求未计入' }; });
+  var direct = (a.no_bom_direct || []).map(function (x) { return { prd: x.prd, qty: x.qty, extra: 'TYPE=' + x.type + '，未出直接当毛需求' }; });
+  var neg = (a.neg_clamped || []).map(function (x) { return { prd: x.prd, qty: x.qty, extra: x.kind + '负账面，已夹 0' }; });
+  var drt = (a.dirty || []).map(function (x) { return { prd: x.prd, qty: x.qty, extra: '材料仓异常巨大，未夹 0' }; });
+
+  var html = '<div style="padding:10px 12px 40px">'
+    + '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">'
+    + '<b style="font-size:15px">🌐 全局净需求</b>'
+    + '<span style="font-size:12px;color:var(--sub)">毛需求（所有成品销售未出 × BOM 配比）− 材料仓 − 生产仓 − 在途 − 请购</span>'
+    + '<button onclick="loadGlobalNet(true)" style="margin-left:auto;padding:5px 12px;border:1px solid var(--border);border-radius:6px;background:#fff;cursor:pointer;font-size:12px">⟳ 重新计算</button>'
+    + '</div>'
+    + '<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--sub);margin-bottom:6px">'
+    + '<span>成品 <b style="color:#111">' + (d.fg_count || 0) + '</b></span>'
+    + '<span>材料 <b style="color:#111">' + (d.material_count || 0) + '</b></span>'
+    + '<span>毛需求合计 <b style="color:#111">' + gnFmt(d.gross_total, 0) + '</b></span>'
+    + '<span>净需求合计 <b style="color:#DC2626">' + gnFmt(d.net_total, 0) + '</b></span>'
+    + '<span>生产仓 ' + gnFmt(d.prod_total, 0) + '（已抵母件 ' + gnFmt(d.prod_used_total, 0) + ' / 回池 ' + gnFmt(d.prod_pool_total, 0) + ' / 未归属 ' + gnFmt(d.unowned_prod_total, 0) + '）</span>'
+    + '<span>算法耗时 ' + (d.cost || 0) + 's · 数据时间 ' + dt + ' · 缓存 10 分钟</span>'
+    + '</div>'
+    + gnAlertBlock('⚠ 生产仓多母件冲突（不参与计算，需人工判定）', multi, ['品号', '生产仓数量', '候选母件'], '#B45309')
+    + gnAlertBlock('⚠ 生产仓查不到母件（不参与计算）', unk, ['品号', '生产仓数量', '说明'], '#B45309')
+    + gnAlertBlock('⛔ 缺 BOM（成品/半成品，需求未计入）', miss, ['品号', '未出量', '说明'], '#DC2626')
+    + gnAlertBlock('ℹ 无 BOM 直采件（未出直接当毛需求）', direct, ['品号', '未出量', '说明'], '#6B7280')
+    + gnAlertBlock('ℹ 负账面已夹 0', neg, ['品号', '原值', '说明'], '#6B7280')
+    + gnAlertBlock('⛔ 库存脏数据（未夹 0，只报警）', drt, ['品号', '材料仓', '说明'], '#DC2626')
+    + '<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:10px 0 6px;font-size:12px">'
+    + '<label style="display:flex;align-items:center;gap:4px"><input type="checkbox" ' + (gnOnlyNet ? 'checked' : '') + ' onchange="gnToggle(\'net\', this.checked)">只看净需求 &gt; 0</label>'
+    + '<label style="display:flex;align-items:center;gap:4px"><input type="checkbox" ' + (gnOnlyAlert ? 'checked' : '') + ' onchange="gnToggle(\'alert\', this.checked)">只看有报警的行</label>'
+    + '<span id="gnCount" style="color:var(--sub)"></span>'
+    + '</div>'
+    + '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:1240px">'
+    + '<thead><tr style="background:#f3f4f6;color:var(--sub)">'
+    + ['品号', '品名', '毛需求', '材料仓', '生产仓', '在途', '请购', '净需求', '归属母件', '涉及成品', '备注']
+        .map(function (c) {
+          var right = ['毛需求', '材料仓', '生产仓', '在途', '请购', '净需求'].indexOf(c) >= 0;
+          return '<th style="padding:6px 8px;' + (right ? 'text-align:right;' : 'text-align:left;') + 'white-space:nowrap">' + c + '</th>';
+        }).join('')
+    + '</tr></thead><tbody id="gnTbody"></tbody></table></div>'
+    + '</div>';
+  el.innerHTML = html;
+  gnRenderRows();
 }
 </script>
 </body>

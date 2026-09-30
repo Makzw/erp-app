@@ -3663,6 +3663,271 @@ def _pmc_preview_one(conn, so_no_itm, prd_no, qty, alloc=None):
     return {"items": rows, "so_no": os_no}
 
 
+# ── 全局净需求（毛需求 − 供给）───────────────────────────────────────────────────
+# 只读聚合：所有成品的销售未出 → BOM 展开加总 → 减 材料仓/生产仓/在途/请购。
+# 口径（MAK 2026-09-30 定）：
+#   · 毛需求 = 成品未出（与库存视图 QTY_ON_ODR 同源：USABLE=1 + CLS_ID=0 + APP_ID=1）
+#             × BOM 配比（QTY/QTY_BAS），按品号加总
+#   · 生产仓（MY_WH.ATTRIB 5/6）的料是「某母件的在途」：MOT 里唯一母件 → 自动归并抵该母件；
+#     多母件/查不到 → 不参与计算、只报警（算法不猜数量）
+#   · 生产仓归属后多出的 → 回全局池
+#   · 负账面夹 0 并报警；JDPE03C01200003 材料仓 100 亿脏数据不夹、单独报警
+#   · 无 BOM：TYPE=20000/30000（成品/半成品）→ 报警且不计入需求；其余（外购件/包材等）
+#     未出直接当该品号自己的毛需求（本身就是要买的东西，不展开）
+import threading
+_GNET = {"ts": 0.0, "data": None, "err": None}
+_GNET_TTL = 600
+_GNET_LOCK = threading.Lock()
+_GNET_DIRTY_PRD = "JDPE03C01200003"
+_GNET_MADE_TYPES = ("20000", "30000")   # 成品/半成品：没 BOM 就是缺 BOM
+
+
+_GNET_PRDT = {"ts": 0.0, "data": None}
+
+
+def _calc_global_net(db_name="C041", refresh=0):
+    import time as _t
+    t0 = _t.time()
+    conn = get_conn(db_name)
+    cur = conn.cursor()
+
+    def q(sql, args=None):
+        cur.execute(sql, args or ())
+        return cur.fetchall()
+
+    # ① 成品未出（VW_SO_QTY 同源）
+    fg = {}
+    for prd_b, qty in q("""
+        SELECT CONVERT(varbinary(60), PRD_NO), SUM(QTY - ISNULL(SAQTY,0))
+        FROM VW_POS WITH(NOLOCK)
+        WHERE USABLE = 1 AND CLS_ID = 0 AND OS_ID = 'SO' AND ISNULL(WJ,0) <> 1
+          AND QTY > ISNULL(SAQTY,0) AND APP_ID = 1
+        GROUP BY CONVERT(varbinary(60), PRD_NO)
+    """):
+        fg[g(prd_b)] = float(qty or 0)
+
+    # ② BOM 全表 → 内存索引（18,658 行，一次载入）
+    hdr, kids = {}, {}
+    for prd_b, guid_b, up_b, lev, cq, cbas, cknd in q("""
+        SELECT CONVERT(varbinary(60), PRD_NO), CONVERT(varchar(60), GUID), CONVERT(varchar(60), UPGUID),
+               LEV, QTY, ISNULL(QTY_BAS,0), ISNULL(KND,0)
+        FROM BOM WITH(NOLOCK) WHERE ISNULL(删除,0) = 0
+    """):
+        p = g(prd_b)
+        if lev == 0:
+            hdr[p] = g(guid_b)
+        else:
+            kids.setdefault(g(up_b), []).append((p, float(cq or 0), float(cbas or 0), str(cknd or '')))
+
+    # ③ 品号档案（长缓存 1 小时：品名很少变，全表读是最大开销）
+    global _GNET_PRDT
+    import time as _t2
+    if not _GNET_PRDT["data"] or (_t2.time() - _GNET_PRDT["ts"]) > 3600 or refresh:
+        d = {}
+        for prd_b, nm_b, spc_b, ut, typ, knd in q("""
+            SELECT CONVERT(varbinary(60), PRD_NO), CONVERT(varbinary(400), NAME), CONVERT(varbinary(300), SPC),
+                   CONVERT(varchar(20), ISNULL(UT,'')), ISNULL(TYPE,0), ISNULL(KND,0)
+            FROM PRDT WITH(NOLOCK)
+        """):
+            d[g(prd_b)] = (g(nm_b), g(spc_b), g(ut), str(typ), str(knd))
+        _GNET_PRDT["data"], _GNET_PRDT["ts"] = d, _t2.time()
+    prdt = _GNET_PRDT["data"]
+
+    # ④ 库存：按 品号 × 仓类（ATTRIB 5/6 = 生产仓；其余 = 原材料仓）
+    mat_stock, prod_stock = {}, {}
+    for prd_b, attrib, qty in q("""
+        SELECT CONVERT(varbinary(60), s.PRD_NO), ISNULL(CONVERT(varchar(20), w.ATTRIB), ''), SUM(s.QTY_WH)
+        FROM VW_STOCK_DETAIL2 s WITH(NOLOCK)
+        LEFT JOIN MY_WH w WITH(NOLOCK) ON w.WH = s.WH
+        WHERE ISNULL(s.QTY_WH,0) <> 0
+        GROUP BY CONVERT(varbinary(60), s.PRD_NO), ISNULL(CONVERT(varchar(20), w.ATTRIB), '')
+    """):
+        p, v = g(prd_b), float(qty or 0)
+        if attrib in ('5', '6'):
+            prod_stock[p] = prod_stock.get(p, 0.0) + v
+        else:
+            mat_stock[p] = mat_stock.get(p, 0.0) + v
+
+    # ⑤ 生产仓归属：MOT（工单）里这个料被哪些母件用到
+    own = {}
+    for prd_b, fg_b in q("""
+        SELECT CONVERT(varbinary(60), PRD_NO), CONVERT(varbinary(60), FG_NO)
+        FROM MOT WITH(NOLOCK)
+        GROUP BY CONVERT(varbinary(60), PRD_NO), CONVERT(varbinary(60), FG_NO)
+    """):
+        own.setdefault(g(prd_b), set()).add(g(fg_b))
+
+    # ⑥ 在途（采购未回）/ 请购（未转采购）
+    onway, qts = {}, {}
+    for prd_b, qty in q("""
+        SELECT CONVERT(varbinary(60), PRD_NO), SUM(QTY - ISNULL(PSQTY,0))
+        FROM VW_POS WITH(NOLOCK)
+        WHERE USABLE = 1 AND CLS_ID = 0 AND OS_ID = 'PO' AND QTY > ISNULL(PSQTY,0)
+        GROUP BY CONVERT(varbinary(60), PRD_NO)
+    """):
+        onway[g(prd_b)] = float(qty or 0)
+    for prd_b, qty in q("""
+        SELECT CONVERT(varbinary(60), PRD_NO), SUM(QTY)
+        FROM QTS WITH(NOLOCK)
+        WHERE QT_ID = 'QD' AND ISNULL(USABLE,0) = 1 AND ISNULL(CLS_ID,0) = 0
+        GROUP BY CONVERT(varbinary(60), PRD_NO)
+    """):
+        qts[g(prd_b)] = float(qty or 0)
+
+    # ⑦ 内存展开：毛需求 + 每个母件自己的材料需求（生产仓抵冲要用）
+    def expand(prd, qty, depth=0, seen=None):
+        if seen is None:
+            seen = set()
+        if prd in seen or depth >= 8:
+            return {}
+        guid = hdr.get(prd)
+        if not guid:
+            return {}
+        seen.add(prd)
+        out = {}
+        for cprd, cq, cbas, cknd in kids.get(guid, []):
+            ratio = cq / cbas if cbas else cq
+            need = qty * ratio
+            out[cprd] = out.get(cprd, 0.0) + need
+            if cknd in ('2', '3'):
+                for k, v in expand(cprd, need, depth + 1, seen.copy()).items():
+                    out[k] = out.get(k, 0.0) + v
+        return out
+
+    gross, by_fg, no_bom = {}, {}, []
+    for fgp, fgq in fg.items():
+        d = expand(fgp, fgq)
+        if not d:
+            no_bom.append((fgp, fgq))
+            continue
+        by_fg[fgp] = d
+        for k, v in d.items():
+            gross[k] = gross.get(k, 0.0) + v
+
+    # 无 BOM：成品/半成品报警且不计；其余（外购件/包材）未出直接当自己的毛需求
+    no_bom_missing, no_bom_direct = [], []
+    for fgp, fgq in no_bom:
+        typ = (prdt.get(fgp) or ('', '', '', '0', '0'))[3]
+        if typ in _GNET_MADE_TYPES:
+            no_bom_missing.append({"prd": fgp, "qty": fgq, "type": typ})
+        else:
+            gross[fgp] = gross.get(fgp, 0.0) + fgq
+            no_bom_direct.append({"prd": fgp, "qty": fgq, "type": typ})
+
+    # ⑧ 生产仓归属判定 + 抵冲
+    owners, prod_used, prod_pool = {}, {}, {}
+    multi_owner, unknown_owner, neg_clamped = [], [], []
+    for p, s in prod_stock.items():
+        if s <= 0:
+            if s < 0:
+                neg_clamped.append({"prd": p, "kind": "生产仓", "qty": s})
+            continue
+        os_ = own.get(p) or set()
+        if len(os_) == 1:
+            f = next(iter(os_))
+            need = (by_fg.get(f) or {}).get(p, 0.0)
+            x = min(s, need)
+            owners[p] = f
+            prod_used[p] = x
+            prod_pool[p] = s - x
+        elif len(os_) > 1:
+            multi_owner.append({"prd": p, "qty": s, "owners": sorted(os_)})
+        else:
+            unknown_owner.append({"prd": p, "qty": s})
+
+    # ⑨ 逐品号算净需求
+    used_by = {}
+    for fgp, d in by_fg.items():
+        for k in d:
+            used_by.setdefault(k, []).append(fgp)
+    keys = set(gross)
+    for d in (mat_stock, prod_stock, onway, qts):
+        keys |= set(d)
+    items = []
+    for p in keys:
+        gq = gross.get(p, 0.0)
+        ms = mat_stock.get(p, 0.0)
+        dirty = (p == _GNET_DIRTY_PRD and ms > 0)
+        if ms < 0 and not dirty:
+            neg_clamped.append({"prd": p, "kind": "材料仓", "qty": ms})
+            ms = 0.0
+        ps_all = prod_stock.get(p, 0.0)
+        ps_use = ps_all if p in owners else 0.0     # 未归属的不参与计算
+        ow, qt = onway.get(p, 0.0), qts.get(p, 0.0)
+        net = gq - (ms + ps_use + ow + qt)
+        if net < 0:
+            net = 0.0
+        if gq <= 0 and net <= 0:
+            continue
+        nm, spc, ut, typ, knd = prdt.get(p) or ('', '', '', '0', '0')
+        fl = []
+        if dirty:
+            fl.append("库存脏数据")
+        if p in prod_pool and prod_pool[p] > 0:
+            fl.append("生产仓有回池")
+        if typ not in _GNET_MADE_TYPES and p in hdr:
+            fl.append("外购件直算")
+        ub = used_by.get(p, [])
+        items.append({
+            "prd": p, "name": nm, "spc": spc, "ut": ut, "type": typ, "knd": knd,
+            "gross": round(gq, 3), "mat_stock": round(ms, 3),
+            "prod_stock": round(ps_all, 3), "prod_used": round(prod_used.get(p, 0.0), 3),
+            "prod_pool": round(prod_pool.get(p, 0.0), 3),
+            "onway": round(ow, 3), "qts": round(qt, 3), "net": round(net, 3),
+            "owner": owners.get(p, ""), "fg_count": len(ub), "fg_top": ub[:3],
+            "flags": fl,
+        })
+    items.sort(key=lambda x: (-x["net"], -x["gross"], x["prd"]))
+    conn.close()
+
+    unowned = sum(x["qty"] for x in multi_owner) + sum(x["qty"] for x in unknown_owner)
+    return {
+        "ts": _t.time(),
+        "cost": round(_t.time() - t0, 2),
+        "fg_count": len(fg),
+        "material_count": len(gross),
+        "gross_total": round(sum(gross.values()), 3),
+        "net_total": round(sum(x["net"] for x in items), 3),
+        "prod_total": round(sum(prod_stock.values()), 3),
+        "prod_used_total": round(sum(prod_used.values()), 3),
+        "prod_pool_total": round(sum(prod_pool.values()), 3),
+        "unowned_prod_total": round(unowned, 3),
+        "items": items,
+        "alerts": {
+            "multi_owner": sorted(multi_owner, key=lambda x: -x["qty"]),
+            "unknown_owner": sorted(unknown_owner, key=lambda x: -x["qty"]),
+            "no_bom_missing": sorted(no_bom_missing, key=lambda x: -x["qty"]),
+            "no_bom_direct": sorted(no_bom_direct, key=lambda x: -x["qty"]),
+            "neg_clamped": neg_clamped,
+            "dirty": [{"prd": _GNET_DIRTY_PRD, "qty": mat_stock.get(_GNET_DIRTY_PRD, 0.0)}]
+                     if _GNET_DIRTY_PRD in mat_stock else [],
+        },
+    }
+
+
+@app.get("/api/pmc/global_net")
+async def pmc_global_net(
+    refresh: int = Query(default=0),
+    db: str = Query(default="c041")
+):
+    """全局净需求（只读）。缓存 10 分钟；refresh=1 强制重算。"""
+    import time as _t
+    db_name = "T041" if db.lower() == "t041" else "C041"
+    stale = (_t.time() - _GNET["ts"]) > _GNET_TTL
+    if refresh or _GNET["data"] is None or stale:
+        with _GNET_LOCK:
+            if refresh or _GNET["data"] is None or (_t.time() - _GNET["ts"]) > _GNET_TTL:
+                try:
+                    _GNET["data"] = _calc_global_net(db_name, refresh=1 if refresh else 0)
+                    _GNET["ts"] = _GNET["data"].get("ts", _t.time())
+                    _GNET["err"] = None
+                except Exception as e:
+                    _GNET["err"] = f"{type(e).__name__}: {e}"
+    d = dict(_GNET["data"] or {})
+    d["err"] = _GNET["err"]
+    return d
+
+
 @app.get("/api/pmc/preview_mps")
 async def pmc_preview_mps(
     so_no_itm: str = Query(...),
