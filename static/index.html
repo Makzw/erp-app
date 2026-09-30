@@ -2094,9 +2094,8 @@ function renderPMCList(items, q) {
   if (!items || !items.length) { el.innerHTML = '<div class="state-msg">\u6682\u65e0\u6570\u636e</div>'; return; }
   var selCount = pmcSelected.length;
   var placeholder = "\u641c\u7d22\u8ba2\u5355/品号/\u5ba2\u6237";
-  var qCus = pmcItems.map(function(t){return t.cus_name||t.CUS_NAME||t.\u5ba2\u6237||'';}).filter(function(v,i,a){return v&&a.indexOf(v)===i}).slice(0,5);
-  var qRef = pmcItems.map(function(t){return t.\u6307\u4ee4\u5355\u53f7||'';}).filter(function(v,i,a){return v&&a.indexOf(v)===i}).slice(0,5);
-  var cusBtns = qCus.map(function(c){return '<button onclick="window.__pmcSearchFn&&window.__pmcSearchFn(\'' + escAttr(c) + '\')" style="padding:3px 8px;border-radius:12px;border:1px solid var(--border);background:#fff;font-size:11px;cursor:pointer">' + escAttr(c) + '</button>';}).join('');
+  // \u6309\u6307\u4ee4\u5355\u53f7\u5206\u7c7b\uff08\u4e0d\u6309\u5ba2\u6237\uff0cMAK 2026-09-30\uff09
+  var qRef = pmcItems.map(function(t){return t.ref||t.\u6307\u4ee4\u5355\u53f7||'';}).filter(function(v,i,a){return v&&a.indexOf(v)===i});
   var refBtns = qRef.map(function(r){return '<button onclick="window.__pmcSearchFn&&window.__pmcSearchFn(\'' + escAttr(r) + '\')" style="padding:3px 8px;border-radius:12px;border:1px solid #fef3c7;background:#fef3c7;font-size:11px;cursor:pointer;color:#92400e">#' + escAttr(r) + '</button>';}).join('');
   var toolbar = '<div style="padding:8px 12px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:6px">' +
     '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
@@ -2106,14 +2105,14 @@ function renderPMCList(items, q) {
     ' oninput="window.__pmcSearchFn&&window.__pmcSearchFn(this.value)">' +
     '<button onclick="pmcShowSummary()" style="padding:6px 12px;border-radius:16px;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">\u54c1\u53f7\u6c47\u603b</button>' +
     '<div style="flex:1;text-align:right;font-size:13px;color:var(--sub)">' + '\u5df2\u9009 <b id="pmcSelCount" style="color:var(--accent);font-weight:700">' + selCount + '</b> / ' + items.length + ' \u6761</div></div>' +
-    (cusBtns ? '<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">' + cusBtns + '</div>' : '') +
-    (refBtns ? '<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">' + refBtns + '</div>' : '') +
+    (refBtns ? '<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">' +
+       '<span style="font-size:11px;color:var(--sub)">\u6307\u4ee4\u5355\u53f7\uff1a</span>' + refBtns + '</div>' : '') +
     '</div>';
   var filtered = q ? items.filter(function(t) {
     return (t.os_no||t.SO_NO||'').indexOf(q) >= 0 ||
            (t.prd_no||t.PRD_NO||'').indexOf(q) >= 0 ||
            (t.cus_name||t.CUS_NAME||'').indexOf(q) >= 0 ||
-           (t.指令单号||'').indexOf(q) >= 0;
+           (t.ref||t.指令单号||'').indexOf(q) >= 0;
   }) : items;
   if (!filtered.length) { el.innerHTML = toolbar + '<div class="state-msg">\u65e0\u5339\u914d\u7ed3\u679c</div>'; return; }
   var cards = filtered.map(function(t, i) {
@@ -2122,7 +2121,7 @@ function renderPMCList(items, q) {
     var osNo = t.os_no||t.SO_NO||'';
     var qty = t.qty||t.QTY||0;
     var cusName = t.客户||t.cus_name||t.CUS_NAME||'';
-    var zhilian = t.指令单号||'';
+    var zhilian = t.ref||t.指令单号||'';
     var soItm = t.so_no_itm||'';
     var tags = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">';
     if (cusName) tags += '<span style="background:#f3f4f6;border-radius:4px;padding:2px 6px;font-size:11px;color:#374151">' + escAttr(cusName) + '</span>';
