@@ -3878,6 +3878,28 @@ def _calc_global_net(db_name="C041", refresh=0):
             "flags": fl,
         })
     items.sort(key=lambda x: (-x["net"], -x["gross"], x["prd"]))
+
+    # ⑩ 成品自己有货清单（只列出给人看，**不参与任何抵冲、不进净需求算式**）
+    # 这些品号是成品/半成品，没被别的品号当材料用到，所以不出现在上面的 items 里；
+    # 它们自己的库存（材料仓/生产仓）不属于「材料供给」，只在提示块里展示，由人判断要不要买。
+    fg_self = []
+    for fgp, fgq in fg.items():
+        if fgp in gross:
+            continue
+        ms = mat_stock.get(fgp, 0.0)
+        ps = prod_stock.get(fgp, 0.0)
+        if ms < 0:
+            ms = 0.0
+        if ps < 0:
+            ps = 0.0
+        if ms <= 0 and ps <= 0:
+            continue
+        fg_self.append({
+            "prd": fgp, "name": (prdt.get(fgp) or ('', '', '', '0', '0'))[0],
+            "qty": round(fgq, 3), "mat": round(ms, 3), "prod": round(ps, 3),
+            "onway": round(onway.get(fgp, 0.0), 3), "qts": round(qts.get(fgp, 0.0), 3),
+        })
+    fg_self.sort(key=lambda x: -(x["mat"] + x["prod"]))
     conn.close()
 
     unowned = sum(x["qty"] for x in multi_owner) + sum(x["qty"] for x in unknown_owner)
@@ -3892,6 +3914,8 @@ def _calc_global_net(db_name="C041", refresh=0):
         "prod_used_total": round(sum(prod_used.values()), 3),
         "prod_pool_total": round(sum(prod_pool.values()), 3),
         "unowned_prod_total": round(unowned, 3),
+        "fg_self_total": round(sum(x["mat"] + x["prod"] for x in fg_self), 3),
+        "fg_self": fg_self,
         "items": items,
         "alerts": {
             "multi_owner": sorted(multi_owner, key=lambda x: -x["qty"]),

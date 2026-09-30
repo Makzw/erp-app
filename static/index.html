@@ -3514,6 +3514,37 @@ function gnAlertBlock(title, arr, cols, color) {
   return h + '</tbody></table></div></details>';
 }
 
+function gnFgSelfBlock(arr, total) {
+  if (!arr || !arr.length) return '';
+  var h = '<details style="margin:6px 0;border:1px solid #BFDBFE;border-radius:8px;background:#F8FBFF">'
+    + '<summary style="cursor:pointer;padding:8px 12px;font-size:13px;font-weight:600;color:#1D4ED8">'
+    + 'ℹ 成品自己有货（不影响净需求，仅供判断）：' + arr.length + ' 个 / 库存合计 ' + gnFmt(total, 0) + '</summary>'
+    + '<div style="padding:0 12px 10px">'
+    + '<div style="font-size:11px;color:var(--sub);padding:4px 0 6px">这些是成品/半成品，没被别的品号当材料用到，所以不在上面的材料表里。'
+    + '它们自己的库存<b>不参与材料抵冲</b>（它们是成品，不是材料），列在这里由你判断哪些其实不用做。</div>'
+    + '<div style="max-height:340px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">'
+    + '<thead><tr style="color:var(--sub)">'
+    + ['品号', '品名', '未出', '材料仓库存', '生产仓库存', '说明'].map(function (c, i) {
+        var right = (i >= 2 && i <= 4);
+        return '<th style="padding:4px 6px;border-bottom:1px solid var(--border);' + (right ? 'text-align:right;' : 'text-align:left;') + 'white-space:nowrap">' + c + '</th>';
+      }).join('')
+    + '</tr></thead><tbody>';
+  for (var i = 0; i < arr.length; i++) {
+    var x = arr[i];
+    var enough = (x.mat || 0) >= (x.qty || 0);
+    h += '<tr>'
+      + '<td style="padding:4px 6px;white-space:nowrap;font-weight:600">' + gnEsc(x.prd) + '</td>'
+      + '<td style="padding:4px 6px;color:var(--sub);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + gnEsc(x.name) + '">' + gnEsc(x.name || '—') + '</td>'
+      + '<td style="padding:4px 6px;text-align:right;white-space:nowrap">' + gnFmt(x.qty) + '</td>'
+      + '<td style="padding:4px 6px;text-align:right;white-space:nowrap;color:' + (enough ? '#059669' : 'inherit') + '">' + gnFmt(x.mat) + '</td>'
+      + '<td style="padding:4px 6px;text-align:right;white-space:nowrap">' + gnFmt(x.prod) + '</td>'
+      + '<td style="padding:4px 6px;color:' + (enough ? '#059669' : 'var(--sub)') + ';white-space:nowrap">成品自己有货，未出 ' + gnFmt(x.qty, 0)
+      + (enough ? '（库存已够）' : '（库存不足）') + (x.onway ? ' · 在途 ' + gnFmt(x.onway, 0) : '') + (x.qts ? ' · 请购 ' + gnFmt(x.qts, 0) : '') + '</td>'
+      + '</tr>';
+  }
+  return h + '</tbody></table></div></div></details>';
+}
+
 function renderGlobalNet() {
   var el = $id('content');
   var d = gnData || {};
@@ -3539,6 +3570,7 @@ function renderGlobalNet() {
     + '<span>毛需求合计 <b style="color:#111">' + gnFmt(d.gross_total, 0) + '</b></span>'
     + '<span>净需求合计 <b style="color:#DC2626">' + gnFmt(d.net_total, 0) + '</b></span>'
     + '<span>生产仓 ' + gnFmt(d.prod_total, 0) + '（已抵母件 ' + gnFmt(d.prod_used_total, 0) + ' / 回池 ' + gnFmt(d.prod_pool_total, 0) + ' / 未归属 ' + gnFmt(d.unowned_prod_total, 0) + '）</span>'
+    + '<span>成品自有库存 <b style="color:#1D4ED8">' + gnFmt(d.fg_self_total, 0) + '</b>（' + ((d.fg_self || []).length) + ' 个，不参与抵冲）</span>'
     + '<span>算法耗时 ' + (d.cost || 0) + 's · 数据时间 ' + dt + ' · 缓存 10 分钟</span>'
     + '</div>'
     + gnAlertBlock('⚠ 生产仓多母件冲突（不参与计算，需人工判定）', multi, ['品号', '生产仓数量', '候选母件'], '#B45309')
@@ -3547,6 +3579,7 @@ function renderGlobalNet() {
     + gnAlertBlock('ℹ 无 BOM 直采件（未出直接当毛需求）', direct, ['品号', '未出量', '说明'], '#6B7280')
     + gnAlertBlock('ℹ 负账面已夹 0', neg, ['品号', '原值', '说明'], '#6B7280')
     + gnAlertBlock('⛔ 库存脏数据（未夹 0，只报警）', drt, ['品号', '材料仓', '说明'], '#DC2626')
+    + gnFgSelfBlock(d.fg_self || [], d.fg_self_total || 0)
     + '<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:10px 0 6px;font-size:12px">'
     + '<label style="display:flex;align-items:center;gap:4px"><input type="checkbox" ' + (gnOnlyNet ? 'checked' : '') + ' onchange="gnToggle(\'net\', this.checked)">只看净需求 &gt; 0</label>'
     + '<label style="display:flex;align-items:center;gap:4px"><input type="checkbox" ' + (gnOnlyAlert ? 'checked' : '') + ' onchange="gnToggle(\'alert\', this.checked)">只看有报警的行</label>'
