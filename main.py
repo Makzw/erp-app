@@ -3583,15 +3583,53 @@ async def pmc_preview_mps(
     return {"items": rows, "so_no": os_no}
 
 
+def _prd_meta(prd_nos, db_conn):
+    """品号 → {prd_no: {'name','ut','spc','has_bom'}}（批量，别逐行查）。
+
+    PRD_NAME 是 nvarchar 且历史上有脏行 → 走 CONVERT(varbinary)+g() 解码，不直接读。
+    """
+    prd_nos = [p for p in dict.fromkeys(prd_nos) if p]
+    if not prd_nos:
+        return {}
+    cur = db_conn.cursor()
+    params = tuple(p.encode("gbk") for p in prd_nos)
+    ph = ','.join(['%s'] * len(prd_nos))
+    out = {}
+    cur.execute(f"""
+        SELECT CONVERT(varbinary(60), PRD_NO), CONVERT(varbinary(600), NAME), UT, SPC
+        FROM PRDT WITH(NOLOCK) WHERE PRD_NO IN ({ph})
+    """, params)
+    for r in cur.fetchall():
+        out[g(r[0])] = {'name': g(r[1]), 'ut': g(r[2]), 'spc': g(r[3]), 'has_bom': False}
+    cur.execute(f"""
+        SELECT DISTINCT CONVERT(varbinary(60), PRD_NO) FROM BOM WITH(NOLOCK)
+        WHERE LEV=0 AND PRD_NO IN ({ph})
+    """, params)
+    for r in cur.fetchall():
+        k = g(r[0])
+        if k in out:
+            out[k]['has_bom'] = True
+    return out
+
+
 @app.post("/api/pmc/generate_mps")
 async def generate_mps(
     body: dict = Body(...),
     db: str = Query(default="c041")
 ):
     """
-    选中的多个 POS 行 → 一张 MPS 单（相同成品数量合并）。
-    ITM=1~N: 顺序编号，每张 POS 一个成品 ITM + 其 BOM 子件 ITM
+    选中的多个 POS 行 → 一张 MPS 单（每个销售订单行一个成品 ITM + 其 BOM 子件 ITM）。
+
+    ⚠ ERP 硬规则（MPS_insert 触发器）：引用的销售订单行必须 APP_ID=1（系统核准），
+      否则 print '引用订单未审批' 并 rollback transaction → 整张单打回。
+    字段口径照真单 MP26090046：
+      REF_ITM 只有成品行填（= 本 POS 行的 SO_NO_ITM），子件行留空 —— VW_POS 的 MPQTY/MP
+        就是按 REF_ITM = OS_NO+3位ITM 统计 QTY_SO 的，填错/漏填这张单不会从待分析列表走掉
+      QTY = 净需求 = max(0, 毛需求 − 该品号材料仓)；QTY_SO = 毛需求；QTY_AV = 材料仓 − 毛需求
+      UT/品名/规格 取 PRDT；USR = 0014（PMC）；BOM = 该品号有没有 BOM 头
+    body: {items:[{so_no_itm, prd_no, qty}], dry:1 → 校验+INSERT 后 ROLLBACK}
     """
+    dry = str(body.get("dry") or "") in ("1", "true", "True")
     items = body.get("items", [])
     if not items:
         return {"error": "没有选中订单"}
@@ -3608,33 +3646,26 @@ async def generate_mps(
     today = datetime.now().strftime("%y%m")
     mps_date = datetime.now().strftime("%Y-%m-%d")
 
-    # 合并：相同成品号 + 相同销售订单 才合并数量
-    merged = {}   # key = (prd_no, os_no) -> {qty, so_items}
+    # 按「销售订单行」逐个出成品行（不跨行合并）：真单 MP26090046 就是一个 SO 行一个成品行，
+    # VW_POS 的 MPQTY 只认 REF_ITM = 本 SO 行 → 合并了那张单就不会从待分析列表走掉
+    merged = {}             # so_no_itm -> {prd_no, qty}
     for it in valid:
-        p = it["prd_no"]
-        os = it.get("so_no") or (it["so_no_itm"][:-3] if len(it["so_no_itm"]) > 3 else it["so_no_itm"])
-        key = (p, os)
-        if key not in merged:
-            merged[key] = {"qty": 0.0, "so_items": [], "os_no": os}
-        merged[key]["qty"] += float(it["qty"])
-        merged[key]["so_items"].append(it["so_no_itm"])
+        soi = it["so_no_itm"]
+        grp = merged.setdefault(soi, {"prd_no": it["prd_no"], "qty": 0.0})
+        grp["qty"] += float(it["qty"])
+        grp["prd_no"] = it["prd_no"]
 
-    # 查第一条 POS 的客户/价格信息（用于 MPS 单头）
-    first_so = valid[0]["so_no_itm"]
-    cur.execute("""
-        SELECT p.CUS_NO, p.CUS_NAME, p.指令单号,
-               p.EST_DD, p.UP, p.UT, p.PRD_NAME, p.SPC
-        FROM POS p WITH(NOLOCK) WHERE p.SO_NO_ITM=%s
-    """, (first_so,))
-    pr = cur.fetchone()
-    cus_no   = g(pr[0]) if pr else ''
-    cus_name = g(pr[1]) if pr else ''
-    ref_no   = g(pr[2]) if pr else ''
-    est_dd   = pr[3] if pr else None
-    up       = float(pr[4] or 0) if pr else 0
-    ut       = pr[5] or 'PCE'
-    fg_name  = g(pr[6]) if pr else ''
-    spc      = g(pr[7]) if pr else ''
+    # 每个 SO 行各取各的挂靠信息（客户/指令单号/交期/单价），一条 IN 查询
+    so_info = {}
+    so_list = list(merged.keys())
+    ph = ','.join(['%s'] * len(so_list))
+    cur.execute(f"""
+        SELECT SO_NO_ITM, CUS_NO, CUS_NAME, 指令单号, EST_DD, UP
+        FROM POS WITH(NOLOCK) WHERE SO_NO_ITM IN ({ph})
+    """, tuple(so_list))
+    for r in cur.fetchall():
+        so_info[g(r[0])] = {'cus_no': g(r[1]), 'cus_name': g(r[2]), 'ref': g(r[3]),
+                            'est_dd': r[4], 'up': float(r[5] or 0)}
 
     # MPS 序号
     cur.execute("""
@@ -3645,38 +3676,42 @@ async def generate_mps(
     seq = (cur.fetchone()[0] or 0) + 1
     mps_no = f"MP{today}{seq:04d}"
 
-    # 收集所有成品 + 子件，查询 V2 库存
-    all_fg = list(merged.keys())
+    # 成品库存（_v2_stock 返回 {prd_no: {'prod_wh','mat_wh','mat_qty','mat_av',...}}）
+    all_fg = [v["prd_no"] for v in merged.values()]
     stock_map = dict(_v2_stock(all_fg, conn)) if all_fg else {}
-    # _v2_stock 返回 dict，但外面会调 .get()，需保持 dict 格式
 
     all_mps_rows = []
     itm_counter = 0
-    # {prd_no: {mat_wh, mat_qty, mat_av}}
-    # _v2_stock 返回 {prd_no: {'prod_wh':...,'mat_wh':...}}
-    sub_stock_cache = {}   # prd_no -> {prod_*, mat_*}
 
-    for (prd_no, os_no), info in merged.items():
+    for so_no_itm, info in merged.items():
+        prd_no = info["prd_no"]
         qty = info["qty"]
-        so_items = info["so_items"]
-
-        # 成品行 ITM
-        itm_counter += 1
+        si = so_info.get(so_no_itm, {})
         fg_stock = stock_map.get(prd_no, {})
+        fg_meta = _prd_meta([prd_no], conn).get(prd_no, {})
+        fg_mat = round(fg_stock.get('mat_qty', 0), 2)
+
+        # 成品行 ITM：QTY_SO = 毛需求（本单销售未出）、QTY = 净需求、REF_ITM = 本 SO 行
+        itm_counter += 1
         all_mps_rows.append({
             'itm': itm_counter,
             'prd_no': prd_no,
-            'prd_name': fg_name,
-            'spc': spc,
-            'ut': ut,
-            'qty': qty,
-            'wh': '',
+            'fg_no': prd_no,
+            'prd_name': fg_meta.get('name') or '',
+            'spc': fg_meta.get('spc') or '',
+            'ut': fg_meta.get('ut') or '',
+            'qty_so': round(qty, 4),
+            'qty': round(max(0.0, qty - fg_mat), 4),
+            'wh': fg_stock.get('prod_wh', '') or fg_stock.get('mat_wh', ''),
             'wh_name': '',
-            'qty_wh': round(fg_stock.get('prod_qty', 0), 2),
-            'qty_av': round(fg_stock.get('prod_av', 0), 2),
+            'qty_wh': fg_mat,
+            'qty_av': round(fg_mat - qty, 2),
+            'ref_itm': so_no_itm,
+            'bom': 1 if fg_meta.get('has_bom') else 0,
+            'so_no_itm': so_no_itm,
+            'cus_no': si.get('cus_no', ''), 'cus_name': si.get('cus_name', ''),
+            'ref': si.get('ref', ''), 'est_dd': si.get('est_dd'), 'up': si.get('up', 0),
             'is_fg': True,
-            'so_no_itm': so_items[0],
-            'ref': ref_no,
         })
 
         # BOM 递归展开
@@ -3684,57 +3719,87 @@ async def generate_mps(
         if not comp_rows:
             continue
 
-        # 查子件库存
+        # 子件库存 + 品号资料（各一条批量查询）
         sub_prds = [r[0] for r in comp_rows]
         sub_stock = _v2_stock(sub_prds, conn)
-        sub_stock_cache.update(sub_stock)
+        sub_meta = _prd_meta(sub_prds, conn)
 
-        for c_prd, c_name, c_qty, c_knd in comp_rows:
+        for c_prd, c_name, c_qty, c_knd, c_parent, c_depth, c_ratio in comp_rows:
             itm_counter += 1
-            cs = sub_stock_cache.get(c_prd, {})
+            cs = sub_stock.get(c_prd, {})
+            cm = sub_meta.get(c_prd, {})
+            c_mat = round(cs.get('mat_qty', 0), 2)
             all_mps_rows.append({
                 'itm': itm_counter,
                 'prd_no': c_prd,
-                'prd_name': c_name,
-                'spc': '',
-                'ut': 'PCE',
-                'qty': round(c_qty, 4),
+                'fg_no': prd_no,
+                'prd_name': cm.get('name') or c_name,
+                'spc': cm.get('spc') or '',
+                'ut': cm.get('ut') or '',
+                'qty_so': round(c_qty, 4),
+                'qty': round(max(0.0, c_qty - c_mat), 4),
                 'wh': cs.get('mat_wh', ''),
                 'wh_name': '',
-                'qty_wh': round(cs.get('mat_qty', 0), 2),
-                'qty_av': round(cs.get('mat_av', 0), 2),
+                'qty_wh': c_mat,
+                'qty_av': round(c_mat - c_qty, 2),
+                'ref_itm': None,          # 子件行不填（同真单 MP26090046）
+                'bom': 1 if cm.get('has_bom') else 0,
+                'so_no_itm': so_no_itm,
+                'cus_no': si.get('cus_no', ''), 'cus_name': si.get('cus_name', ''),
+                'ref': si.get('ref', ''), 'est_dd': si.get('est_dd'), 'up': 0,
                 'is_fg': False,
-                'so_no_itm': so_items[0],
-                'ref': ref_no,
             })
 
-    # 批量 INSERT
-    for row in all_mps_rows:
-        cur.execute("""
-            INSERT INTO MPS (
-                MPS_NO,MPS_DD,USR,USABLE,ITM,
-                CUS_NO,CUS_NAME,FG_NO_SO,SO_NO_ITM,REF_ITM,
-                PRD_NO,PRD_NAME,SPC,UT,
-                QTY,WH,WH_NAME,
-                QTY_WH,QTY_AV,
-                指令单号,EST_DD,UP,
-                BOM,STA_DD
-            ) VALUES (
-                %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s
-            )
-        """, (
-            mps_no, mps_date, 'Hermes', 1, row['itm'],
-            cus_no, cus_name, prd_no, row['so_no_itm'], row['ref'],
-            row['prd_no'], row['prd_name'], row['spc'], row['ut'],
-            row['qty'], row['wh'], row['wh_name'],
-            row['qty_wh'], row['qty_av'],
-            row['ref'], est_dd, up,
-            1, mps_date,
-        ))
+    if not all_mps_rows:
+        conn.rollback()
+        conn.close()
+        return {"error": "这些单没有可排产的 BOM 子件（成品没建 BOM？）"}
 
-    conn.commit()
-    conn.close()
-    return {'ok': True, 'results': [{'mps_no': mps_no, 'total_itm': itm_counter, 'items': len(valid), 'fg_count': len(merged)}]}
+    # 批量 INSERT（一张 MPS 单多行，ITM 顺序 = 成品行 + 它的子件）
+    try:
+        for row in all_mps_rows:
+            cur.execute("""
+                INSERT INTO MPS (
+                    MPS_NO,MPS_DD,USR,USABLE,ITM,
+                    CUS_NO,CUS_NAME,FG_NO_SO,SO_NO_ITM,REF_ITM,
+                    PRD_NO,PRD_NAME,SPC,UT,
+                    QTY,QTY_SO,WH,WH_NAME,
+                    QTY_WH,QTY_AV,
+                    指令单号,EST_DD,UP,
+                    BOM,STA_DD
+                ) VALUES (
+                    %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s
+                )
+            """, (
+                mps_no, mps_date, '0014', 1, row['itm'],
+                row['cus_no'], row['cus_name'], row['fg_no'], row['so_no_itm'], row['ref_itm'],
+                row['prd_no'], row['prd_name'], row['spc'], row['ut'],
+                row['qty'], row['qty_so'], row['wh'], row['wh_name'],
+                row['qty_wh'], row['qty_av'],
+                row['ref'], row['est_dd'], row['up'],
+                row['bom'], None,
+            ))
+        if dry:
+            conn.rollback()
+            return {'ok': True, 'dry': True, 'mps_no': mps_no, 'total_itm': len(all_mps_rows),
+                    'fg_count': len(merged), 'items': len(valid), 'rows': all_mps_rows}
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        msg = str(e)
+        # MPS_insert 触发器：引用未核准(APP_ID=0)的销售订单会 rollback transaction
+        if '未审批' in msg or '3609' in msg or 'transaction' in msg.lower():
+            return {"error": "ERP 拒绝排产：选中的销售订单里有没「系统核准」(APP_ID=1) 的行。"
+                             "MPS_insert 触发器要求先核准才能排产（桌面 ERP → 销售订单 → 核准）。"}
+        return {"error": msg}
+    finally:
+        conn.close()
+
+    return {'ok': True, 'dry': False, 'mps_no': mps_no, 'total_itm': len(all_mps_rows),
+            'fg_count': len(merged), 'items': len(valid),
+            'results': [{'mps_no': mps_no, 'total_itm': len(all_mps_rows),
+                         'items': len(valid), 'fg_count': len(merged)}],
+            'rows': all_mps_rows}
 
 
 # ── PMC 缺口 → MO + QD 专用 BOM 祖先链 ──────────────────────────────────────
