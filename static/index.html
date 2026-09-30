@@ -3559,8 +3559,16 @@ function renderGlobalNet() {
   var a = d.alerts || {};
   var dt = d.ts ? new Date(d.ts * 1000).toLocaleTimeString('zh-CN') : '—';
 
-  var multi = (a.multi_owner || []).map(function (x) { return { prd: x.prd, qty: x.qty, extra: (x.owners || []).join(' / ') }; });
-  var unk = (a.unknown_owner || []).map(function (x) { return { prd: x.prd, qty: x.qty, extra: 'MOT 无记录' }; });
+  var multi = (a.multi_owner || []).map(function (x) {
+    return { prd: x.prd, qty: x.qty,
+             extra: (x.owners || []).join(' / ') + '（' + (x.src === 'BOM' ? 'BOM 口径' : 'MOT 工单口径') + '）' };
+  });
+  var unk = (a.unknown_owner || []).map(function (x) {
+    return { prd: x.prd, qty: x.qty, extra: 'MOT 无记录 + BOM 里也没当子件（天生没 BOM，如外购件/包材）' };
+  });
+  var bown = (d.bom_owned || []).map(function (x) {
+    return { prd: x.prd, qty: x.qty, extra: '→ 顶层成品 ' + x.owner + '（该母件本单还要 ' + gnFmt(x.used, 0) + '，其余回全局池）' };
+  });
   var miss = (a.no_bom_missing || []).map(function (x) { return { prd: x.prd, qty: x.qty, extra: 'TYPE=' + x.type + '，缺 BOM，需求未计入' }; });
   var direct = (a.no_bom_direct || []).map(function (x) { return { prd: x.prd, qty: x.qty, extra: 'TYPE=' + x.type + '，未出直接当毛需求' }; });
   var neg = (a.neg_clamped || []).map(function (x) { return { prd: x.prd, qty: x.qty, extra: x.kind + '负账面，已夹 0' }; });
@@ -3578,9 +3586,11 @@ function renderGlobalNet() {
     + '<span>毛需求合计 <b style="color:#111">' + gnFmt(d.gross_total, 0) + '</b></span>'
     + '<span>净需求合计 <b style="color:#DC2626">' + gnFmt(d.net_total, 0) + '</b></span>'
     + '<span>生产仓 ' + gnFmt(d.prod_total, 0) + '（已抵母件 ' + gnFmt(d.prod_used_total, 0) + ' / 回池 ' + gnFmt(d.prod_pool_total, 0) + ' / 未归属 ' + gnFmt(d.unowned_prod_total, 0) + '）</span>'
+    + '<span>其中 BOM 兜底归属 <b style="color:#0F766E">' + gnFmt(d.bom_owned_total, 0) + '</b>（' + ((d.bom_owned || []).length) + ' 个品号）</span>'
     + '<span>成品自有库存 <b style="color:#1D4ED8">' + gnFmt(d.fg_self_total, 0) + '</b>（' + ((d.fg_self || []).length) + ' 个，不参与抵冲）</span>'
     + '<span>算法耗时 ' + (d.cost || 0) + 's · 数据时间 ' + dt + ' · 缓存 10 分钟</span>'
     + '</div>'
+    + gnAlertBlock('ℹ 生产仓由 BOM 兜底归属（MOT 查不到 → BOM 唯一顶层成品）', bown, ['品号', '生产仓数量', '说明'], '#0F766E')
     + gnAlertBlock('⚠ 生产仓多母件冲突（不参与计算，需人工判定）', multi, ['品号', '生产仓数量', '候选母件'], '#B45309')
     + gnAlertBlock('⚠ 生产仓查不到母件（不参与计算）', unk, ['品号', '生产仓数量', '说明'], '#B45309')
     + gnAlertBlock('⛔ 缺 BOM（成品/半成品，需求未计入）', miss, ['品号', '未出量', '说明'], '#DC2626')

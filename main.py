@@ -3707,13 +3707,15 @@ def _calc_global_net(db_name="C041", refresh=0):
         fg[g(prd_b)] = float(qty or 0)
 
     # ② BOM 全表 → 内存索引（18,658 行，一次载入）
-    hdr, kids = {}, {}
+    # node: GUID → (品号, 层, 父GUID) —— 生产仓归属的 BOM 兜底要顺着 UPGUID 往上爬到 LEV=0
+    hdr, kids, node = {}, {}, {}
     for prd_b, guid_b, up_b, lev, cq, cbas, cknd in q("""
         SELECT CONVERT(varbinary(60), PRD_NO), CONVERT(varchar(60), GUID), CONVERT(varchar(60), UPGUID),
                LEV, QTY, ISNULL(QTY_BAS,0), ISNULL(KND,0)
         FROM BOM WITH(NOLOCK) WHERE ISNULL(删除,0) = 0
     """):
         p = g(prd_b)
+        node[g(guid_b)] = (p, int(lev or 0), g(up_b))
         if lev == 0:
             hdr[p] = g(guid_b)
         else:
@@ -3756,6 +3758,50 @@ def _calc_global_net(db_name="C041", refresh=0):
         GROUP BY CONVERT(varbinary(60), PRD_NO), CONVERT(varbinary(60), FG_NO)
     """):
         own.setdefault(g(prd_b), set()).add(g(fg_b))
+
+    # ⑤b BOM 兜底：MOT（工单）里查不到的料，去 BOM 查「被哪些顶层成品（LEV=0 祖先）用到」
+    # · 唯一 → 自动归属（料物理上还在车间，母件不要时按规则回全局池）
+    # · 多个 → 仍按多母件冲突全部报警（算法不猜）
+    # · 一个都没有 → 继续报警（天生没 BOM 的外购件/包材）
+    _root_memo, _kid_guids, _bom_own_memo = {}, None, {}
+
+    def _root_of(gd):
+        """顺着 UPGUID 爬到 LEV=0，返回顶层成品品号（爬不到返回 None）"""
+        path, cur, r = [], gd, None
+        while True:
+            if cur in _root_memo:
+                r = _root_memo[cur]
+                break
+            if cur not in node or len(path) > 30:
+                r = None
+                break
+            p0, lev0, up0 = node[cur]
+            if lev0 == 0:
+                r = p0
+                break
+            path.append(cur)
+            cur = up0
+        for x in path:
+            _root_memo[x] = r
+        return r
+
+    def bom_owners(p):
+        """BOM 里这个料被哪些顶层成品用到（不含它自己）"""
+        nonlocal _kid_guids
+        if p in _bom_own_memo:
+            return _bom_own_memo[p]
+        if _kid_guids is None:
+            _kid_guids = {}
+            for _gd, (_p0, _lev0, _up0) in node.items():
+                if _lev0 > 0:
+                    _kid_guids.setdefault(_p0, []).append(_gd)
+        out = set()
+        for _gd in _kid_guids.get(p, ()):
+            _r = _root_of(_gd)
+            if _r and _r != p:
+                out.add(_r)
+        _bom_own_memo[p] = out
+        return out
 
     # ⑥ 在途（采购未回）/ 请购（未转采购）
     onway, qts = {}, {}
@@ -3816,7 +3862,7 @@ def _calc_global_net(db_name="C041", refresh=0):
 
     # ⑧ 生产仓归属判定 + 抵冲
     owners, prod_used, prod_pool = {}, {}, {}
-    multi_owner, unknown_owner, neg_clamped = [], [], []
+    multi_owner, unknown_owner, neg_clamped, bom_owned = [], [], [], []
     for p, s in prod_stock.items():
         if s <= 0:
             if s < 0:
@@ -3831,9 +3877,22 @@ def _calc_global_net(db_name="C041", refresh=0):
             prod_used[p] = x
             prod_pool[p] = s - x
         elif len(os_) > 1:
-            multi_owner.append({"prd": p, "qty": s, "owners": sorted(os_)})
+            multi_owner.append({"prd": p, "qty": s, "owners": sorted(os_), "src": "MOT"})
         else:
-            unknown_owner.append({"prd": p, "qty": s})
+            # MOT 查不到 → 去 BOM 查（顶层成品口径）
+            bs = sorted(bom_owners(p))
+            if len(bs) == 1:
+                f = bs[0]
+                need = (by_fg.get(f) or {}).get(p, 0.0)
+                x = min(s, need)
+                owners[p] = f
+                prod_used[p] = x
+                prod_pool[p] = s - x
+                bom_owned.append({"prd": p, "qty": s, "owner": f, "used": round(x, 3)})
+            elif len(bs) > 1:
+                multi_owner.append({"prd": p, "qty": s, "owners": bs, "src": "BOM"})
+            else:
+                unknown_owner.append({"prd": p, "qty": s})
 
     # ⑨ 逐品号算净需求
     used_by = {}
@@ -3912,6 +3971,8 @@ def _calc_global_net(db_name="C041", refresh=0):
         "net_total": round(sum(x["net"] for x in items), 3),
         "prod_total": round(sum(prod_stock.values()), 3),
         "prod_used_total": round(sum(prod_used.values()), 3),
+        "bom_owned_total": round(sum(x["qty"] for x in bom_owned), 3),
+        "bom_owned": sorted(bom_owned, key=lambda x: -x["qty"]),
         "prod_pool_total": round(sum(prod_pool.values()), 3),
         "unowned_prod_total": round(unowned, 3),
         "fg_self_total": round(sum(x["mat"] + x["prod"] for x in fg_self), 3),
