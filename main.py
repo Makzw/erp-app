@@ -3744,7 +3744,8 @@ async def generate_mps(
     字段口径照真单 MP26090046：
       REF_ITM 只有成品行填（= 本 POS 行的 SO_NO_ITM），子件行留空 —— VW_POS 的 MPQTY/MP
         就是按 REF_ITM = OS_NO+3位ITM 统计 QTY_SO 的，填错/漏填这张单不会从待分析列表走掉
-      QTY = 净需求 = max(0, 毛需求 − 该品号材料仓)；QTY_SO = 毛需求；QTY_AV = 材料仓 − 毛需求
+      QTY = 净需求 = max(0, 毛需求 − 本单可用池(挂本单在途/在单请购/别人多下) − 该品号材料仓)
+       —— 与屏上「缺口」同一算式（MAK 2026-09-30「要扣」）；QTY_SO = 毛需求；QTY_AV = 材料仓 − 毛需求
       UT/品名/规格 取 PRDT；USR = 0014（PMC）；BOM = 该品号有没有 BOM 头
     body: {items:[{so_no_itm, prd_no, qty}], dry:1 → 校验+INSERT 后 ROLLBACK}
     """
@@ -3812,10 +3813,38 @@ async def generate_mps(
 
     def _take_stock(prd, mat_qty, need):
         """(本行净需求, 本行扣减前的剩余库存, 本行抵冲掉的库存)"""
-        left = stock_left.setdefault(prd, float(mat_qty or 0))
+        left = max(0.0, stock_left.setdefault(prd, float(mat_qty or 0)))   # 负库存夹 0
         take = min(left, need)
         stock_left[prd] = round(left - take, 4)
         return round(max(0.0, need - take), 4), round(left, 4), round(take, 4)
+
+    # 本单可用池也按行顺序累计抵冲、扣完为止（MAK 2026-09-30「要扣」）：
+    #   挂本单在途 + 挂本单在单请购（按单持有，别人挂着的不算我的）+ 别人采购「多下」（全厂共享）
+    # ⚠ 与屏上「缺口」同一口径：净需求 = 毛需求 − 池抵冲 − 材料仓抵冲
+    pool_left = {}    # (so_no_itm, 品号) -> [挂本单在途, 挂本单在单请购]
+    free_left = {}    # 品号 -> 别人多下（跨单共享，先到先得）
+
+    def _take_pool(so_no_itm, prd, sp, need):
+        """返回 (扣完池之后还要多少, 池抵冲了多少)"""
+        need = max(0.0, float(need or 0))
+        e = pool_left.setdefault((so_no_itm, prd),
+                                 [float(sp.get('po') or 0), float(sp.get('qts') or 0)])
+        free = max(0.0, free_left.setdefault(prd, float(sp.get('po_free') or 0)))
+        take = 0.0
+        for k in range(2):
+            if need <= 0:
+                break
+            t = min(e[k], need)
+            e[k] -= t
+            need -= t
+            take += t
+        if need > 0 and free > 0:
+            t = min(free, need)
+            free -= t
+            need -= t
+            take += t
+        free_left[prd] = free
+        return round(need, 4), round(take, 4)
 
     for so_no_itm, info in merged.items():
         prd_no = info["prd_no"]
@@ -3826,7 +3855,9 @@ async def generate_mps(
         fg_mat = round(fg_stock.get('mat_qty', 0), 2)
 
         # 成品行 ITM：QTY_SO = 毛需求（本单销售未出）、QTY = 净需求、REF_ITM = 本 SO 行
-        fg_net, fg_left, fg_take = _take_stock(prd_no, fg_mat, qty)
+        fg_odr = _v2_odr_split([prd_no], conn, ref=si.get('ref'), fg=prd_no, so_itm=so_no_itm).get(prd_no) or {}
+        fg_need, fg_ptake = _take_pool(so_no_itm, prd_no, fg_odr, qty)
+        fg_net, fg_left, fg_take = _take_stock(prd_no, fg_mat, fg_need)
         itm_counter += 1
         all_mps_rows.append({
             'itm': itm_counter,
@@ -3838,6 +3869,7 @@ async def generate_mps(
             'qty_so': round(qty, 4),
             'qty': fg_net,
             'take': fg_take,
+            'pool_take': fg_ptake,
             'wh': fg_stock.get('prod_wh', '') or fg_stock.get('mat_wh', ''),
             'wh_name': '',
             'qty_wh': fg_mat,
@@ -3859,13 +3891,15 @@ async def generate_mps(
         sub_prds = [r[0] for r in comp_rows]
         sub_stock = _v2_stock(sub_prds, conn)
         sub_meta = _prd_meta(sub_prds, conn)
+        sub_odr = _v2_odr_split(sub_prds, conn, ref=si.get('ref'), fg=prd_no, so_itm=so_no_itm)
 
         for c_prd, c_name, c_qty, c_knd, c_parent, c_depth, c_ratio in comp_rows:
             itm_counter += 1
             cs = sub_stock.get(c_prd, {})
             cm = sub_meta.get(c_prd, {})
             c_mat = round(cs.get('mat_qty', 0), 2)
-            c_net, c_left, c_take = _take_stock(c_prd, c_mat, c_qty)
+            c_need, c_ptake = _take_pool(so_no_itm, c_prd, sub_odr.get(c_prd) or {}, c_qty)
+            c_net, c_left, c_take = _take_stock(c_prd, c_mat, c_need)
             all_mps_rows.append({
                 'itm': itm_counter,
                 'prd_no': c_prd,
@@ -3876,6 +3910,7 @@ async def generate_mps(
                 'qty_so': round(c_qty, 4),
                 'qty': c_net,
                 'take': c_take,
+                'pool_take': c_ptake,
                 'wh': cs.get('mat_wh', ''),
                 'wh_name': '',
                 'qty_wh': c_mat,
