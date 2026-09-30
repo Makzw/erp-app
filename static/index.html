@@ -2304,11 +2304,10 @@ function renderPMCTree(items, title) {
   html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap"><div style="font-size:13px;color:var(--sub)">' + (title||'') + '</div>' + summaryTag + matSumTag() + '</div>';
 
   // BOM 展开明细
-  html += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:1470px"><thead><tr style="background:#f3f4f6">';
-  html += '<th style="padding:8px 10px;text-align:left;min-width:300px">品号</th>';
+  html += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:1330px"><thead><tr style="background:#f3f4f6">';
+  html += '<th style="padding:8px 10px;text-align:left;min-width:240px">品号</th>';
   html += '<th style="padding:8px 8px;text-align:center;white-space:nowrap;min-width:64px">层</th>';
   html += '<th style="padding:8px 8px;text-align:right;white-space:nowrap;min-width:96px">需求</th>';
-  html += '<th style="padding:8px 8px;text-align:right;white-space:nowrap;min-width:104px" title="\u6bdb\u9700\u6c42 = \u5168\u5382\u8be5\u54c1\u53f7\u9500\u552e\u672a\u51fa\u4e0d\u6263\u6599\u5c55\u5f00\uff08\u524d\u9762\u5355\u6ca1\u51fa\u7684 + \u672c\u5355\uff09\u3002\u770b\u8fd9\u4e2a\u54c1\u53f7\u603b\u5171\u8981\u7528\u591a\u5c11\u6599">\u6bdb\u9700\u6c42</th>';
   html += '<th style="padding:8px 8px;text-align:right;white-space:nowrap;min-width:104px">原材料仓</th>';
   html += '<th style="padding:8px 8px;text-align:right;white-space:nowrap;min-width:96px">生产仓</th>';
   html += '<th style="padding:8px 8px;text-align:right;white-space:nowrap;min-width:104px">在途采购</th>';
@@ -2400,8 +2399,11 @@ function renderPMCTree(items, title) {
     var depthColor = depthColors[Math.min(depth, depthColors.length-1)];
     var depthLabel = isFg ? '成品' : 'L' + depth;
     var adjBtn = !isFg && depth > 0 ? '<button onclick="pmcOpenAdjust(\'' + escAttr(r.prd_no||'') + '\',\'\',\'mat\',' + matQty + ')" style="padding:3px 6px;background:#f3f4f6;border:1px solid #d1d5db;border-radius:4px;font-size:11px;cursor:pointer;color:#374151">调整</button>' : '';
-    // 毛需求 = 全厂该品号销售未出展开（前面单没出的 + 本单）；老数据没有 gross_plant 就退回本单口径
-    var grossShow = (r.gross_plant === undefined || r.gross_plant === null) ? r.gross_demand : r.gross_plant;
+    // 全厂毛需求（原「毛需求」列，MAK 2026-09-30 把该列折进「需求」列 hover，列不再单独占位）
+    // 两级兜底：没有 gross_plant → 退回本单毛需求 gross_demand → 再退回本单未出/0
+    var grossAll = (r.gross_plant === undefined || r.gross_plant === null)
+      ? ((r.gross_demand === undefined || r.gross_demand === null) ? (isFg ? soRemain : 0) : r.gross_demand)
+      : r.gross_plant;
     // 「全厂净需求」列：料行取全厂净需求（懒加载，数据没到显示「…」）；成品行取全厂未出
     // ⚠ 同品号在本树第 2 次出现时不再重复显示数字（跟 matBadgeHtml 同一套首次出现规则）
     var gapHtml;
@@ -2429,9 +2431,6 @@ function renderPMCTree(items, title) {
       : '<span style="color:var(--sub)" title="' + (isFg ? '成品行不可请购' : '自制件：走派工单，不请购') + '">—</span>';
 
     // 销未出 / 在途 / 在单
-    // 毛需求 = 全厂该品号销售未出展开（含本单，一眼看这个品号总共要用多少料）
-    var gross = (grossShow === undefined || grossShow === null) ? (isFg ? soRemain : 0) : grossShow;
-    var grossHtml = gross > 0 ? '<span style="color:#6366f1;font-weight:600;font-variant-numeric:tabular-nums" title="\u6bdb\u9700\u6c42 ' + Number(gross).toLocaleString('zh-CN') + '\uff08\u4e0d\u6263\u5e93\u5b58/\u5728\u9014\uff09">' + Number(gross).toLocaleString('zh-CN') + '</span>' : '<span style="font-variant-numeric:tabular-nums">-</span>';
     // 池子是「全厂」的：挂本单的那部分才算本单供给。一点都没挂本单的，灰色 + 别单角标，
     // 免得看到「在单请购 1499」以为这批料是自己的（其实是别的单请的）。
     // 在途/在单请购：大字显示「本单可用」，小字注明全厂池；一点都没挂本单又没多下的 → 灰字 + 别单
@@ -2467,8 +2466,9 @@ function renderPMCTree(items, title) {
       ' style="border-bottom:1px solid #f3f4f6;background:' + bg + '">';
     html += '<td style="padding:8px 10px"><div style="max-width:min(44vw,760px);white-space:normal;overflow-wrap:anywhere" title="' + escAttr((r.prd_no||'') + ' ' + (r.prd_name||'')) + '"><span style="display:inline-block;margin-left:' + indent + 'px"></span><b style="font-variant-numeric:tabular-nums">' + escHtml(r.prd_no||'') + '</b> <span style="font-size:13px;color:var(--name)">' + escHtml(r.prd_name||'') + '</span>' + matBadgeHtml(r.prd_no||'') + '</div></td>';
     html += '<td style="padding:8px 8px;text-align:center;white-space:nowrap"><span style="font-size:10px;font-weight:700;color:#fff;background:' + depthColor + ';padding:2px 5px;border-radius:10px">' + depthLabel + '</span></td>';
-    html += '<td style="padding:8px 8px;text-align:right;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap">' + Number(realDemand).toLocaleString('zh-CN') + '</td>';
-    html += '<td style="padding:8px 8px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap">' + grossHtml + '</td>';
+    html += '<td style="padding:8px 8px;text-align:right;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap" title="' + escAttr(
+      '本单需求 ' + Number(realDemand).toLocaleString('zh-CN') + '（父件缺口×配比往下推）\n全厂毛需求 ' + Number(grossAll).toLocaleString('zh-CN') +
+      '（该成品全部未出展开；毛数不扣库存/在途；成品行=该成品全厂未出，料行=按它展开到本料的量）') + '">' + Number(realDemand).toLocaleString('zh-CN') + '</td>';
     html += '<td style="padding:8px 8px;text-align:right;color:#16a34a;cursor:' + (!isFg ? 'pointer' : 'default') + ';font-variant-numeric:tabular-nums;white-space:nowrap" ' + (!isFg ? 'onclick="pmcOpenAdjust(\'' + escAttr(r.prd_no||'') + '\',\'\',\'mat\',' + matQty + ')"' : '') + '>' + Number(matQty).toLocaleString('zh-CN') + '</td>';
     html += '<td style="padding:8px 8px;text-align:right;color:#16a34a;font-variant-numeric:tabular-nums;white-space:nowrap" title="\u751f\u4ea7\u4ed3\uff08\u8f66\u95f4\u4ed3/\u5916\u53d1\u4ed3\uff09\u5df2\u88ab\u9886\u53bb\u505a\u522b\u7684\u5355\uff0c\u4e0d\u53c2\u4e0e\u7f3a\u53e3\u8ba1\u7b97\uff1b\u4e0d\u53ef\u8c03\u6574">' + Number(prodQty).toLocaleString('zh-CN') + '</td>';
     html += '<td style="padding:8px 8px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap"' + wayTip + '>' + wayHtml + '</td>';
