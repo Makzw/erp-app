@@ -3932,9 +3932,14 @@ def _calc_global_net(db_name="C041", refresh=0):
 @app.get("/api/pmc/global_net")
 async def pmc_global_net(
     refresh: int = Query(default=0),
+    slim: int = Query(default=0),
     db: str = Query(default="c041")
 ):
-    """全局净需求（只读）。缓存 10 分钟；refresh=1 强制重算。"""
+    """全局净需求（只读）。缓存 10 分钟；refresh=1 强制重算。
+
+    slim=1 只回 {品号: [毛需求, 材料仓, 生产仓, 在途, 请购, 净需求]}（约 144KB），
+    供 PMC 预览的 BOM 树按品号 join（复用同一个 _GNET 缓存，不重算、不影响下面原样返回）。
+    """
     import time as _t
     db_name = "T041" if db.lower() == "t041" else "C041"
     stale = (_t.time() - _GNET["ts"]) > _GNET_TTL
@@ -3949,6 +3954,12 @@ async def pmc_global_net(
                     _GNET["err"] = f"{type(e).__name__}: {e}"
     d = dict(_GNET["data"] or {})
     d["err"] = _GNET["err"]
+    if slim and d.get("items") and not d.get("err"):
+        return {
+            "ts": d.get("ts"), "cost": d.get("cost"), "slim": 1,
+            "map": {i["prd"]: [i["gross"], i["mat_stock"], i["prod_stock"],
+                               i["onway"], i["qts"], i["net"]] for i in d["items"]},
+        }
     return d
 
 
