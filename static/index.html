@@ -1414,8 +1414,7 @@ function bomRecalc(idx) {
     if (!m) return;
     const ratio = m.qty_per_unit || 0;
     const need = Math.ceil(ratio * qty);
-    const tRow = (m.transfers||[]).find(t => (t.wh1||t.wh1_name||'') === wh);
-    const avail = tRow ? (tRow.available || 0) : 0;
+    const avail = (m.transfers || []).reduce((s, t) => s + Number(t.available || 0), 0);  // 全部调拨单剩余相加，不分仓
     const ok = avail >= need;
     const needCell = row.querySelector('.bom-need');
     const okCell = row.querySelector('.bom-ok');
@@ -1430,6 +1429,18 @@ function bomRecalc(idx) {
       }
     }
   });
+}
+
+// 批量完工：可用量 = 该材料所有调拨单剩余之和（不分仓，有剩余就能用，MAK 2026-09-30）。
+// 记账只挂一张调拨单：优先用户点的那张（能覆盖需用量时），否则取剩余最多的那张。
+// ponytail: 单张不够时会把那一单扣穿、别的单剩余不动；要精确分摊得改成一行挂多张单，暂不需要。
+function compSumAvail(m) {
+  return (m.transfers || []).reduce((s, t) => s + Number(t.available || 0), 0);
+}
+function compPickTransfer(m, need, preferIcNo) {
+  const cand = (m.transfers || []).filter(t => Number(t.available || 0) > 0)
+    .sort((a, b) => Number(b.available || 0) - Number(a.available || 0));
+  return cand.find(t => t.ic_no === preferIcNo && Number(t.available || 0) >= need) || cand[0];
 }
 
 // 批量完工弹窗：显示暂存成品+BOM+运输工具，点确认写 IC
@@ -1479,8 +1490,10 @@ async function openBatchCompletionModal() {
         const ratio = m.qty_per_unit || 0;
         const fgQty = item.fg_qty || 0;
         const need = Math.ceil(ratio * fgQty);
-        const tRow = (m.transfers||[]).find(t => (t.wh1||t.wh1_name||'') === wh);
-        const avail = tRow ? (tRow.available || 0) : 0;
+        // 可用量 = 该材料所有调拨单剩余之和（不分仓，MAK 2026-09-30）
+        // 原来按仓挑 (t.wh1 === wh)，挑不中就当 0 → 明明有剩余却显示 ❌
+        const avail = compSumAvail(m);
+        const tRow = compPickTransfer(m, need, item.transfer_ic_no);
         const ok = avail >= need;
         rows += '<tr style="border-bottom:1px solid #f3f4f6;background:#fff" data-item-idx="' + i + '" data-prd="' + m.prd_no + '">'
           + '<td colspan="2" style="padding:5px 8px;font-size:12px;border-right:1px solid #e5e7eb">' + fmt(m.prd_no) + '</td>'
@@ -1590,8 +1603,7 @@ async function openBatchCompletionModal() {
       const wh = item.fg_wh || 'G';
       for (const m of (item.bom || [])) {
         const need = Math.ceil((m.qty_per_unit || 0) * fgQty);
-        const tRow = (m.transfers||[]).find(t => (t.wh1||t.wh1_name||'') === wh);
-        const avail = tRow ? (tRow.available || 0) : 0;
+        const avail = compSumAvail(m);   // 全部调拨单剩余相加，不分仓
         if (avail < need) shortItems.push({prd: m.prd_no, need, avail});
       }
     }
@@ -1617,7 +1629,8 @@ async function openBatchCompletionModal() {
       const wh = item.fg_wh || 'G';
       const bom = item.bom || [];
       const materials = bom.map(m => {
-        const tRow = (m.transfers||[]).find(t => (t.wh1||t.wh1_name||'') === wh);
+        const need = Math.ceil((m.qty_per_unit || 0) * (item.fg_qty || 0));
+        const tRow = compPickTransfer(m, need, item.transfer_ic_no);
         return {
           prd_no: m.prd_no,
           ratio: m.qty_per_unit || 0,
