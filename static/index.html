@@ -1083,6 +1083,7 @@ let completionData = [];        // KND=30 调拨单列表（已过滤）
 let allCompletionData = [];     // 全量数据（不过滤）
 let completionList = [];         // 已选待完工成品 [{transfer_ic_no, transfer_prd, fg_no, fg_name, qty}]
 let compCustomer = '', compDdjh = '', compDdjhPlan = '', compWh = '';
+let compPlanCat = '';   // 车间仓的外发计划分类：'' | '安装' | '其他'（安装=DDJH 以「安装」开头）
 
 // 完工 tab：点击行 → openCompletionModal
 
@@ -1106,6 +1107,18 @@ function renderCompletionListFiltered(filteredItems) {
   renderCompletionList();
 }
 
+// 车间仓判定：历史上有 '车间仓' / '8 车间仓'（仓库代码写成 '8 车间仓' 或名字带前缀）几种写法，统一按代码 8 认（MAK 2026-10-02）
+function isChetiWh(d) {
+  const code = d.wh1 || '', name = d.wh1_name || '';
+  return code === '8' || code === '8 车间仓' || name === '车间仓' || name === '8 车间仓';
+}
+// 车间仓外发计划分类：安装 = 外发计划以「安装」开头（安装/安装抛光/安装打磨/安装装胶袋），其余算其他
+function compPlanHit(d) {
+  if (!isChetiWh(d)) return false;
+  const isIns = (d.ddjh || '').startsWith('安装');
+  return compPlanCat === '安装' ? isIns : !isIns;
+}
+
 function applyCompFilters() {
   compCustomer = ($id('compFCustomer') || {value:''}).value.trim();
   compDdjh     = ($id('compFDdjh')    || {value:''}).value.trim();
@@ -1115,19 +1128,27 @@ function applyCompFilters() {
     if (compDdjh    && !(d.ref||'').toLowerCase().includes(compDdjh.toLowerCase()))    return false;
     if (compDdjhPlan && !(d.ddjh||'').toLowerCase().includes(compDdjhPlan.toLowerCase())) return false;
     if (compWh && (d.wh1_name||d.wh1||'') !== compWh) return false;
+    if (compPlanCat && !compPlanHit(d)) return false;
     return true;
   });
   renderCompletionList();
 }
 
+// 车间仓「外发计划」分类开关（再点一次取消）
+function setCompPlanCat(c) {
+  compPlanCat = (compPlanCat === c) ? '' : c;
+  applyCompFilters();
+}
+
 function resetCompFilters() {
-  compCustomer = ''; compDdjh = ''; compDdjhPlan = ''; compWh = '';
+  compCustomer = ''; compDdjh = ''; compDdjhPlan = ''; compWh = ''; compPlanCat = '';
   completionData = allCompletionData;
   renderCompletionList();
 }
 
 function filterByWh(wh) {
   compWh = wh;
+  compPlanCat = '';   // 换仓库时清掉外发计划分类，避免「别的仓 + 安装」筛成 0 条看着像坏了
   completionData = compWh
     ? allCompletionData.filter(d => (d.wh1_name||d.wh1||'') === compWh)
     : allCompletionData;
@@ -1259,6 +1280,17 @@ ${stashedHtml}
       const active = compWh === w;
       tabsHtml += `<button onclick="filterByWh('${escAttr(w)}')" style="padding:3px 10px;border-radius:14px;border:1px solid ${active?'var(--accent)':'var(--border)'};background:${active?'var(--accent)':'transparent'};color:${active?'#fff':'var(--text)'};font-size:11px;cursor:pointer">${escHtml(w)} (${cnt})</button>`;
     });
+    // 车间仓：外发计划按「安装 / 其他」分类（安装 = 以「安装」开头；MAK 2026-10-02）
+    // 常显：安装只存在于车间仓，点了自动只出车间仓的行；按仓库代码 8 认，避免 '8 车间仓' 另一种写法漏掉
+    {
+      const cx = allCompletionData.filter(isChetiWh);
+      const nA = cx.filter(d => (d.ddjh||'').startsWith('安装')).length;
+      const chips = [['安装', nA], ['其他', cx.length - nA]].map(([c, n]) => {
+        const act = compPlanCat === c;
+        return `<button onclick="setCompPlanCat('${c}')" style="padding:3px 10px;border-radius:14px;border:1px solid ${act?'#16a34a':'var(--border)'};background:${act?'#dcfce7':'transparent'};color:${act?'#15803d':'var(--text)'};font-size:11px;font-weight:${act?'700':'400'};cursor:pointer">${c} (${n})</button>`;
+      }).join('');
+      tabsHtml += '<span style="font-size:11px;color:var(--sub);margin-left:10px">车间仓外发计划:</span>' + chips;
+    }
     tabsEl.innerHTML = tabsHtml;
   }
 }
