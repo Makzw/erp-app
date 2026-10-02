@@ -3455,14 +3455,21 @@ function gnNetHtml(prd) {
       gnEsc('该品号不在全厂净需求范围（没有全厂毛需求，也没有库存）') + '">全厂净需求 —</div>';
   }
   var g = Number(v[0] || 0), mt = Number(v[1] || 0), pd = Number(v[2] || 0), ow = Number(v[3] || 0), qt = Number(v[4] || 0), net = Number(v[5] || 0);
+  var ci = Number(v[6] || 0);   // 母件被归属的在制合计（无则为 0）
   var tip = '全厂净需求（所有成品的未出 BOM 展开 − 材料仓 − 生产仓 − 在途 − 请购）\n' +
     '毛需求 ' + gnFmt(g, 0) + '（所有成品）\n' +
-    '− 材料仓 ' + gnFmt(mt, 0) + '\n− 生产仓 ' + gnFmt(pd, 0) + '（已归到母件的部分）\n' +
+    '− 材料仓 ' + gnFmt(mt, 0) + '\n− 生产仓 ' + gnFmt(pd, 0) + '（全额算可用）\n' +
     '− 在途 ' + gnFmt(ow, 0) + '\n− 在单请购 ' + gnFmt(qt, 0) + '\n' +
     '= 净需求 ' + gnFmt(net, 0) + '\n\n' +
     '⚠ 这是全厂口径（所有成品），跟左边「缺口」不是一回事：缺口只算本单，是请购/MPS 落库的依据';
-  return '<div style="font-size:12px;white-space:nowrap;color:' + (net > 0.0001 ? '#b45309' : '#16a34a') +
-    '" title="' + gnEsc(tip) + '">全厂净需求 <b style="font-size:13px;font-variant-numeric:tabular-nums">' + gnFmt(net, 0) + '</b></div>';
+  // ⚠ 真实单元格也带 data-gnnet：这样 gnEnsureMap 到位后 gnFill 会重渲染它，
+  //   显示「其中 X 在外发/车间在制」——否则树在 map 未到时渲染的那格永远不带标
+  return '<div data-gnnet="1" data-gnprd="' + gnEsc(prd) + '" style="font-size:12px;white-space:nowrap;color:' + (net > 0.0001 ? '#b45309' : '#16a34a') +
+    '" title="' + gnEsc(tip) + '">全厂净需求 <b style="font-size:13px;font-variant-numeric:tabular-nums">' + gnFmt(net, 0) + '</b>' +
+    (ci > 0.0001 ? '<div style="font-size:11px;color:var(--sub);white-space:nowrap" title="' +
+      gnEsc('这几个料是从本站（这个母件）归属来的，实物在外发/车间在制仓：' + gnFmt(ci, 0) + '。在制已按「本料本层需求」抵扣给本站，不影响全厂净需求算式。') +
+      '">其中 ' + gnFmt(ci, 0) + ' 在外发/车间在制</div>' : '') +
+    '</div>';
 }
 
 async function loadGlobalNet(refresh) {

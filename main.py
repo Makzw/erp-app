@@ -4038,7 +4038,12 @@ def _calc_global_net(db_name="C041", refresh=0):
         os_ = own.get(p) or set()
         if len(os_) == 1:
             f = next(iter(os_))
-            need = (by_fg.get(f) or {}).get(p, 0.0)
+            # ★ A（2026-10-02）：抵扣量改用「本料本层需求 gross[p]」。
+            #   原来取 by_fg.get(母件)——by_fg 只装成品(KND=2)，而归属到的母件大多是
+            #   半成品(KND=3) → 查不到 → need=0 → 抵 0、在制全额记成「回池」（实测 84 个
+            #   已归属料里只有 1 个真抵过）。gross[p] 是滚算后的本层需求=所有母件合计要它
+            #   多少，单母件时用它做上限不会抵过头。
+            need = max(0.0, gross.get(p, 0.0))
             x = min(s, need)
             owners[p] = f
             prod_used[p] = x
@@ -4053,7 +4058,7 @@ def _calc_global_net(db_name="C041", refresh=0):
             bs = sorted(bom_owners(p))
             if len(bs) == 1:
                 f = bs[0]
-                need = (by_fg.get(f) or {}).get(p, 0.0)
+                need = max(0.0, gross.get(p, 0.0))
                 x = min(s, need)
                 owners[p] = f
                 prod_used[p] = x
@@ -4063,6 +4068,14 @@ def _calc_global_net(db_name="C041", refresh=0):
                 multi_owner.append({"prd": p, "qty": s, "owners": bs, "src": "BOM"})
             else:
                 unknown_owner.append({"prd": p, "qty": s})
+
+    # ★ C（2026-10-02）：母件被归属了多少在制（反查汇总，纯展示）——
+    #   给 PMC 树里的母件行显示「其中 X 在外发/车间在制」，不动任何净需求
+    child_inproc = {}
+    for _cp, _cf in owners.items():
+        _cu = prod_used.get(_cp, 0.0)
+        if _cu > 0:
+            child_inproc[_cf] = child_inproc.get(_cf, 0.0) + _cu
 
     # ⑨ 逐品号算净需求
     used_by = {}
@@ -4104,6 +4117,7 @@ def _calc_global_net(db_name="C041", refresh=0):
             "prod_pool": round(prod_pool.get(p, 0.0), 3),
             "onway": round(ow, 3), "qts": round(qt, 3), "net": round(net, 3),
             "owner": owners.get(p, ""), "fg_count": len(ub), "fg_top": ub[:3],
+            "child_inproc": round(child_inproc.get(p, 0.0), 3),
             "flags": fl,
         })
     items.sort(key=lambda x: (-x["net"], -x["gross"], x["prd"]))
@@ -4193,7 +4207,8 @@ async def pmc_global_net(
         return {
             "ts": d.get("ts"), "cost": d.get("cost"), "slim": 1,
             "map": {i["prd"]: [i["gross"], i["mat_stock"], i["prod_stock"],
-                               i["onway"], i["qts"], i["net"]] for i in d["items"]},
+                               i["onway"], i["qts"], i["net"],
+                               i.get("child_inproc", 0)] for i in d["items"]},
         }
     return d
 
