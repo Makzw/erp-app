@@ -25,6 +25,7 @@
     }
     .topbar h1 { font-size: 17px; font-weight: 600; flex: 1; }
     .tab-bar {
+      position: sticky; top: var(--topbar-h, 47px); z-index: 99;
       background: #fff; display: flex;
       border-bottom: 1px solid var(--border);
       overflow-x: auto; -webkit-overflow-scrolling: touch;
@@ -715,6 +716,20 @@ function reloadTab(t) {          // 双击刷新：丢掉暂存、重新拉数�
 
 const mainTabBar = document.querySelector('.tab-bar');
 mainTabBar.querySelectorAll('.tab-btn').forEach(b => { b.title = '双击刷新本页（单击切换会保留现场）'; });
+
+// 吸顶高度：topbar 实测高度 → --topbar-h；topbar+tabbar → --head-top（给各表自带的 sticky 表头让位）
+(function () {
+  function setH() {
+    const tb = document.querySelector('.topbar'), tav = document.querySelector('.tab-bar');
+    const h1 = tb ? tb.offsetHeight : 47, h2 = tav ? tav.offsetHeight : 45;
+    const rs = document.documentElement.style;
+    rs.setProperty('--topbar-h', h1 + 'px');
+    rs.setProperty('--head-top', (h1 + h2) + 'px');
+  }
+  setH();
+  window.addEventListener('resize', setH);
+  window.addEventListener('load', setH);
+})();
 
 mainTabBar.addEventListener('click', e => {
     const btn = e.target.closest('.tab-btn');
@@ -3335,7 +3350,7 @@ function renderBatchTable(allItems, allWhs, whOpts) {
   let html = '<table style="width:100%;border-collapse:collapse;font-size:13px">';
   html += '<thead><tr>';
   ['品号','品名','FROM仓','客户代号','指令单号','单重(g)','数量','净重(kg)','外发计划号','备注',''].forEach(h => {
-    html += `<th style="padding:8px 5px;text-align:left;font-weight:600;border-bottom:1px solid var(--border);white-space:nowrap;position:sticky;top:0;z-index:2;background:var(--bg)">${h}</th>`;
+    html += `<th style="padding:8px 5px;text-align:left;font-weight:600;border-bottom:1px solid var(--border);white-space:nowrap;position:sticky;top:var(--head-top,92px);z-index:2;background:var(--bg)">${h}</th>`;
   });
   html += '</tr></thead>';
   allItems.forEach((item, idx) => {
@@ -3722,7 +3737,7 @@ function gnCutCardHtml(prd, cut, own, it) {
     ? '<div style="padding:16px;color:var(--sub);font-size:13px">加载中…</div>'
     : (rows
       ? '<div style="padding:8px 12px 4px;font-size:11px;color:var(--sub)">「上游被抵掉」是那个上游品号自己那层被抵掉的量（它的单位）；「链上配比 k」是从它到本料的系数和；<b>左 × k = 右列</b>（精确相等，不是约等）——「传到本料」即真正抵掉本料需求的量（本料单位，合计 ' + gnQty(cut) + (uut ? ' ' + gnEsc(uut) : '') + '）。</div>' +
-        '<table style="width:100%;border-collapse:collapse"><thead><tr style="background:var(--bg);position:sticky;top:0">' +
+        '<table style="width:100%;border-collapse:collapse"><thead><tr style="background:var(--bg);position:sticky;top:var(--head-top,92px)">' +
         '<th style="padding:7px 10px;text-align:left;font-size:12px;color:var(--sub)">上游品号</th>' +
         '<th style="padding:7px 10px;text-align:left;font-size:12px;color:var(--sub)">品名</th>' +
         '<th style="padding:7px 10px;text-align:right;font-size:12px;color:var(--sub)">上游被抵掉<br><span style="font-weight:400">（上游单位）</span></th>' +
