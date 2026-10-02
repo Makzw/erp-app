@@ -3478,11 +3478,10 @@ function gnNetHtml(prd) {
     (ci > 0.0001 ? '<div style="font-size:11px;color:var(--sub);white-space:nowrap" title="' +
       gnEsc('这几个料是从本站（这个母件）归属来的，实物在外发/车间在制仓：' + gnFmt(ci, 0) + '。在制已按「本料本层需求」抵扣给本站，不影响全厂净需求算式。') +
       '">其中 ' + gnFmt(ci, 0) + ' 在外发/车间在制</div>' : '') +
-    (Number(v[8] || 0) > 0.0001 ? '<div style="font-size:11px;color:var(--sub);white-space:nowrap;cursor:pointer" ' +
-      'title="本料自己的可用（原材料仓+生产仓+在途+请购）在滚算里抵掉 ' + gnFmt(Number(v[8]), 0) +
-      '，只在把需求推给子件时生效，不算「被上游抵」。点击看来源" ' +
-      'onclick="gnCutModal(\'' + gnEsc(prd) + '\')">本层被可用抵 ' + gnQty(Number(v[8])) + '</div>' : '') +
-    '</div>';
+    (g > 0.0001 ? '<div style="font-size:11px;color:var(--sub);white-space:nowrap" ' +
+      'title="' + gnEsc('全厂毛需求 ' + gnFmt(g, 0) + '（本料单位）：所有成品未出按 BOM 展开、并已扣掉上游各层可用之后的量。左边「被上游可用抵」就是它比标准展开少掉的那块；再减原材料仓/生产仓/在途/请购 = 上面的全厂净需求。') +
+      '">全厂毛需求 ' + gnQty(g) + '</div>' : '') +
+  '</div>';
 }
 
 // 被上游可用抵：点击弹窗看来源（含品名）。来源明细在完整 items 里 → 首次点击懒加载一次（走服务端缓存，~320ms，不重算）
