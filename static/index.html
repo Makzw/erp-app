@@ -532,7 +532,15 @@ function api(url, opts) {
     return r.text().then(function (t) {
       var d = null;
       try { d = t ? JSON.parse(t) : null; } catch (e) { d = null; }
-      if (r.ok) return d === null ? {} : d;
+      if (r.ok) {
+        // 写库成功（POST/PUT/DELETE）→ 清全厂净需求缓存并立即重取，省掉手工刷新页面。
+        // 复用同一 api() 入口，一处覆盖所有写接口；取不到也只是不刷新，绝不挡主流程。
+        if (opts && opts.method && String(opts.method).toUpperCase() !== 'GET') {
+          window.__gnMap = null; window.__gnTs = 0; window.__gnLoading = null;
+          try { gnEnsureMap(); } catch (e) {}
+        }
+        return d === null ? {} : d;
+      }
       var msg;
       if (d && typeof d.detail === 'string') {
         msg = d.detail;                                  // FastAPI HTTPException 的 detail 字符串
