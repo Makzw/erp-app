@@ -2082,14 +2082,7 @@ function updateBOMSelected() {
     bomSelectedByProduct[curPrd][prdNo] = row;
   });
 
-  // 总已选数（跨所有产品）
-  let totalN = 0;
-  Object.values(bomSelectedByProduct).forEach(m => { totalN += Object.keys(m).length; });
-
-  const countWrap = $id('bomBatchCountWrap');
-  const countEl = $id('bomBatchCount');
-  if (countWrap) countWrap.style.display = totalN ? '' : 'none';
-  if (countEl) countEl.textContent = totalN;
+  updateBOMCount();   // 总已选数（跨所有产品）
 }
 
 let pmcItems = [];
@@ -3184,7 +3177,7 @@ function renderBatchTable(allItems, allWhs, whOpts) {
   if (!allItems.length) { body.innerHTML = '<div style="padding:20px;text-align:center;color:var(--sub)">无数据</div>'; return; }
   let html = '<table style="width:100%;border-collapse:collapse;font-size:13px">';
   html += '<thead><tr>';
-  ['品号','品名','FROM仓','客户代号','指令单号','单重(g)','数量','净重(kg)','外发计划号','备注'].forEach(h => {
+  ['品号','品名','FROM仓','客户代号','指令单号','单重(g)','数量','净重(kg)','外发计划号','备注',''].forEach(h => {
     html += `<th style="padding:8px 5px;text-align:left;font-weight:600;border-bottom:1px solid var(--border);white-space:nowrap;position:sticky;top:0;z-index:2;background:var(--bg)">${h}</th>`;
   });
   html += '</tr></thead>';
@@ -3197,7 +3190,8 @@ function renderBatchTable(allItems, allWhs, whOpts) {
     const cus = item.cus_no || item.CUS_NO || item.客户代号 || '';
     const dz = item.danzhong || item.单重 || '';
     const rem = item.rem || item.REM || item.备注 || '';
-    html += `<tr style="border-bottom:1px solid var(--border)">`;
+    const parentPrd = item.parentPrd || item.parentPrdNo || '';
+    html += `<tr data-prd="${escAttr(prdNo)}" data-parent="${escAttr(parentPrd)}" style="border-bottom:1px solid var(--border)">`;
     html += `<td style="padding:6px 5px;font-weight:600">${fmt(prdNo)}</td>`;
     html += `<td style="padding:6px 5px;color:var(--name);font-size:13px;max-width:380px;word-break:break-word;vertical-align:top">${fmt(prdName)}</td>`;
     html += `<td style="padding:6px 5px"><input type="text" class="batch-wh-from" data-idx="${idx}" list="bt_from_wh_opts" placeholder="FROM仓" style="width:130px;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:13px;font-family:inherit;background:var(--card)"></td>`;
@@ -3207,6 +3201,8 @@ function renderBatchTable(allItems, allWhs, whOpts) {
     html += `<td style="padding:6px 5px"><input type="number" class="batch-qty" data-idx="${idx}" value="" min="1" step="1" style="width:120px;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:13px;font-family:inherit;background:var(--card)" oninput="calcBatchJZ(this)"></td>`;
     html += `<td style="padding:6px 5px"><span class="batch-jz" data-idx="${idx}" style="font-size:13px;color:var(--text);min-width:70px;display:inline-block">—</span></td>`;
     html += `<td style="padding:6px 5px"><input type="text" class="batch-ddjh" data-idx="${idx}" value="${escAttr(ddjh)}" placeholder="外发" style="width:120px;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:13px;font-family:inherit;background:var(--card)"></td>`;
+    // MAK 2026-10-02：行内删除（选错了不用整批重选）——同时从暂存里摘掉，见 batchRemoveRow()
+    html += `<td style="padding:6px 4px;text-align:center"><button type="button" title="删除这一行" onclick="batchRemoveRow(this)" style="width:22px;height:22px;border-radius:50%;border:none;background:#fee2e2;color:#dc2626;font-size:13px;line-height:1;cursor:pointer">×</button></td>`;
     html += `<td style="padding:6px 5px"><input type="text" class="batch-rem" data-idx="${idx}" value="${escAttr(rem)}" placeholder="备注" style="width:130px;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:13px;font-family:inherit;background:var(--card)"></td>`;
     html += '</tr>';
   });
@@ -3227,6 +3223,39 @@ function renderBatchTable(allItems, allWhs, whOpts) {
       }
     }
   });
+}
+
+// 行内删除（批量调拨弹窗）：从暂存 bomSelectedByProduct 里摘掉该行 + 移除该 <tr> + 同步库存详情勾选。
+// ⚠ 必须同时删暂存 —— 提交时的 rows 是按 bomSelectedByProduct 重建的（顺序也是按它），
+//   只删 DOM 行会导致"删掉的那行又被提交出去"或行列错位。
+function batchRemoveRow(btn) {
+  const tr = btn && btn.closest('tr');
+  if (!tr) return;
+  const parent = tr.getAttribute('data-parent') || '';
+  const prd = tr.getAttribute('data-prd') || '';
+  if (parent && bomSelectedByProduct[parent]) {
+    delete bomSelectedByProduct[parent][prd];
+    if (!Object.keys(bomSelectedByProduct[parent]).length) delete bomSelectedByProduct[parent];
+  }
+  document.querySelectorAll('.bom-row-check').forEach(cb => {
+    const div = cb.closest('[data-key]');
+    if (div && (div.dataset.prd || '') === prd) cb.checked = false;
+  });
+  tr.remove();
+  updateBOMCount();                       // 同步「已选 N 项」
+  if (!document.querySelectorAll('.batch-qty').length) {
+    bomBatchOverlayRemove();              // 删空了就关掉浮层，不留一个空表
+    toast('已删空，暂存也清了');
+  }
+}
+
+function updateBOMCount() {
+  let totalN = 0;
+  Object.values(bomSelectedByProduct).forEach(m => { totalN += Object.keys(m).length; });
+  const countWrap = $id('bomBatchCountWrap');
+  const countEl = $id('bomBatchCount');
+  if (countWrap) countWrap.style.display = totalN ? '' : 'none';
+  if (countEl) countEl.textContent = totalN;
 }
 
 function calcBatchJZ(el) {
