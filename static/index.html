@@ -3506,14 +3506,25 @@ async function gnLookupItems() {
   return __gnItems;
 }
 function gnCutCardHtml(prd, cut, own, it) {
-  var name = (it && it.name) || '', spec = (it && it.spc) || '';
+  var name = (it && it.name) || '', spec = (it && it.spc) || '', uut = (it && it.ut) || '';
   var top = (it && it.cut_top) || [];
+  // 每一行给两个数：①上游那个品号自己那层被可用抵掉的量（上游自己的单位）
+  //                ②其中按配比传到本料、抵掉本料需求的量（本料单位）
+  // 取上游自己的数用完整 items 里的 own_cut（后端同一次滚算算出来的，两个数能对上：上游数 × 链上配比 = 本料数）
   var rows = top.map(function (x) {
+    var su = (window.__gnItems || {})[x.prd] || null;
+    var supQty = su ? Number(su.own_cut || 0) : null;
+    var supUnit = su ? (su.ut || '') : '';
     var pct = cut > 0 ? (x.qty / cut * 100) : 0;
     return '<tr style="border-bottom:1px solid var(--border)">' +
       '<td style="padding:7px 10px;font-family:ui-monospace,SFMono-Regular,monospace;font-size:12px;white-space:nowrap">' + gnEsc(x.prd) + '</td>' +
       '<td style="padding:7px 10px;font-size:12px">' + gnEsc(x.name || '') + '</td>' +
-      '<td style="padding:7px 10px;text-align:right;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap">' + gnQty(x.qty) + '</td>' +
+      '<td style="padding:7px 10px;text-align:right;background:rgba(107,114,128,.06);white-space:nowrap">' +
+        '<span style="font-weight:600;font-variant-numeric:tabular-nums">' + (supQty === null ? '—' : gnQty(supQty)) + '</span>' +
+        (supUnit ? ' <span style="font-size:11px;color:var(--sub)">' + gnEsc(supUnit) + '</span>' : '') + '</td>' +
+      '<td style="padding:7px 10px;text-align:right;white-space:nowrap">' +
+        '<span style="font-weight:600;font-variant-numeric:tabular-nums;color:#0ea5e9">' + gnQty(x.qty) + '</span>' +
+        (uut ? ' <span style="font-size:11px;color:var(--sub)">' + gnEsc(uut) + '</span>' : '') + '</td>' +
       '<td style="padding:7px 10px;text-align:right;color:var(--sub);font-size:12px;white-space:nowrap">' + (cut > 0 && pct < 1 ? '<1%' : pct.toFixed(1) + '%') + '</td></tr>';
   }).join('');
   var sum = top.reduce(function (a, b) { return a + (b.qty || 0); }, 0);
@@ -3521,15 +3532,17 @@ function gnCutCardHtml(prd, cut, own, it) {
   var body = !it
     ? '<div style="padding:16px;color:var(--sub);font-size:13px">加载中…</div>'
     : (rows
-      ? '<table style="width:100%;border-collapse:collapse"><thead><tr style="background:var(--bg);position:sticky;top:0">' +
+      ? '<div style="padding:8px 12px 4px;font-size:11px;color:var(--sub)">左列「上游被抵掉」是那个上游品号自己那层被抵掉的量（用它的单位）；右列「传到本料」是"左列 × 链上配比"之后、真正抵掉本料需求的量（用本料的单位，就是上面那个 ' + gnQty(cut) + (uut ? ' ' + gnEsc(uut) : '') + '）。</div>' +
+        '<table style="width:100%;border-collapse:collapse"><thead><tr style="background:var(--bg);position:sticky;top:0">' +
         '<th style="padding:7px 10px;text-align:left;font-size:12px;color:var(--sub)">上游品号</th>' +
         '<th style="padding:7px 10px;text-align:left;font-size:12px;color:var(--sub)">品名</th>' +
-        '<th style="padding:7px 10px;text-align:right;font-size:12px;color:var(--sub)">抵掉的数量</th>' +
+        '<th style="padding:7px 10px;text-align:right;font-size:12px;color:var(--sub)">上游被抵掉<br><span style="font-weight:400">（上游单位）</span></th>' +
+        '<th style="padding:7px 10px;text-align:right;font-size:12px;color:var(--sub)">传到本料<br><span style="font-weight:400">（本料单位）</span></th>' +
         '<th style="padding:7px 10px;text-align:right;font-size:12px;color:var(--sub)">占比</th></tr></thead>' +
         '<tbody>' + rows + '</tbody></table>' +
-        (rest > 0.0001 ? '<div style="padding:8px 12px;font-size:12px;color:var(--sub)">其余 ' + gnQty(rest) + ' 来自更小的上游来源（未列）</div>' : '')
+        (rest > 0.0001 ? '<div style="padding:8px 12px;font-size:12px;color:var(--sub)">其余传到本料 ' + gnQty(rest) + (uut ? ' ' + gnEsc(uut) : '') + ' 来自更小的上游来源（未列）</div>' : '')
       : '<div style="padding:16px;color:var(--sub);font-size:13px">本料没有被上游抵扣</div>');
-  return '<div style="background:var(--card);border-radius:16px;width:100%;max-width:min(94vw,820px);max-height:88vh;display:flex;flex-direction:column;animation:slideUp .2s;font-family:inherit">' +
+  return '<div style="background:var(--card);border-radius:16px;width:100%;max-width:min(96vw,1000px);max-height:88vh;display:flex;flex-direction:column;animation:slideUp .2s;font-family:inherit">' +
     '<div style="padding:14px 16px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--border)">' +
       '<div style="font-size:16px;font-weight:600;flex:1">🔻 被上游可用抵</div>' +
       '<button onclick="document.getElementById(\'gnCutOverlay\').remove()" style="width:32px;height:32px;border-radius:50%;border:none;background:var(--bg);font-size:18px;cursor:pointer;color:var(--sub)">×</button></div>' +
@@ -3537,16 +3550,17 @@ function gnCutCardHtml(prd, cut, own, it) {
       '<div style="font-size:15px;font-weight:600">' + gnEsc(name) + '</div>' +
       '<div style="font-size:12px;color:var(--sub);font-family:ui-monospace,SFMono-Regular,monospace;margin-top:3px">' + gnEsc(prd) + (spec ? ' ｜ ' + gnEsc(spec) : '') + '</div>' +
       '<div style="margin-top:12px;display:flex;gap:20px;flex-wrap:wrap">' +
-        '<div><div style="font-size:11px;color:var(--sub)">被上游可用抵</div>' +
-        '<div style="font-size:22px;font-weight:700;color:#0ea5e9;font-variant-numeric:tabular-nums;line-height:1.2">' + gnQty(cut) + '</div></div>' +
-        (own > 0.0001 ? '<div><div style="font-size:11px;color:var(--sub)">本料自身被可用抵</div>' +
-        '<div style="font-size:22px;font-weight:700;color:#6b7280;font-variant-numeric:tabular-nums;line-height:1.2">' + gnQty(own) + '</div></div>' : '') +
+        '<div><div style="font-size:11px;color:var(--sub)">被上游可用抵（本料单位）</div>' +
+        '<div style="font-size:22px;font-weight:700;color:#0ea5e9;font-variant-numeric:tabular-nums;line-height:1.2">' + gnQty(cut) + (uut ? ' <span style="font-size:13px;font-weight:400;color:var(--sub)">' + gnEsc(uut) + '</span>' : '') + '</div></div>' +
+        (own > 0.0001 ? '<div><div style="font-size:11px;color:var(--sub)">本料自身被可用抵（本料单位）</div>' +
+        '<div style="font-size:22px;font-weight:700;color:#6b7280;font-variant-numeric:tabular-nums;line-height:1.2">' + gnQty(own) + (uut ? ' <span style="font-size:13px;font-weight:400;color:var(--sub)">' + gnEsc(uut) + '</span>' : '') + '</div></div>' : '') +
       '</div></div>' +
     '<div style="overflow:auto;flex:1">' + body + '</div>' +
     '<div style="padding:10px 16px;border-top:1px solid var(--border);font-size:11px;color:var(--sub);line-height:1.6">' +
       '「被上游可用抵」= 上游各层被可用（原材料仓 + 生产仓 + 在途 + 请购）抵掉的量，按配比累计到本料（含上游各层自己的库存与在途）。' +
       '本料自身被抵的那部分不算在内 —— 它体现在本料的净需求里。</div></div>';
 }
+
 async function gnCutModal(prd) {
   var v = (window.__gnMap || {})[prd] || [];
   var cut = Number(v[7] || 0), own = Number(v[8] || 0);
