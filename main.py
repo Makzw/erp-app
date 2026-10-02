@@ -4011,11 +4011,32 @@ def _calc_global_net(db_name="C041", refresh=0):
                 _dq.append(_c)
     bom_cycles = sorted(p for p in _indeg if p not in _seen)
 
+    # ⚠ _order 只含 _mg 图里的品号；种子直接给需求的「无 BOM 外购件/包材」不在图里 → 补到末尾。
+    #   它们没有子件，push 循环天然空转（不改任何数），只是让它们的「本层自身被可用抵」也被记下来，
+    #   否则「不滚算 − 上游抵 − 本层抵 = 净需求」在这些品号上摆不平（如 SC0081 请购 4 万抵了 4 千需求）。
+    for _p in list(dem):
+        if _p not in _seen:
+            _seen.add(_p)
+            _order.append(_p)
+
     # ★ 被上游可用抵（MAK 2026-10-02）：
     #   _cut[p] = 上游各层被可用（材料仓+生产仓+在途+请购）抵掉的量，按系数累计到 p；
     #   _src[p] = {来源品号: 量}，含 p 自己那一份（键为 p，展示时要区分开）。
     #   ⚠ 抵扣的传递与需求的推送是两件事：一个品号自己滚算需求=0（被上游抵光）时，
     #     仍必须把累计抵扣传给子件，否则子件的「被上游抵」会凭空少一块。
+    # ★ 不滚算毛需求（MAK 2026-10-02）：同一次滚算的**同一张 _mg 图** + 同一批种子，只做纯展开，
+    #   一分库存都不扣。用途：让「不滚算毛需求 − 被上游可用抵 − 本层自身可用抵 = 全厂净需求」
+    #   这条式子成立（MAK 要的就是这个读法）。
+    #   ⚠ 必须用 _mg 图：⑦ 的 expand() 是另一套读法（单根 GUID/深度≤8/同边相加），实测有 370 个
+    #   品号两套结果不同 → 拿 ⑦ 的数来摆这条式子会摆不平。
+    _flat = dict(dem)
+    for _p in _order:
+        _n = _flat.get(_p, 0.0)
+        if _n <= 0 or not _can_expand(_p):
+            continue
+        for _c, _r in _mg.get(_p, {}).items():
+            _flat[_c] = _flat.get(_c, 0.0) + _n * _r
+
     _cut, _src = {}, {}
     for _p in _order:
         _need = dem.get(_p, 0.0)
@@ -4125,7 +4146,8 @@ def _calc_global_net(db_name="C041", refresh=0):
         ub = used_by.get(p, [])
         items.append({
             "prd": p, "name": nm, "spc": spc, "ut": ut, "type": typ, "knd": knd,
-            "gross": round(gq, 3), "mat_stock": round(ms, 3),
+            "gross": round(gq, 3), "gross_flat": round(_flat.get(p, 0.0), 3),
+            "flat_gap": round(gq - _flat.get(p, 0.0), 3), "mat_stock": round(ms, 3),
             "prod_stock": round(ps_all, 3), "prod_used": round(prod_used.get(p, 0.0), 3),
             "prod_pool": round(prod_pool.get(p, 0.0), 3),
             "onway": round(ow, 3), "qts": round(qt, 3), "net": round(net, 3),
@@ -4231,7 +4253,7 @@ async def pmc_global_net(
             "map": {i["prd"]: [i["gross"], i["mat_stock"], i["prod_stock"],
                                i["onway"], i["qts"], i["net"],
                                i.get("child_inproc", 0), i.get("cut", 0),
-                               i.get("own_cut", 0)] for i in d["items"]},
+                               i.get("own_cut", 0), i.get("gross_flat", 0)] for i in d["items"]},
         }
     return d
 

@@ -3465,11 +3465,13 @@ function gnNetHtml(prd) {
   }
   var g = Number(v[0] || 0), mt = Number(v[1] || 0), pd = Number(v[2] || 0), ow = Number(v[3] || 0), qt = Number(v[4] || 0), net = Number(v[5] || 0);
   var ci = Number(v[6] || 0);   // 母件被归属的在制合计（无则为 0）
-  var tip = '全厂净需求（所有成品的未出 BOM 展开 − 材料仓 − 生产仓 − 在途 − 请购）\n' +
-    '毛需求 ' + gnFmt(g, 0) + '（所有成品）\n' +
-    '− 材料仓 ' + gnFmt(mt, 0) + '\n− 生产仓 ' + gnFmt(pd, 0) + '（全额算可用）\n' +
-    '− 在途 ' + gnFmt(ow, 0) + '\n− 在单请购 ' + gnFmt(qt, 0) + '\n' +
-    '= 净需求 ' + gnFmt(net, 0) + '\n\n' +
+  var cutv = Number(v[7] || 0), own = Number(v[8] || 0), gf = Number(v[9] || 0);   // 被上游抵 / 本层自身被抵 / 不滚算毛需求
+  var tip = '全厂净需求（全厂口径：所有成品）\n' +
+    '不滚算毛需求 ' + gnQty(gf) + '（所有成品未出按 BOM 展开，一分库存都不扣）\n' +
+    '− 被上游可用抵 ' + gnQty(cutv) + '\n' +
+    '− 本层可用抵扣 ' + gnQty(own) + '（原材料仓/生产仓/在途/请购 里实际被用掉的部分）\n' +
+    '= 要做的数（全厂净需求）' + gnQty(net) + '\n\n' +
+    '（滚算后的本层毛需求 ' + gnQty(g) + ' = 不滚算毛需求 − 被上游可用抵；料行看小字）\n' +
     '⚠ 这是全厂口径（所有成品），跟左边「缺口」不是一回事：缺口只算本单，是请购/MPS 落库的依据';
   // ⚠ 真实单元格也带 data-gnnet：这样 gnEnsureMap 到位后 gnFill 会重渲染它，
   //   显示「其中 X 在外发/车间在制」——否则树在 map 未到时渲染的那格永远不带标
@@ -3478,9 +3480,11 @@ function gnNetHtml(prd) {
     (ci > 0.0001 ? '<div style="font-size:11px;color:var(--sub);white-space:nowrap" title="' +
       gnEsc('这几个料是从本站（这个母件）归属来的，实物在外发/车间在制仓：' + gnFmt(ci, 0) + '。在制已按「本料本层需求」抵扣给本站，不影响全厂净需求算式。') +
       '">其中 ' + gnFmt(ci, 0) + ' 在外发/车间在制</div>' : '') +
-    (g > 0.0001 ? '<div style="font-size:11px;color:var(--sub);white-space:nowrap" ' +
-      'title="' + gnEsc('全厂毛需求 ' + gnFmt(g, 0) + '（本料单位）：所有成品未出按 BOM 展开、并已扣掉上游各层可用之后的量。左边「被上游可用抵」就是它比标准展开少掉的那块；再减原材料仓/生产仓/在途/请购 = 上面的全厂净需求。') +
-      '">全厂毛需求 ' + gnQty(g) + '</div>' : '') +
+    (gf > 0.0001 ? '<div style="font-size:11px;color:var(--sub);white-space:nowrap" ' +
+      'title="' + gnEsc('不滚算毛需求 ' + gnQty(gf) + '（本料单位）：所有成品未出按 BOM 展开、一分库存都不扣。\n' +
+        '− 被上游可用抵 ' + gnQty(cutv) + '\n− 本层可用抵扣 ' + gnQty(own) + '（上面原材料仓/生产仓/在途/请购 实际用掉的部分）\n' +
+        '= 全厂净需求 ' + gnQty(net) + '（要做的数）') +
+      '">不滚算毛需求 ' + gnQty(gf) + '</div>' : '') +
   '</div>';
 }
 
