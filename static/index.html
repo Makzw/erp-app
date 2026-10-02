@@ -1033,7 +1033,6 @@ function collapseAllTree() {
 // ── 盘点 ───────────────────────────────────────────────────────────────────
 let stockData = null; // 当前查询结果
 let stockSuggestions = []; // 实时补全列表
-let stockBatchList = []; // 调拨待升单列表
 let stockBatchTools = []; // 运输工具
 let _toolRowCount = 0;
 let _suggestQ = '';
@@ -1694,7 +1693,6 @@ async function openBatchCompletionModal() {
 // ── 调拨 tab ────────────────────────────────────────────────
 // 复用 stockData / stockSuggestions / 实时补全基础设施；
 // 区别仅在于：选了仓库 → 弹「FROM→TO+数量+4 字段」调拨模态框；
-// 调拨项入 stockBatchList 时 direction='transfer'，由 submitTransfer() 单独提交。
 async function loadTransfer() {
   const el = $id('content');
   el.innerHTML = `
@@ -2026,22 +2024,19 @@ function renderTransferBomTree(node, depth = 0) {
 }
 
 // 清除全部 BOM 暂存
-function clearAllBOMStaging() {
+function clearAllBOMStaging(silent) {
   bomSelectedByProduct = {};
-  batchFormData = {};
   document.querySelectorAll('.bom-row-check').forEach(cb => { cb.checked = false; });
   const countWrap = $id('bomBatchCountWrap');
   const countEl = $id('bomBatchCount');
   if (countWrap) countWrap.style.display = 'none';
   if (countEl) countEl.textContent = '0';
-  toast('✓ 已清除全部暂存');
+  if (!silent) toast('✓ 已清除全部暂存');   // 程序调用（提交成功后）不重复弹提示
 }
 
 // 存储完整的 BOM 行数据（含母件品号）
 let bomSelectedByProduct = {};
 // { parentPrd_no -> { childPrd_no -> { prd_no, prd_name, wh_stock, qty_per_unit, parentPrd_no, parentPrdName } } }
-// 记录 BOM 弹窗表单值的全局存储 { prd_no_parent -> { rowKey -> { ref, ddjh, wh_from, qty, dz, jz } } }
-let batchFormData = {};
 
 // 事件委托：全局监听 BOM 勾选，页面加载时绑定一次即可
 document.addEventListener('change', (e) => {
@@ -3096,8 +3091,7 @@ function openBatchTransferModal() {
       bomItems.push({ ...r, parentPrd, parentName: r.parentPrdName || parentPrd });
     });
   });
-  const stockItems = stockBatchList.filter(i => i.direction === 'transfer');
-  const allItems = [...bomItems, ...stockItems];
+  const allItems = [...bomItems];   // ponytail: stockBatchList 从来没被写入过（永远空），删掉
   if (!allItems.length) { toast('⚠️ 请先勾选 BOM 行或加入升单列表'); return; }
   const n = allItems.length;
   const allWhs = window.__allWarehouses || [];
@@ -3298,6 +3292,10 @@ async function bomBatchConfirm() {
     if (res && res.error) throw new Error(res.error);   // Step C：后端 200 + {"error"} 的业务错误 → 走 catch（❌ 提示 + 按钮恢复 + 浮层留下可重试）
     toast(`✅ 批量调拨成功 ${res.ic_no}`);
     bomBatchOverlayRemove();
+    // MAK 2026-10-02：这批做完了 → 清掉暂存（勾选 + 运输工具行），与批量完工一致。
+    // 弹窗里填的数量/FROM仓等只活在 DOM 里，关掉浮层即丢，不需要额外清。
+    clearAllBOMStaging(true);
+    stockBatchTools = [];
     if (stockData && stockData.prd_no) stockSearchByPRD(stockData.prd_no);
   } catch(e) {
     toast('❌ 批量调拨失败: ' + e.message);
