@@ -657,6 +657,14 @@ function clearSearch() {
 // ── 每个 tab 的「现场暂存」────────────────────────────────────────────────
 // 切走时把 #content 的子节点整体搬进一个隐藏 holder，切回来再搬回来 —— 输入框的值、
 // 筛选结果、滚动位置、展开状态全都在（像浏览器多标签一样）。要重新取数据就【双击 tab】。
+// 内容是否已经加载好（**顶层**就是整页「加载中…」/报错 = 没 ready；内层提示不算）
+function tabContentReady() {
+  const el = $id('content');
+  if (!el || !el.firstChild) return false;
+  const first = el.firstElementChild;
+  if (!first || !first.classList) return false;
+  return !(first.classList.contains('state-msg') || first.classList.contains('error-msg'));
+}
 function tabHolder(t) {
   let h = $id('hold-' + t);
   if (!h) {
@@ -737,7 +745,12 @@ mainTabBar.addEventListener('click', e => {
     if (e.detail > 1) return;          // 双击的第二下不切 tab（刷新交给 dblclick）
     const t = btn.dataset.tab;
     if (!t) return;
-    if (t === curTab) { btn.classList.add('active'); return; }   // 已在本 tab：单击不重载，保留现场
+    if (t === curTab) {
+      btn.classList.add('active');
+      // 还没加载好（转圈/报错）→ 单击就当重试；已经加载好 → 保留现场不动
+      if (!tabContentReady()) tabLoader(t);
+      return;
+    }
 
     stashTab(curTab);                  // 先把当前 tab 的现场收起来
     mainTabBar.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
@@ -3983,6 +3996,10 @@ function renderGlobalNet() {
   el.innerHTML = html;
   gnRenderRows();
 }
+
+// 启动加载：默认 tab（请购单）自己拉数。以前全 app 没有任何启动加载 —— 用户不点 tab
+// 就永远停在「加载中…」；放在 <script> 最末尾，避开上面 let 变量的 TDZ。
+loadQts();
 </script>
 </body>
 </html>
