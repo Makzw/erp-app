@@ -3759,6 +3759,15 @@ import threading
 _GNET = {"ts": 0.0, "data": None, "err": None}
 _GNET_TTL = 600
 _GNET_LOCK = threading.Lock()
+
+# 写库后让全厂净需求缓存失效：任何 POST/PUT/PATCH/DELETE 成功 → 下次读重算。
+# 不逐个接口加（30+ 个写接口，漏一个就又是「刚建的请购单不减需求」），一处兜住全部。
+@app.middleware("http")
+async def _gnet_invalidate_on_write(request, call_next):
+    resp = await call_next(request)
+    if request.method in ("POST", "PUT", "PATCH", "DELETE") and resp.status_code < 400:
+        _GNET["ts"] = 0.0
+    return resp
 _GNET_DIRTY_PRD = "JDPE03C01200003"
 _GNET_MADE_TYPES = ("20000", "30000")   # 成品/半成品：没 BOM 就是缺 BOM
 
