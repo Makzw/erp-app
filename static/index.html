@@ -538,6 +538,8 @@ function api(url, opts) {
         if (opts && opts.method && String(opts.method).toUpperCase() !== 'GET') {
           window.__gnMap = null; window.__gnTs = 0; window.__gnLoading = null;
           try { gnEnsureMap(); } catch (e) {}
+          // 写库后所有 tab 的现场暂存作废 → 下次切进去自动重取，不会看到旧数据
+          try { dropAllTabHolds(); } catch (e) {}
         }
         return d === null ? {} : d;
       }
@@ -651,47 +653,107 @@ function clearSearch() {
 
 // ── Tab / Filter ────────────────────────────────────────────────────────────
 // Main tab bar
+// ── 每个 tab 的「现场暂存」────────────────────────────────────────────────
+// 切走时把 #content 的子节点整体搬进一个隐藏 holder，切回来再搬回来 —— 输入框的值、
+// 筛选结果、滚动位置、展开状态全都在（像浏览器多标签一样）。要重新取数据就【双击 tab】。
+function tabHolder(t) {
+  let h = $id('hold-' + t);
+  if (!h) {
+    h = document.createElement('div');
+    h.id = 'hold-' + t;
+    h.style.display = 'none';
+    document.body.appendChild(h);
+  }
+  return h;
+}
+function stashTab(t) {
+  const el = $id('content');
+  if (!el || !t) return;
+  // 滚动位置：这个 app 里滚的通常是 window，也一起记（#content 自己有滚动时也保住）
+  const sc = document.scrollingElement || document.documentElement;
+  window['__tabScroll_' + t] = { el: el.scrollTop || 0, win: (sc && sc.scrollTop) || 0 };
+  const h = tabHolder(t);
+  while (el.firstChild) h.appendChild(el.firstChild);
+}
+function restoreTab(t) {
+  const el = $id('content'), h = $id('hold-' + t);
+  if (!el || !h || !h.firstChild) return false;
+  while (el.firstChild) el.removeChild(el.firstChild);
+  while (h.firstChild) el.appendChild(h.firstChild);
+  const s = window['__tabScroll_' + t] || { el: 0, win: 0 };
+  el.scrollTop = s.el || 0;
+  requestAnimationFrame(function () {
+    const sc = document.scrollingElement || document.documentElement;
+    if (sc) sc.scrollTop = s.win || 0;
+    try { window.scrollTo(0, s.win || 0); } catch (e) {}
+  });
+  return true;
+}
+function dropTabHold(t) {
+  const h = $id('hold-' + t);
+  if (h) while (h.firstChild) h.removeChild(h.firstChild);
+  window['__tabScroll_' + t] = { el: 0, win: 0 };
+}
+function dropAllTabHolds() {
+  ['qts', 'pos-unreceived', 'smo', 'stock', 'transfer', 'completion', 'pmc', 'globalnet'].forEach(dropTabHold);
+}
+function tabLoader(t) {          // 各 tab 的加载函数（和原来切换分支一一对应）
+  if (t === 'smo') return loadSmo();
+  if (t === 'pos-unreceived') return loadPosUnreceived();
+  if (t === 'stock') return loadStock();
+  if (t === 'transfer') return loadTransfer();
+  if (t === 'completion') return loadCompletion();
+  if (t === 'pmc') return loadPMC();
+  if (t === 'globalnet') return loadGlobalNet();
+  return loadQts();
+}
+function reloadTab(t) {          // 双击刷新：丢掉暂存、重新拉数据
+  t = t || curTab;
+  dropTabHold(t);
+  tabLoader(t);
+}
+
 const mainTabBar = document.querySelector('.tab-bar');
+mainTabBar.querySelectorAll('.tab-btn').forEach(b => { b.title = '双击刷新本页（单击切换会保留现场）'; });
+
 mainTabBar.addEventListener('click', e => {
     const btn = e.target.closest('.tab-btn');
     if (!btn) return;
+    if (e.detail > 1) return;          // 双击的第二下不切 tab（刷新交给 dblclick）
+    const t = btn.dataset.tab;
+    if (!t) return;
+    if (t === curTab) { btn.classList.add('active'); return; }   // 已在本 tab：单击不重载，保留现场
+
+    stashTab(curTab);                  // 先把当前 tab 的现场收起来
     mainTabBar.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
     btn.classList.add('active');
 
-    if (btn.dataset.tab) {
-      // Main tab
-      curTab = btn.dataset.tab;
-      // 切换时清除盘点tab的autocomplete残留
-      if (typeof dismissSuggestions === 'function') dismissSuggestions();
-      stockSuggestions = [];
-      // PMC 列表自带搜索框（带指令单号快捷筛选 + 全选），顶栏那个在 PMC tab 隐藏，免得两个框重复
-      $id('searchBar').style.display = (curTab === 'pmc') ? 'none' : 'flex';
-      $id('searchInput').value = '';
-      $id('searchClear').classList.remove('show');
-      curSearch = '';
-      if (curTab === 'pos-unreceived') {
-        posUnSearch = ''; posUnQ = '';
-        posUnCustomer = ''; posUnSupplier = ''; posUnOrderNo = '';
-      }
-      if (curTab === 'smo') {
-        loadSmo();
-      } else if (curTab === 'pos-unreceived') {
-        loadPosUnreceived();
-      } else if (curTab === 'stock') {
-        loadStock();
-      } else if (curTab === 'transfer') {
-        loadTransfer();
-      } else if (curTab === 'completion') {
-        loadCompletion();
-      } else if (curTab === 'pmc') {
-        loadPMC();
-      } else if (curTab === 'globalnet') {
-        loadGlobalNet();
-      } else {
-        loadQts();
-      }
+    // Main tab
+    curTab = t;
+    // 切换时清除盘点tab的autocomplete残留
+    if (typeof dismissSuggestions === 'function') dismissSuggestions();
+    stockSuggestions = [];
+    // PMC 列表自带搜索框（带指令单号快捷筛选 + 全选），顶栏那个在 PMC tab 隐藏，免得两个框重复
+    $id('searchBar').style.display = (curTab === 'pmc') ? 'none' : 'flex';
+    $id('searchInput').value = '';
+    $id('searchClear').classList.remove('show');
+    curSearch = '';
+    if (curTab === 'pos-unreceived') {
+      posUnSearch = ''; posUnQ = '';
+      posUnCustomer = ''; posUnSupplier = ''; posUnOrderNo = '';
     }
+    // 有暂存就恢复（保留现场），没有才真加载
+    if (!restoreTab(curTab)) tabLoader(curTab);
   });
+
+// 双击 tab = 刷新这个 tab
+mainTabBar.addEventListener('dblclick', e => {
+  const btn = e.target.closest('.tab-btn');
+  if (!btn || !btn.dataset.tab) return;
+  if (btn.dataset.tab !== curTab) return;
+  reloadTab(curTab);
+  if (typeof toast === 'function') toast('已刷新「' + btn.textContent.trim() + '」');
+});
 
 // ── 请购单 ──────────────────────────────────────────────────────────────────
 let qtsSupplier = '', qtsOrderNo = '';
