@@ -4027,6 +4027,9 @@ def _calc_global_net(db_name="C041", refresh=0):
     #   滚算里生产仓按 _avail() 直接算该层可用；归属信息保留给 PMC 看"这批给谁做的"。
     owners, prod_used, prod_pool = {}, {}, {}
     multi_owner, unknown_owner, neg_clamped, bom_owned = [], [], [], []
+    # ★ 保险（2026-10-02 MAK）：MOT 唯一 X 且 BOM 唯一 Y 且 X≠Y → 报警。
+    #   归属结果不变（仍按 MOT），只把「MOT 可能过时」从静默相信变成会自己喊的报警。
+    owner_mismatch = []
     for p, s in prod_stock.items():
         if s <= 0:
             if s < 0:
@@ -4040,6 +4043,9 @@ def _calc_global_net(db_name="C041", refresh=0):
             owners[p] = f
             prod_used[p] = x
             prod_pool[p] = s - x
+            _bs1 = bom_owners(p)
+            if len(_bs1) == 1 and next(iter(_bs1)) != f:
+                owner_mismatch.append({"prd": p, "qty": s, "mot": f, "bom": next(iter(_bs1))})
         elif len(os_) > 1:
             multi_owner.append({"prd": p, "qty": s, "owners": sorted(os_), "src": "MOT"})
         else:
@@ -4147,6 +4153,7 @@ def _calc_global_net(db_name="C041", refresh=0):
         "alerts": {
             "bom_cycles": bom_cycles,
             "multi_owner": sorted(multi_owner, key=lambda x: -x["qty"]),
+            "owner_mismatch": sorted(owner_mismatch, key=lambda x: -x["qty"]),
             "unknown_owner": sorted(unknown_owner, key=lambda x: -x["qty"]),
             "no_bom_missing": sorted(no_bom_missing, key=lambda x: -x["qty"]),
             "no_bom_direct": sorted(no_bom_direct, key=lambda x: -x["qty"]),

@@ -3358,7 +3358,7 @@ function gnEsc(s) {
 }
 function gnAlertSoon() { return null; }
 function gnHasAlert(prd, alerts) {
-  var ks = ['multi_owner', 'unknown_owner', 'no_bom_missing', 'dirty'];
+  var ks = ['multi_owner', 'unknown_owner', 'no_bom_missing', 'dirty', 'owner_mismatch'];
   for (var i = 0; i < ks.length; i++) {
     var arr = (alerts && alerts[ks[i]]) || [];
     for (var j = 0; j < arr.length; j++) if (arr[j].prd === prd) return true;
@@ -3600,6 +3600,9 @@ function renderGlobalNet() {
   var direct = (a.no_bom_direct || []).map(function (x) { return { prd: x.prd, qty: x.qty, extra: 'TYPE=' + x.type + '，未出直接当毛需求' }; });
   var neg = (a.neg_clamped || []).map(function (x) { return { prd: x.prd, qty: x.qty, extra: x.kind + '负账面，已夹 0' }; });
   var drt = (a.dirty || []).map(function (x) { return { prd: x.prd, qty: x.qty, extra: '材料仓异常巨大，未夹 0' }; });
+  var omm = (a.owner_mismatch || []).map(function (x) {
+    return { prd: x.prd, qty: x.qty, extra: 'MOT 口径 → ' + x.mot + ' ／ BOM 口径 → ' + x.bom + '（归属仍按 MOT，请人工核 MOT 是否过时）' };
+  });
 
   var html = '<div style="padding:10px 12px 40px">'
     + '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">'
@@ -3621,6 +3624,7 @@ function renderGlobalNet() {
     + gnAlertBlock('ℹ 生产仓由 BOM 兜底归属（MOT 查不到 → BOM 唯一顶层成品）', bown, ['品号', '生产仓数量', '说明'], '#0F766E')
     + gnAlertBlock('⚠ 生产仓多母件冲突（不参与计算，需人工判定）', multi, ['品号', '生产仓数量', '候选母件'], '#B45309')
     + gnAlertBlock('⚠ 生产仓查不到母件（不参与计算）', unk, ['品号', '生产仓数量', '说明'], '#B45309')
+    + gnAlertBlock('⚠ 归属口径不一致（MOT 唯一 vs BOM 唯一 → 指向不同母件，MOT 可能过时）', omm, ['品号', '生产仓数量', '说明'], '#B45309')
     + gnAlertBlock('⛔ 缺 BOM（成品/半成品，需求未计入）', miss, ['品号', '未出量', '说明'], '#DC2626')
     + gnAlertBlock('ℹ 无 BOM 直采件（未出直接当毛需求）', direct, ['品号', '未出量', '说明'], '#6B7280')
     + gnAlertBlock('ℹ 负账面已夹 0', neg, ['品号', '原值', '说明'], '#6B7280')
