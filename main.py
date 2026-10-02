@@ -3763,6 +3763,9 @@ def _pmc_preview_one(conn, so_no_itm, prd_no, qty, alloc=None):
 #     未出直接当该品号自己的毛需求（本身就是要买的东西，不展开）
 import threading
 _GNET = {"ts": 0.0, "data": None, "err": None}
+# 「全厂毛需求」来源包（反向图 + 不滚算毛需求 + 成品种子），只驻内存，
+# 供 /api/pmc/flat_src 的 hover 明细用 —— 不进 global_net 的响应体。
+_FLATSRC = {"ts": 0.0, "data": None}
 _GNET_TTL = 600
 _GNET_LOCK = threading.Lock()
 
@@ -4179,6 +4182,28 @@ def _calc_global_net(db_name="C041", refresh=0):
         })
     items.sort(key=lambda x: (-x["net"], -x["gross"], x["prd"]))
 
+    # ★ 「全厂毛需求」来源包（MAK 2026-10-02 hover 需求）：
+    #   反向图 _rvg[子] = [(母, 系数)] + 可展开母件集 _exp + 不滚算毛需求 _flat + 成品种子 fg。
+    #   前端从任意品号往上爬，累乘路径系数，就能列出「所有相关成品 × 未出 × 累计用量」。
+    #   ⚠ 与 _flat 必须同一张 _mg 图、同一套 max 系数、同一批种子，否则合计数对不上。
+    try:
+        _rvg = {}
+        for _pu, _cs in _mg.items():
+            for _c2, _r2 in _cs.items():
+                _rvg.setdefault(_c2, []).append((_pu, _r2))
+        _FLATSRC["data"] = {
+            "rvg": _rvg,
+            "exp": set(_p for _p in _mg if _can_expand(_p)),
+            "flat": _flat,
+            "fg": fg,
+            "prdt": prdt,
+            "hdr": hdr,
+            "seeds_no_bom": {d["prd"]: d["qty"] for d in no_bom_direct},
+        }
+        _FLATSRC["ts"] = _t2.time()
+    except Exception:
+        _FLATSRC["data"] = None
+
     # ⑩ 成品自己有货清单（只列出给人看，**不参与任何抵冲、不进净需求算式**）
     # 这些品号是成品/半成品，没被别的品号当材料用到，所以不出现在上面的 items 里；
     # 它们自己的库存（材料仓/生产仓）不属于「材料供给」，只在提示块里展示，由人判断要不要买。
@@ -4269,6 +4294,112 @@ async def pmc_global_net(
                                i.get("own_cut", 0), i.get("gross_flat", 0)] for i in d["items"]},
         }
     return d
+
+
+@app.get("/api/pmc/flat_src")
+async def pmc_flat_src(prd_no: str = Query(...), db: str = Query(default="c041")):
+    """「全厂毛需求」的来源明细（只读，前端 hover 用）：
+    所有相关成品 × 未出 × 累计用量 = 本料毛需求（不滚算口径）。
+
+    数据取自上一次 _calc_global_net 存下的内存包（不重算），包过期就先重算一次。
+    ⚠ 往上爬必须遵守「只有可展开的母件才把量推给子件」——与 _flat 的纯展开同规则，
+      否则合计对不上不滚算毛需求（响应里给 diff 自检，正常应为 0）。
+    """
+    import time as _t
+    db_name = "T041" if db.lower() == "t041" else "C041"
+    if _FLATSRC["data"] is None or (_t.time() - _FLATSRC["ts"]) > _GNET_TTL:
+        if _GNET["data"] is None or (_t.time() - _GNET["ts"]) > _GNET_TTL:
+            with _GNET_LOCK:
+                if _GNET["data"] is None or (_t.time() - _GNET["ts"]) > _GNET_TTL:
+                    _GNET["data"] = _calc_global_net(db_name)
+                    _GNET["ts"] = _GNET["data"].get("ts", _t.time())
+    b = _FLATSRC["data"] or {}
+    rvg = b.get("rvg") or {}
+    exp = b.get("exp") or set()
+    flat, fg = b.get("flat") or {}, b.get("fg") or {}
+    prdt, hdr = b.get("prdt") or {}, b.get("hdr") or {}
+    seeds = b.get("seeds_no_bom") or {}
+    nm, spc, ut, typ, knd = (prdt.get(prd_no) or ('', '', '', '0', '0'))
+
+    # 往上爬：k = 各条路径系数连乘之和（同一张 _mg 图、同一套 max 系数）
+    contrib, tops = {}, set()
+    stack, guard = [(prd_no, 1.0, 0)], 0
+    while stack:
+        p, k, dep = stack.pop()
+        guard += 1
+        if guard > 300000 or dep > 40:
+            continue
+        if p in fg or p in seeds:          # 种子（成品未出 / 无 BOM 直采件）：记一份贡献
+            contrib[p] = contrib.get(p, 0.0) + k
+            # ⚠ 但不能就此停下：它自己可能同时还是别人的子件（量会继续往上来自更高的成品，
+            #   后端 _flat 也是「种子值 + 继承来的值」一起再往下推）。停在它会漏掉那部分 →
+            #   全库核对会冒出一两个 diff≠0 的品号（实测 03002011200800144 差 0.065）。
+        par = rvg.get(p) or []
+        if not par:
+            if p in hdr:
+                tops.add(p)                # 爬到顶、但这次没有未出订单的成品
+            continue
+        for pp, r in par:
+            if pp in exp:                  # 只有能往下展开的母件才把量推给子件
+                stack.append((pp, k * r, dep + 1))
+
+    meta = {}
+    if contrib:
+        conn = get_conn(db=db_name)
+        try:
+            cur = conn.cursor()
+            keys = list(contrib.keys())
+            ph = ','.join(['%s'] * len(keys))
+            cur.execute(
+                "SELECT CONVERT(varbinary(60), PRD_NO), CONVERT(varbinary(60), ISNULL(指令单号,'')), "
+                "       CONVERT(varbinary(60), ISNULL(OS_NO,'')), SUM(QTY - ISNULL(SAQTY,0)) "
+                "FROM VW_POS WITH(NOLOCK) "
+                "WHERE USABLE = 1 AND CLS_ID = 0 AND OS_ID = 'SO' AND ISNULL(WJ,0) <> 1 "
+                "  AND QTY > ISNULL(SAQTY,0) AND APP_ID = 1 AND PRD_NO IN (" + ph + ") "
+                "GROUP BY CONVERT(varbinary(60), PRD_NO), CONVERT(varbinary(60), ISNULL(指令单号,'')), "
+                "         CONVERT(varbinary(60), ISNULL(OS_NO,''))",
+                tuple(x.encode('gbk') for x in keys))
+            for bp, bd, bs2, qv in cur.fetchall():
+                e = meta.setdefault(g(bp), {"ddjh": [], "so": [], "qty": 0.0})
+                d2, s2 = g(bd).strip(), g(bs2).strip()
+                if d2 and d2 not in e["ddjh"]:
+                    e["ddjh"].append(d2)
+                if s2 and s2 not in e["so"]:
+                    e["so"].append(s2)
+                e["qty"] += float(qv or 0)
+        finally:
+            conn.close()
+
+    rows, tot = [], 0.0
+    for p, k in contrib.items():
+        # ⚠ 与后端种子完全一致：dem = 成品未出(fg) + 无 BOM 直采件(no_bom_direct)。
+        #   两者都可能命中同一个品号（如 SC0081：既是外购件又有销售未出）→ 后端是相加，
+        #   这里也必须相加，否则 diff 不为 0。（那个「重复计入」本身另议，见下。）
+        base = fg.get(p, 0.0) + seeds.get(p, 0.0)
+        need = base * k
+        tot += need
+        m = meta.get(p) or {}
+        rows.append({
+            "fg": p, "fg_name": (prdt.get(p) or ('',))[0],
+            "ddjh": sorted(m.get("ddjh") or []), "so": sorted(m.get("so") or []),
+            "qty": round(fg.get(p, 0.0), 3), "extra": round(seeds.get(p, 0.0), 3),
+            "k": round(k, 6), "need": round(need, 3),
+            "is_self": p == prd_no, "no_bom": p in seeds,
+        })
+    rows.sort(key=lambda r: -r["need"])
+    gf = flat.get(prd_no, 0.0)
+    return {
+        "prd_no": prd_no, "name": nm, "spc": spc, "ut": ut, "knd": knd,
+        "gross_flat": round(gf, 3),
+        "total": round(tot, 3),
+        "diff": round(tot - gf, 3),
+        "is_direct": prd_no in seeds,
+        "has_bom": prd_no in hdr,
+        "rows": rows,
+        # ⚠ 必须排掉已经出现在明细里的成品（它们爬到顶了但也确实有未出订单），
+        #   否则「另有 N 个没有未出订单」会把有单的也算进去（实测铁杆：19+34 而不是 19+15）
+        "no_order": [{"fg": p, "fg_name": (prdt.get(p) or ('',))[0]} for p in sorted(tops) if p not in contrib],
+    }
 
 
 @app.get("/api/pmc/preview_mps")

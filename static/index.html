@@ -3665,6 +3665,82 @@ function gnFill() {
 }
 
 // 缺口格下方那行小字：全厂净需求（所有成品的未出展开）。m = [毛需求,材料仓,生产仓,在途,请购,净需求]
+// ── 「全厂毛需求」hover：列出所有相关成品 + 指令单号 ─────────────────────────
+// 数据来自后端 /api/pmc/flat_src（爬反向图累乘系数，合计恒等于不滚算毛需求）。
+window.__flatSrcCache = window.__flatSrcCache || {};
+function gnFlatSrcHide() {
+  var p = document.getElementById('gnFlatSrcTip');
+  if (p) p.remove();
+}
+function gnFlatSrcPlace(box, el) {
+  var r = el.getBoundingClientRect();
+  var sy = window.scrollY || (document.scrollingElement ? document.scrollingElement.scrollTop : 0) || 0;
+  var sx = window.scrollX || 0;
+  var w = box.offsetWidth || 520, hh = box.offsetHeight || 120;
+  var left = sx + Math.max(8, Math.min(r.left, window.innerWidth - w - 12));
+  var top = sy + r.bottom + 6;
+  if (r.bottom + hh + 20 > window.innerHeight) top = sy + Math.max(4, r.top - hh - 6);   // 下方放不下就翻上去
+  box.style.left = left + 'px';
+  box.style.top = top + 'px';
+}
+function gnFlatSrcRender(box, d) {
+  var u = d.ut ? ' ' + d.ut : '';
+  var h = '<div style="font-weight:600;margin-bottom:4px">全厂毛需求（不滚算）' + gnQty(d.gross_flat) + u + '</div>';
+  if (d.is_direct) h += '<div style="font-size:11px;color:#B45309;margin-bottom:4px">本料是无 BOM 直采件：它自己的销售未出直接当毛需求，不往下展开</div>';
+  if (d.rows && d.rows.length) {
+    h += '<div style="font-size:11px;color:var(--sub);margin-bottom:4px">相关成品 ' + d.rows.length + ' 个：未出 × 每件用量 = 需求</div>';
+    h += '<table style="border-collapse:collapse;font-size:11px;font-variant-numeric:tabular-nums"><thead><tr style="color:var(--sub)">';
+    ['成品', '品名', '指令单号', '未出', '每件用量', '需求'].forEach(function (t, i) {
+      h += '<th style="padding:2px 6px;font-weight:600;white-space:nowrap;text-align:' + (i >= 3 ? 'right' : 'left') + '">' + t + '</th>';
+    });
+    h += '</tr></thead><tbody>';
+    d.rows.forEach(function (r) {
+      var q = gnQty(r.qty) + (Number(r.extra) > 0 ? ' <span style="color:#B45309">+直采 ' + gnQty(r.extra) + '</span>' : '');
+      h += '<tr style="border-top:1px solid var(--border)">'
+        + '<td style="padding:2px 6px;white-space:nowrap">' + gnEsc(r.fg) + '</td>'
+        + '<td style="padding:2px 6px;max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + gnEsc(r.fg_name || '—') + '</td>'
+        + '<td style="padding:2px 6px;white-space:nowrap;color:#2563EB">' + gnEsc((r.ddjh || []).join(', ') || '—') + '</td>'
+        + '<td style="padding:2px 6px;text-align:right">' + q + '</td>'
+        + '<td style="padding:2px 6px;text-align:right">' + r.k + '</td>'
+        + '<td style="padding:2px 6px;text-align:right;font-weight:600">' + gnQty(r.need) + '</td></tr>';
+    });
+    h += '</tbody></table><div style="margin-top:4px;color:var(--sub)">合计 ' + gnQty(d.total) + u + '</div>';
+  } else {
+    h += '<div style="color:var(--sub)">没有相关成品（本料毛需求为 0）</div>';
+  }
+  if (d.no_order && d.no_order.length) {
+    h += '<div style="margin-top:4px;font-size:11px;color:var(--sub)">另有 ' + d.no_order.length + ' 个相关成品这次没有未出订单（不贡献需求）</div>';
+  }
+  var gm = window.__gnMap && window.__gnMap[d.prd_no];
+  if (gm) {
+    h += '<div style="margin-top:4px;font-size:11px;color:var(--sub)">− 被上游可用抵 ' + gnQty(gm[7] || 0) + ' → 滚算毛需求 ' + gnQty(gm[0] || 0)
+      + '；再 − 本层可用抵扣 ' + gnQty(gm[8] || 0) + ' = 全厂净需求 ' + gnQty(gm[5] || 0) + '</div>';
+  }
+  h += '<div style="margin-top:4px;font-size:11px;color:var(--sub)">本料单位' + (u || '—') + '；每件用量 = 该成品到本料的系数连乘（与 BOM 展开同口径）</div>';
+  box.innerHTML = h;
+}
+function gnFlatSrcTip(prd, el) {
+  if (!prd || !el) return;
+  gnFlatSrcHide();
+  var box = document.createElement('div');
+  box.id = 'gnFlatSrcTip';
+  box.style.cssText = 'position:absolute;z-index:495;pointer-events:none;background:#fff;border:1px solid var(--border);'
+    + 'border-radius:10px;box-shadow:0 10px 26px rgba(0,0,0,.18);padding:10px 12px;font-size:12px;max-width:660px;font-family:inherit;color:var(--text)';
+  box.innerHTML = '<div style="color:var(--sub)">加载相关成品…</div>';
+  document.body.appendChild(box);
+  gnFlatSrcPlace(box, el);
+  var c = window.__flatSrcCache[prd];
+  if (c) { gnFlatSrcRender(box, c); gnFlatSrcPlace(box, el); return; }
+  api(BASE + '/pmc/flat_src?' + new URLSearchParams({ prd_no: prd })).then(function (d) {
+    window.__flatSrcCache[prd] = d;
+    if (document.getElementById('gnFlatSrcTip')) { gnFlatSrcRender(box, d); gnFlatSrcPlace(box, el); }
+  }).catch(function (e) {
+    var p2 = document.getElementById('gnFlatSrcTip');
+    if (p2) p2.innerHTML = '<div style="color:#DC2626">加载失败: ' + gnEsc(e.message) + '</div>';
+  });
+}
+window.addEventListener('scroll', gnFlatSrcHide, true);
+
 function gnNetHtml(prd) {
   var m = window.__gnMap;
   if (!m) {
@@ -3692,11 +3768,12 @@ function gnNetHtml(prd) {
     (ci > 0.0001 ? '<div style="font-size:11px;color:var(--sub);white-space:nowrap" title="' +
       gnEsc('这几个料是从本站（这个母件）归属来的，实物在外发/车间在制仓：' + gnFmt(ci, 0) + '。在制已按「本料本层需求」抵扣给本站，不影响全厂净需求算式。') +
       '">其中 ' + gnFmt(ci, 0) + ' 在外发/车间在制</div>' : '') +
-    (gf > 0.0001 ? '<div style="font-size:11px;color:var(--sub);white-space:nowrap" ' +
+    (gf > 0.0001 ? '<div style="font-size:11px;color:var(--sub);white-space:nowrap;cursor:help" ' +
+      'onmouseover="gnFlatSrcTip(\'' + escAttr(prd) + '\',this)" onmouseout="gnFlatSrcHide()" ' +
       'title="' + gnEsc('不滚算毛需求 ' + gnQty(gf) + '（本料单位）：所有成品未出按 BOM 展开、一分库存都不扣。\n' +
         '− 被上游可用抵 ' + gnQty(cutv) + '\n− 本层可用抵扣 ' + gnQty(own) + '（上面原材料仓/生产仓/在途/请购 实际用掉的部分）\n' +
         '= 全厂净需求 ' + gnQty(net) + '（要做的数）') +
-      '">不滚算毛需求 ' + gnQty(gf) + '</div>' : '') +
+      '">不滚算毛需求 ' + gnQty(gf) + ' <span style="color:#2563EB">▸相关成品</span></div>' : '') +
   '</div>';
 }
 
@@ -3857,7 +3934,7 @@ function gnRenderRows() {
     h += '<tr style="border-bottom:1px solid var(--border)' + (dirty ? ';background:#FFF7ED' : '') + '">'
       + '<td style="padding:6px 8px;white-space:nowrap;font-weight:600">' + gnEsc(r.prd) + '</td>'
       + '<td style="padding:6px 8px;color:var(--sub);max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + gnEsc(r.name) + '">' + gnEsc(r.name || '—') + '</td>'
-      + '<td style="padding:6px 8px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap">' + gnFmt(r.gross) + '</td>'
+      + '<td style="padding:6px 8px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;cursor:help" onmouseover="gnFlatSrcTip(\'' + escAttr(r.prd) + '\',this)" onmouseout="gnFlatSrcHide()">' + gnFmt(r.gross) + '</td>'
       + '<td style="padding:6px 8px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;color:' + ((r.mat_stock || 0) > 0 ? 'inherit' : 'var(--sub)') + '">' + gnFmt(r.mat_stock) + '</td>'
       + '<td style="padding:6px 8px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--sub)" title="生产仓现存 ' + gnFmt(r.prod_stock) + '（车间仓/外发仓；滚算时全部算该层可用，MAK 2026-09-30）">'
       + gnFmt(r.prod_stock) + '</td>'
