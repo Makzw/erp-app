@@ -3525,6 +3525,8 @@ function gnCutCardHtml(prd, cut, own, it) {
       '<td style="padding:7px 10px;text-align:right;background:rgba(107,114,128,.06);white-space:nowrap">' +
         '<span style="font-weight:600;font-variant-numeric:tabular-nums">' + (supQty === null ? '—' : gnQty(supQty)) + '</span>' +
         (supUnit ? ' <span style="font-size:11px;color:var(--sub)">' + gnEsc(supUnit) + '</span>' : '') + '</td>' +
+      '<td style="padding:7px 10px;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;color:var(--sub)">' +
+        '× ' + parseFloat(Number(x.k || 0).toFixed(4)) + '</td>' +
       '<td style="padding:7px 10px;text-align:right;white-space:nowrap">' +
         '<span style="font-weight:600;font-variant-numeric:tabular-nums;color:#0ea5e9">' + gnQty(x.qty) + '</span>' +
         (uut ? ' <span style="font-size:11px;color:var(--sub)">' + gnEsc(uut) + '</span>' : '') + '</td>' +
@@ -3535,11 +3537,12 @@ function gnCutCardHtml(prd, cut, own, it) {
   var body = !it
     ? '<div style="padding:16px;color:var(--sub);font-size:13px">加载中…</div>'
     : (rows
-      ? '<div style="padding:8px 12px 4px;font-size:11px;color:var(--sub)">左列「上游被抵掉」是那个上游品号自己那层被抵掉的量（用它的单位）；右列「传到本料」是"左列 × 链上配比"之后、真正抵掉本料需求的量（用本料的单位，就是上面那个 ' + gnQty(cut) + (uut ? ' ' + gnEsc(uut) : '') + '）。</div>' +
+      ? '<div style="padding:8px 12px 4px;font-size:11px;color:var(--sub)">「上游被抵掉」是那个上游品号自己那层被抵掉的量（它的单位）；「链上配比 k」是从它到本料的系数和；<b>左 × k = 右列</b>（精确相等，不是约等）——「传到本料」即真正抵掉本料需求的量（本料单位，合计 ' + gnQty(cut) + (uut ? ' ' + gnEsc(uut) : '') + '）。</div>' +
         '<table style="width:100%;border-collapse:collapse"><thead><tr style="background:var(--bg);position:sticky;top:0">' +
         '<th style="padding:7px 10px;text-align:left;font-size:12px;color:var(--sub)">上游品号</th>' +
         '<th style="padding:7px 10px;text-align:left;font-size:12px;color:var(--sub)">品名</th>' +
         '<th style="padding:7px 10px;text-align:right;font-size:12px;color:var(--sub)">上游被抵掉<br><span style="font-weight:400">（上游单位）</span></th>' +
+        '<th style="padding:7px 10px;text-align:right;font-size:12px;color:var(--sub)">链上配比<br><span style="font-weight:400">k</span></th>' +
         '<th style="padding:7px 10px;text-align:right;font-size:12px;color:var(--sub)">传到本料<br><span style="font-weight:400">（本料单位）</span></th>' +
         '<th style="padding:7px 10px;text-align:right;font-size:12px;color:var(--sub)">占比</th></tr></thead>' +
         '<tbody>' + rows + '</tbody></table>' +

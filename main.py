@@ -4038,11 +4038,15 @@ def _calc_global_net(db_name="C041", refresh=0):
             _flat[_c] = _flat.get(_c, 0.0) + _n * _r
 
     _cut, _src = {}, {}
+    #   _kx[p][o] = 来源 o 到本料 p 的链上配比和（Σ 各条路径上的系数连乘），
+    #   供弹窗显示「左列 × k = 右列」——与 _src 同步累加，恒等式 _src[p][o] == own_cut[o] * _kx[p][o] 成立。
+    _kx = {}
     for _p in _order:
         _need = dem.get(_p, 0.0)
         _own = min(_need, _avail(_p)) if _need > 0 else 0.0   # 本层被可用抵掉的量（原本算完即弃）
         if _own > 0:
             _src.setdefault(_p, {})[_p] = _src.get(_p, {}).get(_p, 0.0) + _own
+            _kx.setdefault(_p, {})[_p] = 1.0                  # 自己对自己：配比 1
         _tot = _cut.get(_p, 0.0) + _own                       # 本层累计抵扣 = 继承的 + 自身的
         if not _can_expand(_p):
             continue                                          # 不可展开：不推需求、也不传抵扣
@@ -4052,8 +4056,10 @@ def _calc_global_net(db_name="C041", refresh=0):
             if _tot > 0:                                      # ⚠ need=0 也要传
                 _cut[_c] = _cut.get(_c, 0.0) + _tot * _r
                 _s = _src.setdefault(_c, {})
+                _x = _kx.setdefault(_c, {})
                 for _o, _a in _src.get(_p, {}).items():
                     _s[_o] = _s.get(_o, 0.0) + _a * _r
+                    _x[_o] = _x.get(_o, 0.0) + _kx.get(_p, {}).get(_o, 0.0) * _r
 
     gross = {p: v for p, v in dem.items() if v > 0}     # ★ 毛需求 = 滚算后的本层需求
 
@@ -4158,7 +4164,8 @@ def _calc_global_net(db_name="C041", refresh=0):
             # cut_top = 上游来源 Top5（不含自己）
             "cut": round(_cut.get(p, 0.0), 3),
             "own_cut": round(_src.get(p, {}).get(p, 0.0), 3),
-            "cut_top": [{"prd": _k, "name": (prdt.get(_k) or ('',))[0], "qty": round(_v, 3)}
+            "cut_top": [{"prd": _k, "name": (prdt.get(_k) or ('',))[0], "qty": round(_v, 3),
+                         "k": round(_kx.get(p, {}).get(_k, 0.0), 6)}
                         for _k, _v in
                         sorted(((k2, v2) for k2, v2 in _src.get(p, {}).items() if k2 != p),
                                key=lambda kv: -kv[1])[:5]],
