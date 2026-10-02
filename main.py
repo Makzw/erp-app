@@ -339,7 +339,12 @@ async def get_qts(qt_no: str):
 # ── API: 仓库列表（用于发料下拉）────────────────────────────────────────────
 @app.get("/api/warehouses/all")
 async def list_all_warehouses(db: str = Query(default="c041")):
-    """返回所有仓库（含无库存的外发仓），供调拨弹窗 TO 下拉使用。"""
+    """返回所有仓库（含无库存的外发仓），供调拨弹窗 TO 下拉使用。
+
+    排除不可选的内部仓（1 辅料 / 2 成品 / 3 半成品 / 4 原材料 / 5 不良品 / 6 废品 /
+    7 呆料 / 20000 测试供应商 —— MAK 2026-10-02）。
+    车间仓（WH 以 8 起头，含 "8 车间仓" 这类写法）排最前，调拨/入库最常用。
+    """
     db_name = "T041" if db.lower() == "t041" else "C041"
     conn = get_conn(db=db_name)
     cur = conn.cursor()
@@ -347,7 +352,8 @@ async def list_all_warehouses(db: str = Query(default="c041")):
         SELECT WH, NAME
         FROM MY_WH WITH(NOLOCK)
         WHERE USABLE = 1
-        ORDER BY WH
+          AND WH NOT IN ('1', '2', '3', '4', '5', '6', '7', '20000')
+        ORDER BY CASE WHEN WH LIKE '8%' THEN 0 ELSE 1 END, WH
     """)
     rows = cur.fetchall()
     conn.close()
