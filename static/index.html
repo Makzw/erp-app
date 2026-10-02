@@ -2337,7 +2337,7 @@ function renderPMCTree(items, title) {
   html += '<th style="padding:8px 8px;text-align:right;white-space:nowrap;min-width:96px">生产仓</th>';
   html += '<th style="padding:8px 8px;text-align:right;white-space:nowrap;min-width:104px">在途采购</th>';
   html += '<th style="padding:8px 8px;text-align:right;white-space:nowrap;min-width:104px">在单请购</th>';
-  html += '<th style="padding:8px 8px;text-align:right;white-space:nowrap;min-width:96px">合计</th>';
+  html += '<th style="padding:8px 8px;text-align:right;white-space:nowrap;min-width:104px" title="该料的毛需求在上游各层被可用（材料仓+生产仓+在途+请购）抵掉的累计量 = 标准展开毛需求 − 滚算毛需求。不含本料自身被抵的那部分（那部分体现在本料净需求里）">被上游可用抵</th>';
   html += '<th style="padding:8px 8px;text-align:right;white-space:nowrap;min-width:160px" title="全厂口径：所有成品未出展开 − 材料仓 − 生产仓 − 在途 − 请购（料行）；成品行显示全厂未出（所有订单）">全厂净需求</th>';
   html += '<th style="padding:8px 8px;text-align:center;white-space:nowrap;min-width:170px" title="勾选原材料 + 填数量 → 生成请购单（QD）。数量默认填品号净缺口，没有则填本行缺口，都可以改">请购</th>';
   html += '<th style="padding:8px 8px;text-align:center;white-space:nowrap;min-width:80px">调整</th>';
@@ -2497,12 +2497,13 @@ function renderPMCTree(items, title) {
     html += '<td style="padding:8px 8px;text-align:center;white-space:nowrap"><span style="font-size:10px;font-weight:700;color:#fff;background:' + depthColor + ';padding:2px 5px;border-radius:10px">' + depthLabel + '</span></td>';
     html += '<td data-gnreq="' + escAttr(r.prd_no||'') + '" style="padding:8px 8px;text-align:right;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap" title="' + escAttr(
       '本单需求 ' + Number(realDemand).toLocaleString('zh-CN') + '（父件缺口×配比往下推）\n全厂毛需求 ' + Number(grossAll).toLocaleString('zh-CN') +
-      '（该成品全部未出展开；毛数不扣库存/在途；成品行=该成品全厂未出，料行=按它展开到本料的量）') + '">' + Number(realDemand).toLocaleString('zh-CN') + '</td>';
+      '（该成品全部未出展开；毛数不扣库存/在途；成品行=该成品全厂未出，料行=按它展开到本料的量）\n' +
+      '本单可用合计（本单可用在途 + 挂本单在单请购）：' + Number(wayFree + ownOdr).toLocaleString('zh-CN')) + '">' + Number(realDemand).toLocaleString('zh-CN') + '</td>';
     html += '<td style="padding:8px 8px;text-align:right;color:#16a34a;cursor:' + (!isFg ? 'pointer' : 'default') + ';font-variant-numeric:tabular-nums;white-space:nowrap" ' + (!isFg ? 'onclick="pmcOpenAdjust(\'' + escAttr(r.prd_no||'') + '\',\'\',\'mat\',' + matQty + ')"' : '') + '>' + Number(matQty).toLocaleString('zh-CN') + '</td>';
     html += '<td style="padding:8px 8px;text-align:right;color:#16a34a;font-variant-numeric:tabular-nums;white-space:nowrap" title="\u751f\u4ea7\u4ed3\uff08\u8f66\u95f4\u4ed3/\u5916\u53d1\u4ed3\uff09\u5df2\u88ab\u9886\u53bb\u505a\u522b\u7684\u5355\uff0c\u4e0d\u53c2\u4e0e\u7f3a\u53e3\u8ba1\u7b97\uff1b\u4e0d\u53ef\u8c03\u6574">' + Number(prodQty).toLocaleString('zh-CN') + '</td>';
     html += '<td style="padding:8px 8px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap"' + wayTip + '>' + wayHtml + '</td>';
     html += '<td style="padding:8px 8px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap"' + odrTip + '>' + odrHtml + '</td>';
-    html += '<td style="padding:8px 8px;text-align:right;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap" title="本单可用合计 = 本单可用在途 + 挂本单在单请购（不含材料仓）">' + Number(wayFree + ownOdr).toLocaleString('zh-CN') + '</td>';
+    html += '<td style="padding:8px 8px;text-align:right;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap">' + gnCutHtml(r.prd_no || '') + '</td>';
     html += '<td style="padding:8px 8px;text-align:right;min-width:160px">' + gapHtml + '</td>';
     html += '<td style="padding:8px 8px;text-align:center;white-space:nowrap">' + qdcHtml + '</td>';
     html += '<td style="padding:8px 8px;text-align:center;white-space:nowrap">' + adjBtn + '</td>';
@@ -3423,6 +3424,14 @@ function gnFill() {
     h.innerHTML = gnNetHtml(prd);
     if (h.firstChild) el.parentNode.replaceChild(h.firstChild, el);
   }
+  // 被上游可用抵（slim map 第 8 位）：map 到位后回填
+  var cuts = document.querySelectorAll('[data-gncut]');
+  for (var c2 = 0; c2 < cuts.length; c2++) {
+    var el2 = cuts[c2], prd2 = el2.getAttribute('data-gnprd') || '';
+    var h2 = document.createElement('div');
+    h2.innerHTML = gnCutHtml(prd2);
+    if (h2.firstChild) el2.parentNode.replaceChild(h2.firstChild, el2);
+  }
   // 数据是懒加载的 → 行底色必须回填时一并改（不能被 gnRowNet 的 0 抢先）
   var rows = document.querySelectorAll('[data-gnrow]');
   for (var j = 0; j < rows.length; j++) {
@@ -3469,7 +3478,48 @@ function gnNetHtml(prd) {
     (ci > 0.0001 ? '<div style="font-size:11px;color:var(--sub);white-space:nowrap" title="' +
       gnEsc('这几个料是从本站（这个母件）归属来的，实物在外发/车间在制仓：' + gnFmt(ci, 0) + '。在制已按「本料本层需求」抵扣给本站，不影响全厂净需求算式。') +
       '">其中 ' + gnFmt(ci, 0) + ' 在外发/车间在制</div>' : '') +
+    (Number(v[8] || 0) > 0.0001 ? '<div style="font-size:11px;color:var(--sub);white-space:nowrap" title="' +
+      gnEsc('本料自己的可用（材料仓+生产仓+在途+请购）在滚算里抵掉的量：' + gnFmt(Number(v[8]), 0) +
+            '。这部分只在把需求推给子件时生效，不算「被上游抵」。') +
+      '">本层被可用抵 ' + gnFmt(Number(v[8]), 0) + '</div>' : '') +
     '</div>';
+}
+
+// 被上游可用抵：本料在上游各层被可用抵掉的累计量（slim map 第 8 位）+ 来源 Top5（完整 items 里）
+var __gnTop = null, __gnTopLoading = false;
+function gnCutTip(prd, top) {
+  var v = (window.__gnMap || {})[prd];
+  var cut = v ? Number(v[7] || 0) : 0, own = v ? Number(v[8] || 0) : 0;
+  var src = (top || {})[prd] || [];
+  return '被上游可用抵 = 上游各层被可用（材料仓+生产仓+在途+请购）抵掉的量，按配比累计到本料\n' +
+    '被上游抵 ' + gnFmt(cut, 0) + '\n' +
+    (src.length ? '来源：\n' + src.map(function (x) { return '  ' + x.prd + '  ' + gnFmt(x.qty, 0); }).join('\n') + '\n' : '（来源明细加载中…）\n') +
+    (own > 0.0001 ? '本料自身被可用抵 ' + gnFmt(own, 0) + '（不算在内，体现在本料净需求里）' : '');
+}
+// 来源明细只在完整 items 里 → 首次 hover 时懒加载一次（走服务端缓存，不重算）
+async function gnEnsureCutTop(el) {
+  if (!__gnTop && !__gnTopLoading) {
+    __gnTopLoading = true;
+    try {
+      var r = await fetch('/api/pmc/global_net');
+      var d = await r.json(), t = {};
+      (d.items || []).forEach(function (i) { if (i.cut_top && i.cut_top.length) t[i.prd] = i.cut_top; });
+      __gnTop = t;
+    } catch (e) { __gnTop = {}; }
+    __gnTopLoading = false;
+  }
+  if (__gnTop) el.title = gnCutTip(el.getAttribute('data-gnprd') || '', __gnTop);
+}
+function gnCutHtml(prd) {
+  var m = window.__gnMap;
+  if (!m) {
+    return '<div data-gncut="1" data-gnprd="' + gnEsc(prd) + '" style="font-size:12px;color:var(--sub);white-space:nowrap">被上游抵 …</div>';
+  }
+  var v = m[prd];
+  var cut = v ? Number(v[7] || 0) : 0;
+  return '<div data-gncut="1" data-gnprd="' + gnEsc(prd) + '" onmouseenter="gnEnsureCutTop(this)" ' +
+    'style="font-size:12px;white-space:nowrap;color:' + (cut > 0.0001 ? '#0ea5e9' : '#9ca3af') +
+    '" title="' + gnEsc(gnCutTip(prd, __gnTop)) + '">' + (cut > 0.0001 ? gnFmt(cut, 0) : '-') + '</div>';
 }
 
 async function loadGlobalNet(refresh) {

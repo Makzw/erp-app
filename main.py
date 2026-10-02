@@ -4011,15 +4011,28 @@ def _calc_global_net(db_name="C041", refresh=0):
                 _dq.append(_c)
     bom_cycles = sorted(p for p in _indeg if p not in _seen)
 
+    # ★ 被上游可用抵（MAK 2026-10-02）：
+    #   _cut[p] = 上游各层被可用（材料仓+生产仓+在途+请购）抵掉的量，按系数累计到 p；
+    #   _src[p] = {来源品号: 量}，含 p 自己那一份（键为 p，展示时要区分开）。
+    #   ⚠ 抵扣的传递与需求的推送是两件事：一个品号自己滚算需求=0（被上游抵光）时，
+    #     仍必须把累计抵扣传给子件，否则子件的「被上游抵」会凭空少一块。
+    _cut, _src = {}, {}
     for _p in _order:
         _need = dem.get(_p, 0.0)
-        if _need <= 0 or not _can_expand(_p):
-            continue
-        _rem = _need - min(_need, _avail(_p))          # 要生产
-        if _rem <= 0:
-            continue
+        _own = min(_need, _avail(_p)) if _need > 0 else 0.0   # 本层被可用抵掉的量（原本算完即弃）
+        if _own > 0:
+            _src.setdefault(_p, {})[_p] = _src.get(_p, {}).get(_p, 0.0) + _own
+        _tot = _cut.get(_p, 0.0) + _own                       # 本层累计抵扣 = 继承的 + 自身的
+        if not _can_expand(_p):
+            continue                                          # 不可展开：不推需求、也不传抵扣
         for _c, _r in _mg.get(_p, {}).items():
-            dem[_c] = dem.get(_c, 0.0) + _rem * _r
+            if _need > _own:                                  # 等价于原来的 _rem > 0
+                dem[_c] = dem.get(_c, 0.0) + (_need - _own) * _r
+            if _tot > 0:                                      # ⚠ need=0 也要传
+                _cut[_c] = _cut.get(_c, 0.0) + _tot * _r
+                _s = _src.setdefault(_c, {})
+                for _o, _a in _src.get(_p, {}).items():
+                    _s[_o] = _s.get(_o, 0.0) + _a * _r
 
     gross = {p: v for p, v in dem.items() if v > 0}     # ★ 毛需求 = 滚算后的本层需求
 
@@ -4118,6 +4131,14 @@ def _calc_global_net(db_name="C041", refresh=0):
             "onway": round(ow, 3), "qts": round(qt, 3), "net": round(net, 3),
             "owner": owners.get(p, ""), "fg_count": len(ub), "fg_top": ub[:3],
             "child_inproc": round(child_inproc.get(p, 0.0), 3),
+            # 被上游可用抵（MAK 2026-10-02）：cut = 上游各层累计抵掉的（不含自身）；
+            # own_cut = 本层自己那一份（只在推给子件时生效，母件行小字用）；
+            # cut_top = 上游来源 Top5（不含自己）
+            "cut": round(_cut.get(p, 0.0), 3),
+            "own_cut": round(_src.get(p, {}).get(p, 0.0), 3),
+            "cut_top": [{"prd": _k, "qty": round(_v, 3)} for _k, _v in
+                        sorted(((k2, v2) for k2, v2 in _src.get(p, {}).items() if k2 != p),
+                               key=lambda kv: -kv[1])[:5]],
             "flags": fl,
         })
     items.sort(key=lambda x: (-x["net"], -x["gross"], x["prd"]))
@@ -4186,7 +4207,7 @@ async def pmc_global_net(
 ):
     """全局净需求（只读）。缓存 10 分钟；refresh=1 强制重算。
 
-    slim=1 只回 {品号: [毛需求, 材料仓, 生产仓, 在途, 请购, 净需求]}（约 144KB），
+    slim=1 只回 {品号: [毛需求, 材料仓, 生产仓, 在途, 请购, 净需求, 母件在制, 被上游可用抵, 本层自身被抵]}，
     供 PMC 预览的 BOM 树按品号 join（复用同一个 _GNET 缓存，不重算、不影响下面原样返回）。
     """
     import time as _t
@@ -4208,7 +4229,8 @@ async def pmc_global_net(
             "ts": d.get("ts"), "cost": d.get("cost"), "slim": 1,
             "map": {i["prd"]: [i["gross"], i["mat_stock"], i["prod_stock"],
                                i["onway"], i["qts"], i["net"],
-                               i.get("child_inproc", 0)] for i in d["items"]},
+                               i.get("child_inproc", 0), i.get("cut", 0),
+                               i.get("own_cut", 0)] for i in d["items"]},
         }
     return d
 
