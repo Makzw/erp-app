@@ -622,6 +622,8 @@ function handleSearch(v) {
       (async () => {
         try {
           const data = await api(BASE + '/pmc/pos_unanalyzed?' + new URLSearchParams({q: q||''}));
+          window.__pmcItems = data.items || [];
+          window.__pmcQ = q || '';
           renderPMCList(data.items || [], q||'');
         } catch(e) {
           // Step A：原来渲染成"暂无数据"（误导：其实是请求失败）
@@ -662,7 +664,8 @@ mainTabBar.addEventListener('click', e => {
       // 切换时清除盘点tab的autocomplete残留
       if (typeof dismissSuggestions === 'function') dismissSuggestions();
       stockSuggestions = [];
-      $id('searchBar').style.display = 'flex';
+      // PMC 列表自带搜索框（带指令单号快捷筛选 + 全选），顶栏那个在 PMC tab 隐藏，免得两个框重复
+      $id('searchBar').style.display = (curTab === 'pmc') ? 'none' : 'flex';
       $id('searchInput').value = '';
       $id('searchClear').classList.remove('show');
       curSearch = '';
@@ -2096,6 +2099,7 @@ async function loadPMC() {
     const data = await api(BASE + '/pmc/pos_unanalyzed');
     pmcItems = data.items || [];
     window.__pmcItems = pmcItems;
+    window.__pmcQ = '';
     renderPMCList(pmcItems, '');
   } catch(e) {
     if (el) el.innerHTML = '<div class="error-msg">加载失败: ' + e.message + '</div>';
@@ -2114,26 +2118,22 @@ function renderPMCList(items, q) {
   var placeholder = "\u641c\u7d22\u8ba2\u5355/品号/\u5ba2\u6237";
   // \u6309\u6307\u4ee4\u5355\u53f7\u5206\u7c7b\uff08\u4e0d\u6309\u5ba2\u6237\uff0cMAK 2026-09-30\uff09
   var qRef = pmcItems.map(function(t){return t.ref||t.\u6307\u4ee4\u5355\u53f7||'';}).filter(function(v,i,a){return v&&a.indexOf(v)===i});
-  var refBtns = qRef.map(function(r){return '<button onclick="window.__pmcSearchFn&&window.__pmcSearchFn(\'' + escAttr(r) + '\')" style="padding:3px 8px;border-radius:12px;border:1px solid #fef3c7;background:#fef3c7;font-size:11px;cursor:pointer;color:#92400e">#' + escAttr(r) + '</button>';}).join('');
+  var refBtns = qRef.map(function(r){return '<button onclick="pmcSetSearch(\'' + escAttr(r) + '\')" style="padding:3px 8px;border-radius:12px;border:1px solid #fef3c7;background:#fef3c7;font-size:11px;cursor:pointer;color:#92400e">#' + escAttr(r) + '</button>';}).join('');
   var toolbar = '<div style="padding:8px 12px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:6px">' +
     '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
-    '<input id="pmcSearch" type="text" placeholder="' + placeholder + '" value=""' +
+    '<input id="pmcSearch" type="text" placeholder="' + placeholder + '" value="' + escAttr(q || '') + '"' +
     ' style="flex:1;min-width:100px;padding:7px 10px;border:1.5px solid var(--border);border-radius:20px;font-size:13px"' +
-    ' onkeydown="if(event.key===\'Enter\'){window.__pmcSearchFn&&window.__pmcSearchFn(this.value)}"' +
-    ' oninput="window.__pmcSearchFn&&window.__pmcSearchFn(this.value)">' +
+    ' oninput="pmcFilterInput(this.value)"' +
+    ' onkeydown="if(event.key===\'Escape\'){pmcSetSearch(\'\')}">' +
+    '<button onclick="pmcSelectAllFiltered()" style="padding:6px 12px;border-radius:16px;border:1px solid #bbf7d0;background:#f0fdf4;color:#15803d;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap"><span id="pmcSelAllLabel">全选</span></button>' +
     '<button onclick="pmcShowSummary()" style="padding:6px 12px;border-radius:16px;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">\u54c1\u53f7\u6c47\u603b</button>' +
     '<div style="flex:1;text-align:right;font-size:13px;color:var(--sub)">' + '\u5df2\u9009 <b id="pmcSelCount" style="color:var(--accent);font-weight:700">' + selCount + '</b> / ' + items.length + ' \u6761</div></div>' +
     (refBtns ? '<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">' +
        '<span style="font-size:11px;color:var(--sub)">\u6307\u4ee4\u5355\u53f7\uff1a</span>' + refBtns + '</div>' : '') +
     '</div>';
-  var filtered = q ? items.filter(function(t) {
-    return (t.os_no||t.SO_NO||'').indexOf(q) >= 0 ||
-           (t.prd_no||t.PRD_NO||'').indexOf(q) >= 0 ||
-           (t.cus_name||t.CUS_NAME||'').indexOf(q) >= 0 ||
-           (t.ref||t.指令单号||'').indexOf(q) >= 0;
-  }) : items;
-  if (!filtered.length) { el.innerHTML = toolbar + '<div class="state-msg">\u65e0\u5339\u914d\u7ed3\u679c</div>'; return; }
-  var cards = filtered.map(function(t, i) {
+  // 筛选改成「渲染全部 + DOM 隐藏」：输入时不再整块重渲染，否则输入框被重建、值和焦点全丢
+  window.__pmcQ = (typeof q === 'string' ? q : '');
+  var cards = items.map(function(t, i) {
     var prdNo = t.prd_no||t.PRD_NO||'';
     var prdName = t.prd_name||t.PRD_NAME||'';
     var osNo = t.os_no||t.SO_NO||'';
@@ -2151,10 +2151,72 @@ function renderPMCList(items, q) {
     var cardContent = '<div style="flex:1;cursor:pointer;min-width:0" onclick="event.stopPropagation();pmcAnalyzeRow(\'' + escAttr(soItm) + '\',\'' + escAttr(prdNo) + '\',' + qty + ')"><div style="font-size:12px;color:var(--sub);margin-bottom:2px">' + escAttr(osNo) + '</div><div style="font-size:14px;font-weight:600;margin-bottom:2px">' + escAttr(prdNo) + '</div><div style="font-size:13px;color:var(--name);margin-bottom:4px;word-break:break-all">' + escAttr(prdName) + '</div>' + (cusName ? '<span style="font-size:11px;color:#374151;background:#f3f4f6;border-radius:3px;padding:1px 5px;margin-right:4px">' + escAttr(cusName) + '</span>' : '') + '</div>';
     var rightDiv = '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0"><div style="font-size:18px;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums">' + fmtQty + '</div><div style="font-size:11px;color:var(--sub)">\u4ef6</div>' + zhilianHtml + '</div>';
     var checkbox = '<div style="display:flex;align-items:flex-start;padding-top:2px" onclick="event.stopPropagation();pmcToggleSel(\'' + escAttr(soItm) + '\',\'' + escAttr(prdNo) + '\')"><input type="checkbox" ' + (isSel?'checked':'') + ' style="width:16px;height:16px;cursor:pointer;accent-color:var(--accent)"></div>';
-    return '<div class="pmc-card' + (isSel?' pmc-card-sel':'') + '">' + checkbox + cardContent + rightDiv + '</div>';
+    return '<div class="pmc-card' + (isSel?' pmc-card-sel':'') + '" data-pmcrow="1" data-q="' + escAttr(pmcSearchText(t)) + '">' + checkbox + cardContent + rightDiv + '</div>';
   }).join('');
   var footer = selCount > 0 ? '<div style="position:sticky;bottom:0;padding:12px;background:rgba(255,255,255,.95);border-top:1px solid var(--border);display:flex;gap:8px;align-items:center"><div style="flex:1;display:flex;align-items:center;gap:8px"><span style="background:var(--accent);color:#fff;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:700">' + selCount + '</span><span style="font-size:13px;color:var(--text)">\u5df2\u9009</span></div><button onclick="pmcPreviewBatch()" style="background:var(--accent);color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:14px;font-weight:600;cursor:pointer">\u6279\u91cf\u9884\u89c8 (' + selCount + ')</button><button onclick="pmcSubmit()" style="background:#16a34a;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:14px;font-weight:600;cursor:pointer">\u751f成 MPS</button></div>' : '';
-  el.innerHTML = toolbar + '<div style="padding:6px 0">' + cards + '</div>' + footer;
+  el.innerHTML = toolbar + '<div style="padding:6px 0">' + cards + '</div>' + '<div class="state-msg" id="pmcEmptyHint" style="display:none">\u65e0\u5339\u914d\u7ed3\u679c</div>' + footer;
+  pmcApplyFilter();
+}
+
+// 这几个是 PMC 列表搜索/全选的最小实现（一个真相源，别在各处再抄一份字段名）
+function pmcSearchText(t) {
+  t = t || {};
+  return [(t.os_no||t.SO_NO||''), (t.prd_no||t.PRD_NO||''), (t.cus_name||t.CUS_NAME||''),
+          (t['客户']||''), (t.ref||t['指令单号']||''), (t.prd_name||t.PRD_NAME||'')].join(' ').toLowerCase();
+}
+function pmcIsSel(t) {
+  return pmcSelected.some(function(x) {
+    return (x.so_no_itm||'') === (t.so_no_itm||'') && (x.prd_no||'') === (t.prd_no||t.PRD_NO||'');
+  });
+}
+// 只切 DOM 显隐 —— 不重渲染，输入框的值和焦点都保住
+function pmcApplyFilter() {
+  var q = (window.__pmcQ || '').toLowerCase();
+  var rows = document.querySelectorAll('[data-pmcrow]');
+  var n = 0;
+  rows.forEach(function(r) {
+    var hit = !q || (r.getAttribute('data-q') || '').indexOf(q) >= 0;
+    r.style.display = hit ? '' : 'none';
+    if (hit) n++;
+  });
+  var lb = $id('pmcSelAllLabel');
+  if (lb) lb.textContent = q ? ('\u5168\u9009\u7b5b\u51fa\u7684 ' + n + ' \u6761') : '\u5168\u9009';
+  var em = $id('pmcEmptyHint');
+  if (em) em.style.display = n ? 'none' : '';
+  return n;
+}
+function pmcFilterInput(v) {
+  window.__pmcQ = v || '';
+  pmcApplyFilter();
+}
+function pmcSetSearch(v) {
+  var inp = $id('pmcSearch');
+  if (inp) inp.value = v || '';
+  pmcFilterInput(v || '');
+  if (inp) inp.focus();
+}
+// 全选/取消全选「当前筛选出来的」，没筛选时就是全部
+function pmcSelectAllFiltered() {
+  var items = window.__pmcItems || [];
+  var q = (window.__pmcQ || '').toLowerCase();
+  var vis = items.filter(function(t) { return !q || pmcSearchText(t).indexOf(q) >= 0; });
+  if (!vis.length) return;
+  var allSel = vis.every(pmcIsSel);
+  vis.forEach(function(t) {
+    var idx = pmcSelected.findIndex(function(x) {
+      return (x.so_no_itm||'') === (t.so_no_itm||'') && (x.prd_no||'') === (t.prd_no||t.PRD_NO||'');
+    });
+    if (allSel) {
+      if (idx >= 0) pmcSelected.splice(idx, 1);
+    } else if (idx < 0) {
+      pmcSelected.push({
+        so_no_itm: t.so_no_itm||'', so_no: t.os_no||t.SO_NO||'',
+        prd_no: t.prd_no||t.PRD_NO||'', qty: parseFloat(t.qty||t.QTY||0)
+      });
+    }
+  });
+  window.__pmcQ = q;   // 保持筛选
+  renderPMCList(items, q);
 }
 
 function pmcToggleSel(soNoItm, prdNo) {
@@ -2179,18 +2241,19 @@ function pmcToggleSel(soNoItm, prdNo) {
       qty: parseFloat(t.qty||t.QTY||0)
     });
   }
-  renderPMCList(items, $id('pmcSearch') ? $id('pmcSearch').value : '');
+  renderPMCList(items, window.__pmcQ || '');   // 用保存的筛选词重渲染，勾选不会把筛选冲掉
 }
 
+// 兼容旧调用点（指令单号快捷按钮改用 pmcSetSearch，这里留着兜底）
 window.__pmcSearchFn = function(q) {
-  renderPMCList(window.__pmcItems || [], q);
+  pmcSetSearch(q);
 };
 
 // 品号级汇总（跨单净缺口）：后台算、缓存 10 分钟。库存只扣一次的那个数就是「净缺口」。
 var pmcSumShown = false;
 function pmcSumBack() {
   pmcSumShown = false;
-  var q = $id('pmcSearch') ? $id('pmcSearch').value : '';
+  var q = window.__pmcQ || '';
   renderPMCList(window.__pmcItems || [], q);
 }
 async function pmcShowSummary(refresh) {
