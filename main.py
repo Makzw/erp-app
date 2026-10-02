@@ -4136,7 +4136,8 @@ def _calc_global_net(db_name="C041", refresh=0):
             # cut_top = 上游来源 Top5（不含自己）
             "cut": round(_cut.get(p, 0.0), 3),
             "own_cut": round(_src.get(p, {}).get(p, 0.0), 3),
-            "cut_top": [{"prd": _k, "qty": round(_v, 3)} for _k, _v in
+            "cut_top": [{"prd": _k, "name": (prdt.get(_k) or ('',))[0], "qty": round(_v, 3)}
+                        for _k, _v in
                         sorted(((k2, v2) for k2, v2 in _src.get(p, {}).items() if k2 != p),
                                key=lambda kv: -kv[1])[:5]],
             "flags": fl,
