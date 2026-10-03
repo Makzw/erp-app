@@ -3716,7 +3716,8 @@ function gnFlatSrcRender(box, d) {
     h += '<div style="margin-top:4px;font-size:11px;color:var(--sub)">− 被上游可用抵 ' + gnQty(gm[7] || 0) + ' → 滚算毛需求 ' + gnQty(gm[0] || 0)
       + '；再 − 本层可用抵扣 ' + gnQty(gm[8] || 0) + ' = 全厂净需求 ' + gnQty(gm[5] || 0) + '</div>';
   }
-  h += '<div style="margin-top:4px;font-size:11px;color:var(--sub)">本料单位' + (u || '—') + '；每件用量 = 该成品到本料的系数连乘（与 BOM 展开同口径）</div>';
+  h += '<div style="margin-top:4px;font-size:11px;color:var(--sub)">本料单位' + (u || '—') + '；每件用量 = 该成品到本料的系数连乘（与 BOM 展开口径）</div>';
+  h += '<div style="margin-top:2px;font-size:11px;color:var(--sub)">⚠ 这是全厂口径（所有成品）；跟左/上边的「缺口」不是一回事 —— 缺口只算本单，是请购/MPS 落库的依据</div>';
   box.innerHTML = h;
 }
 function gnFlatSrcTip(prd, el) {
@@ -3754,26 +3755,17 @@ function gnNetHtml(prd) {
   var g = Number(v[0] || 0), mt = Number(v[1] || 0), pd = Number(v[2] || 0), ow = Number(v[3] || 0), qt = Number(v[4] || 0), net = Number(v[5] || 0);
   var ci = Number(v[6] || 0);   // 母件被归属的在制合计（无则为 0）
   var cutv = Number(v[7] || 0), own = Number(v[8] || 0), gf = Number(v[9] || 0);   // 被上游抵 / 本层自身被抵 / 不滚算毛需求
-  var tip = '全厂净需求（全厂口径：所有成品）\n' +
-    '不滚算毛需求 ' + gnQty(gf) + '（所有成品未出按 BOM 展开，一分库存都不扣）\n' +
-    '− 被上游可用抵 ' + gnQty(cutv) + '\n' +
-    '− 本层可用抵扣 ' + gnQty(own) + '（原材料仓/生产仓/在途/请购 里实际被用掉的部分）\n' +
-    '= 要做的数（全厂净需求）' + gnQty(net) + '\n\n' +
-    '（滚算后的本层毛需求 ' + gnQty(g) + ' = 不滚算毛需求 − 被上游可用抵；料行看小字）\n' +
-    '⚠ 这是全厂口径（所有成品），跟左边「缺口」不是一回事：缺口只算本单，是请购/MPS 落库的依据';
   // ⚠ 真实单元格也带 data-gnnet：这样 gnEnsureMap 到位后 gnFill 会重渲染它，
-  //   显示「其中 X 在外发/车间在制」——否则树在 map 未到时渲染的那格永远不带标
-  return '<div data-gnnet="1" data-gnprd="' + gnEsc(prd) + '" style="font-size:12px;white-space:nowrap;color:' + (net > 0.0001 ? '#b45309' : '#16a34a') +
-    '" title="' + gnEsc(tip) + '">全厂净需求 <b style="font-size:13px;font-variant-numeric:tabular-nums">' + gnFmt(net, 0) + '</b>' +
+  //   显示「其中 X 在外发/车间在制」——否则树在 map 未到时渲染的那格永远不带标。
+  //   悬停整格 = 弹「相关成品 + 指令单号」面板（gnFlatSrcTip）。
+  //   ⚠ 原来那两处原生 title（净需求算式 / 不滚算毛需求算式）都去掉了 —— 内容面板里都有，
+  //     留着会和面板同时弹出两个框（MAK 报的「旧的 hover 没去掉」）。
+  return '<div data-gnnet="1" data-gnprd="' + gnEsc(prd) + '" style="font-size:12px;white-space:nowrap;cursor:help;color:' + (net > 0.0001 ? '#b45309' : '#16a34a') +
+    '" onmouseover="gnFlatSrcTip(\'' + escAttr(prd) + '\',this)" onmouseout="gnFlatSrcHide()">全厂净需求 <b style="font-size:13px;font-variant-numeric:tabular-nums">' + gnFmt(net, 0) + '</b>' +
     (ci > 0.0001 ? '<div style="font-size:11px;color:var(--sub);white-space:nowrap" title="' +
       gnEsc('这几个料是从本站（这个母件）归属来的，实物在外发/车间在制仓：' + gnFmt(ci, 0) + '。在制已按「本料本层需求」抵扣给本站，不影响全厂净需求算式。') +
       '">其中 ' + gnFmt(ci, 0) + ' 在外发/车间在制</div>' : '') +
-    (gf > 0.0001 ? '<div style="font-size:11px;color:var(--sub);white-space:nowrap;cursor:help" ' +
-      'onmouseover="gnFlatSrcTip(\'' + escAttr(prd) + '\',this)" onmouseout="gnFlatSrcHide()" ' +
-      'title="' + gnEsc('不滚算毛需求 ' + gnQty(gf) + '（本料单位）：所有成品未出按 BOM 展开、一分库存都不扣。\n' +
-        '− 被上游可用抵 ' + gnQty(cutv) + '\n− 本层可用抵扣 ' + gnQty(own) + '（上面原材料仓/生产仓/在途/请购 实际用掉的部分）\n' +
-        '= 全厂净需求 ' + gnQty(net) + '（要做的数）') +
-      '">不滚算毛需求 ' + gnQty(gf) + ' <span style="color:#2563EB">▸相关成品</span></div>' : '') +
+    (gf > 0.0001 ? '<div style="font-size:11px;color:var(--sub);white-space:nowrap">不滚算毛需求 ' + gnQty(gf) + ' <span style="color:#2563EB">▸相关成品</span></div>' : '') +
   '</div>';
 }
 
