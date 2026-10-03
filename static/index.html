@@ -2439,6 +2439,7 @@ async function pmcSubmit() {
       body: JSON.stringify({items: pmcSelected})
     });
     if (res.error) { el.innerHTML = '<div class="error-msg">' + res.error + '</div>'; return; }
+    pmcSelected = [];   // 这批单已生成 MPS → 清多选态（否则「继续分析」回来还挂着 已选 N + 勾选，MAK 2026-10-03 报）
     var results = res.results || (res.mps_no ? [res] : []);
     var mpsList = results.map(function(r) { return r.mps_no; }).filter(Boolean).join(' / ') || res.mps_no || '\u2014';
     var totalItm = results.reduce(function(s, r) { return s + (r.total_itm || 0); }, 0);
