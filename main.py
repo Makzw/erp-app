@@ -5219,7 +5219,12 @@ async def pmc_make_qd(
     so_no_itm = (body.get("so_no_itm") or "").strip()
     fg_no = (body.get("fg_no") or "").strip()
     dry = str(body.get("dry") or "") in ("1", "true", "True")
-    if not so_no_itm:
+    # 批量预览（合并树）里每行挂它自己那张单：行级字段优先，body 级只是缺省值。
+    # 单张单的树不带行级字段 → 行为跟以前完全一样。
+    for it in items:
+        it["so_no_itm"] = (str(it.get("so_no_itm") or "").strip() or so_no_itm)
+        it["fg_no"] = (str(it.get("fg_no") or "").strip() or fg_no)
+    if not all(it["so_no_itm"] for it in items):
         return {"error": "缺少 SO 行号（请从某张待分析单的 BOM 树里生成）"}
 
     db_name = "T041" if db.lower() == "t041" else "C041"
@@ -5228,19 +5233,26 @@ async def pmc_make_qd(
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     try:
-        # 本单挂靠字段（订单行 → 指令单号 / 客户代号 / 订单数量）
+        # 挂靠字段（订单行 → 指令单号 / 客户代号 / 订单数量）
         # 客户代号：POS.客户代号 多数为空，真值是 POS.CUS_NAME（如 10003→KH003，历史 QD 全是 KH0xx 格式）
-        cur.execute("""
-            SELECT ISNULL(指令单号,''), ISNULL(NULLIF(客户代号,''), ISNULL(CUS_NAME,'')), ISNULL(QTY,0)
-            FROM POS WITH(NOLOCK) WHERE SO_NO_ITM=%s
-        """, (so_no_itm,))
-        pr = cur.fetchone()
-        if not pr:
+        # 每张单只查一次（合并批量预览会挂多张单）
+        refs = {}
+
+        def _order_ref(si):
+            if si not in refs:
+                cur.execute("""
+                    SELECT ISNULL(指令单号,''), ISNULL(NULLIF(客户代号,''), ISNULL(CUS_NAME,'')), ISNULL(QTY,0)
+                    FROM POS WITH(NOLOCK) WHERE SO_NO_ITM=%s
+                """, (si,))
+                pr = cur.fetchone()
+                refs[si] = None if not pr else (g(pr[0]), g(pr[1]), float(pr[2] or 0))
+            return refs[si]
+
+        uniq_so = list(dict.fromkeys(it["so_no_itm"] for it in items))
+        missing = [si for si in uniq_so if _order_ref(si) is None]
+        if missing:
             conn.rollback()
-            return {"error": f"POS 里找不到销售订单行 {so_no_itm}（请从待分析单的 BOM 树里生成）"}
-        order_ref = g(pr[0]) if pr else ""
-        cus_ref = g(pr[1]) if pr else ""
-        order_qty = float(pr[2] or 0) if pr else 0.0
+            return {"error": "POS 里找不到销售订单行 " + "、".join(missing) + "（请从待分析单的 BOM 树里生成）"}
 
         qd_no = _next_serial(cur, "QD", "QTS", "QT_NO")
 
@@ -5260,7 +5272,10 @@ async def pmc_make_qd(
             prd_name = g(prow[0])
             ut = g(prow[1])
             itm += 1
-            rem1 = f"{fg_no} PMC请购" if fg_no else "PMC请购"
+            so_si = it["so_no_itm"]
+            order_ref, cus_ref, order_qty = refs[so_si]
+            line_fg = it["fg_no"]
+            rem1 = f"{line_fg} PMC请购" if line_fg else "PMC请购"
             cur.execute("""
                 INSERT INTO QTS (QT_NO,QT_ID,QT_DD,USR,USABLE,CUS_NO,CUS_NAME,ITM,PRD_NO,PRD_NAME,UT,
                                  QTY,EST_DD,CLS_ID,SO_NO_ITM,指令单号,客户代号,成品编号,订单数量,
@@ -5268,16 +5283,30 @@ async def pmc_make_qd(
                 VALUES (%s,'QD',%s,%s,1,%s,%s,%s,%s,%s,%s,%s,%s,0,%s,%s,%s,%s,%s,%s,%s,0,0)
             """, (
                 qd_no, now_str, "0014", "20399", "待定", itm, prd_no, prd_name, ut,
-                qty, est_dd, so_no_itm, order_ref, cus_ref, fg_no, order_qty,
+                qty, est_dd, so_si, order_ref, cus_ref, line_fg, order_qty,
                 rem1, now_str,
             ))
-            lines.append({"itm": itm, "prd_no": prd_no, "prd_name": prd_name, "ut": ut, "qty": qty})
+            lines.append({"itm": itm, "prd_no": prd_no, "prd_name": prd_name, "ut": ut, "qty": qty,
+                          "so_no_itm": so_si, "指令单号": order_ref, "成品编号": line_fg,
+                          "merges": int(it.get("merges") or 1)})
+
+        # 每张单挂的成品（同一 SO 行只对应一个成品；取该单第一行的 fg_no）
+        fg_by_so = {}
+        for _it in items:
+            fg_by_so.setdefault(_it["so_no_itm"], _it["fg_no"])
+
+        def _one(si):
+            r_ = refs.get(si) or ("", "", 0.0)
+            return {"so_no_itm": si, "指令单号": r_[0], "客户代号": r_[1], "订单数量": r_[2],
+                    "成品编号": fg_by_so.get(si, "")}
 
         if dry:
             conn.rollback()
+            head = _one(uniq_so[0]) if len(uniq_so) == 1 else {"so_no_itm": "", "指令单号": "", "客户代号": "", "订单数量": 0.0}
             return {"ok": True, "dry": True, "qd_no": qd_no, "itm_count": len(lines),
-                    "so_no_itm": so_no_itm, "指令单号": order_ref, "客户代号": cus_ref,
-                    "成品编号": fg_no, "订单数量": order_qty, "est_dd": est_dd, "lines": lines}
+                    "so_no_itm": head["so_no_itm"], "指令单号": head["指令单号"], "客户代号": head["客户代号"],
+                    "成品编号": fg_no if len(uniq_so) == 1 else "", "订单数量": head["订单数量"],
+                    "est_dd": est_dd, "lines": lines, "挂靠": [_one(si) for si in uniq_so]}
         conn.commit()
     except Exception as e:
         conn.rollback()
@@ -5301,10 +5330,11 @@ async def pmc_make_qd(
     except Exception as e:
         back = [{"error": str(e)}]
 
+    head = _one(uniq_so[0]) if len(uniq_so) == 1 else {"so_no_itm": "", "指令单号": "", "客户代号": "", "订单数量": 0.0}
     return {"ok": True, "dry": False, "qd_no": qd_no, "itm_count": len(lines),
-            "so_no_itm": so_no_itm, "指令单号": order_ref, "客户代号": cus_ref,
-            "成品编号": fg_no, "订单数量": order_qty, "est_dd": est_dd,
-            "lines": lines, "回读": back}
+            "so_no_itm": head["so_no_itm"], "指令单号": head["指令单号"], "客户代号": head["客户代号"],
+            "成品编号": fg_no if len(uniq_so) == 1 else "", "订单数量": head["订单数量"], "est_dd": est_dd,
+            "lines": lines, "回读": back, "挂靠": [_one(si) for si in uniq_so]}
 
 
 if __name__ == "__main__":

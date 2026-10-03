@@ -2463,7 +2463,16 @@ async function pmcPreviewBatch() {
     // ⚠ 调整弹窗(pmcOpenAdjust)从 __pmcBomRows 里取该料的仓库明细 —— 批量预览以前没设这个
     //    变量，导致「调整」按钮全弹「该品号无原材料仓库存」（MAK 2026-09-30 报）
     window.__pmcBomRows = allRows;
-    window.__pmcQdCtx = null;   // 合并树没有单一 SO 行 → 不提供请购生成
+    // 合并树也能生成请购单：每行挂它**自己**那张单。行序里每个成品行(is_fg)带着自己的
+    // so_no_itm，它下面（到下一个成品行之前）的料行都归这张单 —— 后端 preview_batch 就是
+    // 按 items 顺序逐张单展开再拼起来的，所以这样还原归属是准的。
+    var _cur = null;
+    for (var _i = 0; _i < allRows.length; _i++) {
+      var _ar = allRows[_i];
+      if (_ar.is_fg) _cur = {so: _ar.so_no_itm || '', fg: _ar.prd_no || ''};
+      if (_cur) { _ar.__soItm = _cur.so; _ar.__fgNo = _cur.fg; }
+    }
+    window.__pmcQdCtx = {batch: true, n: pmcSelected.length};
     renderPMCTree(allRows, '合并 ' + pmcSelected.length + ' 条指令单');
   } catch(e) { el.innerHTML = '<div class="error-msg">' + e.message + '</div>'; }
 }
@@ -2695,10 +2704,11 @@ function renderPMCTree(items, title) {
   html += '<span>全厂净需求=<span style="color:#b45309;font-weight:600">所有成品的未出展开 − 材料仓 − 生产仓 − 在途 − 请购</span>（全厂口径，hover 看明细；同品号只在第一处显示，跟左边的「缺口」不是一回事）</span>';
   html += '</div>';
 
-  // 生成请购单（只从单张单的树进入；合并树没有单一 SO 行）
-  if (fgRow && window.__pmcQdCtx && window.__pmcQdCtx.so_no_itm) {
+  // 生成请购单（单张单的树 + 批量预览的合并树都能做：合并树每行挂它自己那张单）
+  if (fgRow && window.__pmcQdCtx) {
     html += '<div style="margin-top:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;background:#f9fafb;border:1px solid var(--border);border-radius:8px">' +
       '<span style="font-size:13px;font-weight:600">生成请购单</span>' +
+      (window.__pmcQdCtx.batch ? '<span style="font-size:12px;color:#b45309">合并 ' + window.__pmcQdCtx.n + ' 条指令单：每行挂它自己那张单，同品号同单自动并成一行</span>' : '') +
       '<label style="font-size:13px;display:flex;align-items:center;gap:6px">交期 <input type="date" id="qdEstDd" style="padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px"></label>' +
       '<button onclick="pmcQdAll()" style="padding:6px 12px;border-radius:16px;border:1px solid var(--border);background:#fff;font-size:12px;cursor:pointer">全选可请购</button>' +
       '<button onclick="pmcQdNone()" style="padding:6px 12px;border-radius:16px;border:1px solid var(--border);background:#fff;font-size:12px;cursor:pointer">清空</button>' +
@@ -2721,14 +2731,24 @@ function renderPMCTree(items, title) {
 //   ① 先用 dry=1 跑一遍（后端做完所有校验和 INSERT 后 ROLLBACK）→ 把「将写入什么」摊在确认弹窗里
 //   ② 确认后再真写（一张 QD 单，多行 ITM）
 function pmcQdCollect() {
-  var out = [], items = window.__pmcTreeItems || [];
+  var items = window.__pmcTreeItems || [], ctx = window.__pmcQdCtx || {};
+  var out = [], idx = {};
   for (var i = 0; i < items.length; i++) {
     var cb = $id('qdSel_' + i);
     if (!cb || !cb.checked) continue;
     var qi = $id('qdQty_' + i);
     var q = qi ? parseFloat(qi.value) : 0;
     if (!(q > 0)) continue;
-    out.push({prd_no: items[i].prd_no, prd_name: items[i].prd_name, ut: items[i].ut, qty: q});
+    var it = items[i];
+    // 挂靠：合并树里每行挂它自己那张单；单张单的树回落到 ctx
+    var so = it.__soItm || ctx.so_no_itm || '';
+    var fg = it.__fgNo || ctx.fg_no || '';
+    // 同品号 + 同一张挂靠单 → 并成一行累加（一个料在 QD 里只出现一行）
+    var key = so + '\u0000' + it.prd_no;
+    if (idx[key] !== undefined) { out[idx[key]].qty += q; out[idx[key]].merges += 1; continue; }
+    idx[key] = out.length;
+    out.push({prd_no: it.prd_no, prd_name: it.prd_name, ut: it.ut, qty: q,
+              so_no_itm: so, fg_no: fg, merges: 1});
   }
   return out;
 }
@@ -2769,7 +2789,8 @@ async function pmcMakeQd() {
   try {
     pre = await api(BASE + '/pmc/make_qd', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({so_no_itm: ctx.so_no_itm, fg_no: ctx.fg_no, est_dd: est, dry: '1', items: rows})
+      // 行级挂靠：每行带自己的 so_no_itm/fg_no（单张单的树由后端回落到 body 级）
+      body: JSON.stringify({so_no_itm: ctx.so_no_itm || '', fg_no: ctx.fg_no || '', est_dd: est, dry: '1', items: rows})
     });
   } catch (e) {
     if (btn0) btn0.disabled = false;
@@ -2780,7 +2801,7 @@ async function pmcMakeQd() {
   if (btn0) btn0.disabled = false;
   pmcQdSync();
   if (!pre || pre.error) { toast('校验失败：' + ((pre && pre.error) || '未知错误')); return; }
-  window.__pmcQdBody = {so_no_itm: ctx.so_no_itm, fg_no: ctx.fg_no, est_dd: est, items: rows};
+  window.__pmcQdBody = {so_no_itm: ctx.so_no_itm || '', fg_no: ctx.fg_no || '', est_dd: est, items: rows};
   pmcQdConfirmHtml(pre, rows);
 }
 
@@ -2793,7 +2814,9 @@ function pmcQdConfirmHtml(pre, rows) {
       '<td style="padding:6px 8px;font-weight:600">' + escHtml(r.prd_no) + '</td>' +
       '<td style="padding:6px 8px;color:var(--name)">' + escHtml(r.prd_name || '') + '</td>' +
       '<td style="padding:6px 8px;text-align:center">' + escHtml(r.ut || '') + '</td>' +
-      '<td style="padding:6px 8px;text-align:right;font-weight:700;font-variant-numeric:tabular-nums">' + Number(r.qty).toLocaleString('zh-CN') + '</td></tr>';
+      '<td style="padding:6px 8px;text-align:right;font-weight:700;font-variant-numeric:tabular-nums">' + Number(r.qty).toLocaleString('zh-CN') +
+        (Number(r.merges || 1) > 1 ? ' <span style="font-size:10px;color:var(--sub);font-weight:400">(' + r.merges + ' 处合并)</span>' : '') + '</td>' +
+      '<td style="padding:6px 8px;font-size:11px;color:var(--sub);white-space:nowrap">' + escHtml((r['指令单号'] || '') + ' / ' + (r['成品编号'] || '')) + '</td></tr>';
   }).join('');
   var ov = document.createElement('div');
   ov.id = 'qdConfirmOv';
@@ -2805,17 +2828,28 @@ function pmcQdConfirmHtml(pre, rows) {
       '<button onclick="pmcQdConfirm()" id="qdOkBtn" style="padding:7px 18px;border-radius:16px;border:none;background:#16a34a;color:#fff;font-size:13px;font-weight:600;cursor:pointer">确认生成</button></div>' +
     '<div style="padding:12px 20px 0;font-size:12px;color:var(--sub);display:flex;gap:18px;flex-wrap:wrap">' +
       '<span>单号 <b style="color:#1d4ed8">' + escHtml(pre.qd_no) + '</b>（还没写入）</span>' +
-      '<span>销售订单行 <b style="color:#dc2626">' + escHtml(pre.so_no_itm || '') + '</b>（写进 QTS.SO_NO_ITM，采购下单靠它回写）</span>' +
-      '<span>成品编号 <b style="color:var(--text)">' + escHtml(pre['成品编号'] || '') + '</b></span>' +
-      '<span>指令单号 <b style="color:var(--text)">' + escHtml(pre['指令单号'] || '') + '</b></span>' +
-      '<span>客户代号 <b style="color:var(--text)">' + escHtml(pre['客户代号'] || '') + '</b></span>' +
-      '<span>订单数量 <b style="color:var(--text)">' + Number(pre['订单数量'] || 0).toLocaleString('zh-CN') + '</b></span>' +
+      (function () {
+        var dep = pre['挂靠'] || [];
+        if (dep.length > 1) {   // 合并批量：一张 QD 挂多张指令单 → 按下表逐行看
+          return '<span>挂靠 <b style="color:#b45309">' + dep.length + ' 张指令单</b>（每行挂它自己那张单，见下表）</span>' +
+            dep.map(function (d) {
+              return '<span style="font-size:11px">' + escHtml(d.so_no_itm) + ' → 指令单 ' + escHtml(d['指令单号'] || '') +
+                ' / ' + escHtml(d['成品编号'] || '') + '</span>';
+            }).join('');
+        }
+        return '<span>销售订单行 <b style="color:#dc2626">' + escHtml(pre.so_no_itm || '') + '</b>（写进 QTS.SO_NO_ITM，采购下单靠它回写）</span>' +
+          '<span>成品编号 <b style="color:var(--text)">' + escHtml(pre['成品编号'] || '') + '</b></span>' +
+          '<span>指令单号 <b style="color:var(--text)">' + escHtml(pre['指令单号'] || '') + '</b></span>' +
+          '<span>客户代号 <b style="color:var(--text)">' + escHtml(pre['客户代号'] || '') + '</b></span>' +
+          '<span>订单数量 <b style="color:var(--text)">' + Number(pre['订单数量'] || 0).toLocaleString('zh-CN') + '</b></span>';
+      })() +
       '<span>交期 <b style="color:var(--text)">' + escHtml(pre.est_dd || '') + '</b></span>' +
       '<span>制单人 <b style="color:var(--text)">0014（PMC）</b> · 供应商 <b style="color:var(--text)">20399 待定</b></span>' +
     '</div>' +
     '<div style="padding:12px 20px 18px"><table style="width:100%;border-collapse:collapse;font-size:12px;background:#fff">' +
       '<thead><tr style="background:#f3f4f6;color:var(--sub)"><th style="padding:6px 8px">#</th><th style="padding:6px 8px;text-align:left">品号</th>' +
-      '<th style="padding:6px 8px;text-align:left">品名</th><th style="padding:6px 8px">单位</th><th style="padding:6px 8px;text-align:right">请购数量</th></tr></thead>' +
+      '<th style="padding:6px 8px;text-align:left">品名</th><th style="padding:6px 8px">单位</th><th style="padding:6px 8px;text-align:right">请购数量</th>' +
+      '<th style="padding:6px 8px;text-align:left">挂靠（指令单号 / 成品）</th></tr></thead>' +
       '<tbody>' + trs + '</tbody></table></div></div>';
   document.body.appendChild(ov);
 }
@@ -2854,8 +2888,11 @@ async function pmcQdConfirm() {
   el.innerHTML = '<div style="padding:16px">' +
     '<div style="font-size:16px;font-weight:700;color:#16a34a;margin-bottom:4px">✓ 请购单已生成</div>' +
     '<div style="font-size:14px;font-weight:600;margin-bottom:2px">单号：' + escHtml(res.qd_no) + '　共 ' + res.itm_count + ' 行</div>' +
-    '<div style="font-size:12px;color:var(--sub);margin-bottom:12px">销售订单行 ' + escHtml(res.so_no_itm || '') + ' · 制单人 0014（PMC）· 待审 · 供应商 20399 待定 · 交期 ' + escHtml(res.est_dd || '') +
-      ' · 指令单号 ' + escHtml(res['指令单号'] || '') + ' · 客户代号 ' + escHtml(res['客户代号'] || '') + ' · 成品编号 ' + escHtml(res['成品编号'] || '') + '</div>' +
+    '<div style="font-size:12px;color:var(--sub);margin-bottom:12px">' +
+      (((res['挂靠'] || []).length > 1)
+        ? '挂靠 ' + res['挂靠'].length + ' 张指令单：' + res['挂靠'].map(function (d) { return escHtml(d['指令单号'] || d.so_no_itm); }).join('、')
+        : '销售订单行 ' + escHtml(res.so_no_itm || '') + ' · 指令单号 ' + escHtml(res['指令单号'] || '') + ' · 客户代号 ' + escHtml(res['客户代号'] || '') + ' · 成品编号 ' + escHtml(res['成品编号'] || '')) +
+      ' · 制单人 0014（PMC）· 待审 · 供应商 20399 待定 · 交期 ' + escHtml(res.est_dd || '') + '</div>' +
     '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;background:#fff;border:1px solid var(--border);border-radius:8px">' +
       '<thead><tr style="background:#f3f4f6;color:var(--sub)"><th style="padding:6px 8px">ITM</th><th style="padding:6px 8px;text-align:left">品号</th>' +
       '<th style="padding:6px 8px;text-align:right">数量</th><th style="padding:6px 8px">单位</th><th style="padding:6px 8px">交期</th><th style="padding:6px 8px">制单人</th></tr></thead>' +
