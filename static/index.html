@@ -1536,35 +1536,73 @@ async function completionAddFgDetail(fgNo, icNo, prdNo, qtyInputId, whInputId) {
   renderCompletionList();
 }
 // 实时重算弹窗内某项成品的 BOM 需用量
-function bomRecalc(idx) {
+var cmSelIdx = 0;   // 批量完工：当前在看材料明细的成品序号
+
+function cmShortage(item) {   // 该成品缺料种数（数量未填不算缺）
+  const qty = item.fg_qty || 0; let n = 0;
+  for (const m of (item.bom || [])) {
+    const need = Math.ceil((m.qty_per_unit || 0) * qty);
+    if (qty > 0 && compSumAvail(m) < need) n++;
+  }
+  return n;
+}
+
+function cmSelect(i) {   // 点成品行 → 只换下面那张材料明细 + 高亮该行
+  cmSelIdx = i;
+  document.querySelectorAll('#cmFgBody tr[data-idx]').forEach(tr => {
+    const on = parseInt(tr.dataset.idx) === i;
+    tr.style.background = on ? '#EFF6FF' : '#fff';
+    tr.style.boxShadow = on ? 'inset 3px 0 0 #2563eb' : 'none';
+  });
+  cmRenderMat();
+}
+
+function cmRenderMat() {   // 材料明细：全弹窗只有这一张表，随选中成品切换
+  const item = completionList[cmSelIdx];
+  const tEl = document.getElementById('cmMatTitle'), bEl = document.getElementById('cmMatBody');
+  if (!item || !tEl || !bEl) return;
+  const bom = item.bom || [];
+  tEl.innerHTML = '成品 ' + (cmSelIdx + 1) + ' · ' + fmt(item.fg_no) + ' 的材料明细（' + bom.length + ' 种）'
+    + '<span style="font-weight:400;color:#6b7280;font-size:11px;margin-left:8px">数量 ' + (item.fg_qty || 0) + ' · 仓库 ' + (item.fg_wh || 'G') + '</span>';
+  if (!bom.length) {
+    bEl.innerHTML = '<tr><td colspan="6" style="padding:10px 12px;font-size:12px;color:#9ca3af;font-style:italic">无 BOM 数据</td></tr>';
+    return;
+  }
+  const fgQty = item.fg_qty || 0;
+  bEl.innerHTML = bom.map(m => {
+    const ratio = m.qty_per_unit || 0;
+    const need = Math.ceil(ratio * fgQty);
+    const avail = compSumAvail(m);   // 该材料所有调拨单剩余之和（不分仓，MAK 2026-09-30）
+    const tRow = compPickTransfer(m, need, item.transfer_ic_no);
+    const ok = avail >= need;
+    const st = !fgQty ? ['—', '#9ca3af'] : (ok ? ['✅', '#16a34a'] : ['❌', '#dc2626']);
+    return '<tr style="border-bottom:1px solid #f3f4f6">'
+      + '<td style="padding:6px 8px;font-size:12px;border-right:1px solid #e5e7eb">' + fmt(m.prd_no)
+      + (m.prd_name ? '<span style="color:var(--name);font-size:11px;margin-left:6px">' + fmt(m.prd_name) + '</span>' : '') + '</td>'
+      + '<td style="padding:6px 8px;font-size:12px;text-align:right;border-right:1px solid #e5e7eb">' + ratio + '</td>'
+      + '<td style="padding:6px 8px;font-size:12px;text-align:right;font-weight:700;color:#2563eb;border-right:1px solid #e5e7eb">' + (fgQty > 0 ? need : '—') + '</td>'
+      + '<td style="padding:6px 8px;font-size:12px;text-align:right;border-right:1px solid #e5e7eb">' + avail + '</td>'
+      + '<td style="padding:6px 8px;font-size:12px;text-align:center;font-weight:700;color:' + st[1] + ';border-right:1px solid #e5e7eb">' + st[0] + '</td>'
+      + '<td style="padding:6px 8px;font-size:11px;color:#6b7280">' + (tRow ? (tRow.ic_no || '').substring(0, 10) : '—') + '</td>'
+      + '</tr>';
+  }).join('');
+}
+
+function bomRecalc(idx) {   // 数量/仓库改动 → 更新模型 + 该行齐料徽标；正在看的成品就重渲染材料明细
   const _qi = parseInt(document.getElementById('clQ_' + idx)?.value);
   const qty = isNaN(_qi) ? 0 : _qi;   // 空 = 未填（不再静默按 1）
-  completionList[idx].fg_qty = qty;
   const item = completionList[idx];
-  const wh = (document.getElementById('clWh_' + idx)?.value || item.fg_wh || 'G');
-  completionList[idx].fg_wh = wh;
-  // Update each BOM sub-row need/ok cell
-  document.querySelectorAll('[data-item-idx="' + idx + '"]').forEach(row => {
-    const prdNo = row.getAttribute('data-prd');
-    const m = item.bom?.find(x => x.prd_no === prdNo);
-    if (!m) return;
-    const ratio = m.qty_per_unit || 0;
-    const need = Math.ceil(ratio * qty);
-    const avail = (m.transfers || []).reduce((s, t) => s + Number(t.available || 0), 0);  // 全部调拨单剩余相加，不分仓
-    const ok = avail >= need;
-    const needCell = row.querySelector('.bom-need');
-    const okCell = row.querySelector('.bom-ok');
-    if (needCell) needCell.textContent = qty > 0 ? need : '—';
-    if (okCell) {
-      if (qty > 0) {   // 数量未填 → 不显示 ✅（否则 need=0 全绿会被误读成"料都够"）
-        okCell.textContent = ok ? '\u2705' : '\u274c';
-        okCell.style.color = ok ? '#16a34a' : '#dc2626';
-      } else {
-        okCell.textContent = '—';
-        okCell.style.color = '#9ca3af';
-      }
-    }
-  });
+  if (!item) return;
+  item.fg_qty = qty;
+  item.fg_wh = (document.getElementById('clWh_' + idx)?.value || item.fg_wh || 'G');
+  const badge = document.getElementById('clOk_' + idx);
+  if (badge) {
+    const n = cmShortage(item);
+    badge.innerHTML = qty > 0
+      ? (n ? '<span style="color:#dc2626;font-weight:700">⚠️ 缺' + n + '</span>' : '<span style="color:#16a34a;font-weight:700">✅</span>')
+      : '<span style="color:#9ca3af">—</span>';
+  }
+  if (idx === cmSelIdx) cmRenderMat();
 }
 
 // 批量完工：可用量 = 该材料所有调拨单剩余之和（不分仓，有剩余就能用，MAK 2026-09-30）。
@@ -1596,60 +1634,43 @@ async function openBatchCompletionModal() {
     '0300020110010011':'\u6728\u57ab\u677f','030020224':'\u6728\u7bb1','tietong-1':'\u94c1\u6876',
   };
 
-  // ── Build table rows (editable qty + transfer fields per item) ──
-  let rows = '';
+  // ── 成品表：一行一个成品（材料明细另起一张表，表头全弹窗只出现一次）──
+  const headCells = '<th style="padding:6px 8px;font-size:11px;font-weight:600;text-align:center;border-bottom:1px solid #e5e7eb;padding:6px 8px;border-right:1px solid #e5e7eb">#</th>'
+    + '<th style="padding:6px 8px;font-size:11px;font-weight:600;text-align:left;border-bottom:1px solid #e5e7eb;padding:6px 8px;border-right:1px solid #e5e7eb">品号 / 品名</th>'
+    + '<th style="padding:6px 8px;font-size:11px;font-weight:600;text-align:center;border-bottom:1px solid #e5e7eb;padding:6px 8px;border-right:1px solid #e5e7eb">数量</th>'
+    + '<th style="padding:6px 8px;font-size:11px;font-weight:600;text-align:center;border-bottom:1px solid #e5e7eb;padding:6px 8px;border-right:1px solid #e5e7eb">仓库</th>'
+    + '<th style="padding:6px 8px;font-size:11px;font-weight:600;text-align:center;border-bottom:1px solid #e5e7eb;padding:6px 8px;border-right:1px solid #e5e7eb">指令单</th>'
+    + '<th style="padding:6px 8px;font-size:11px;font-weight:600;text-align:center;border-bottom:1px solid #e5e7eb;padding:6px 8px;border-right:1px solid #e5e7eb">客户</th>'
+    + '<th style="padding:6px 8px;font-size:11px;font-weight:600;text-align:center;border-bottom:1px solid #e5e7eb;padding:6px 8px;border-right:1px solid #e5e7eb">外发计划</th>'
+    + '<th style="padding:6px 8px;font-size:11px;font-weight:600;text-align:center;border-bottom:1px solid #e5e7eb;padding:6px 8px;border-right:1px solid #e5e7eb">单重(g)</th>'
+    + '<th style="padding:6px 8px;font-size:11px;font-weight:600;text-align:right;border-bottom:1px solid #e5e7eb;padding:6px 8px;border-right:1px solid #e5e7eb">净重(kg)</th>'
+    + '<th style="padding:6px 8px;font-size:11px;font-weight:600;text-align:center;border-bottom:1px solid #e5e7eb">齐料</th>';
+  const matHeadCells = '<th style="padding:6px 8px;font-size:11px;font-weight:600;text-align:left;border-bottom:1px solid #bfdbfe;padding:6px 8px;border-right:1px solid #e5e7eb">品号 / 品名</th>'
+    + '<th style="padding:6px 8px;font-size:11px;font-weight:600;text-align:right;border-bottom:1px solid #bfdbfe;padding:6px 8px;border-right:1px solid #e5e7eb">配比</th>'
+    + '<th style="padding:6px 8px;font-size:11px;font-weight:600;text-align:right;border-bottom:1px solid #bfdbfe;padding:6px 8px;border-right:1px solid #e5e7eb">需用量</th>'
+    + '<th style="padding:6px 8px;font-size:11px;font-weight:600;text-align:right;border-bottom:1px solid #bfdbfe;padding:6px 8px;border-right:1px solid #e5e7eb">可用量</th>'
+    + '<th style="padding:6px 8px;font-size:11px;font-weight:600;text-align:center;border-bottom:1px solid #bfdbfe;padding:6px 8px;border-right:1px solid #e5e7eb">状态</th>'
+    + '<th style="padding:6px 8px;font-size:11px;font-weight:600;text-align:left;border-bottom:1px solid #bfdbfe">调拨单</th>';
+
+  let fgRows = '';
   for (let i = 0; i < completionList.length; i++) {
     const item = completionList[i];
-    const wh = item.fg_wh || 'G';
-
-    // Per-item editable fields row
-    rows += '<tr style="background:#EFF6FF;border-bottom:2px solid #2563eb">'
-      + '<td colspan="2" style="padding:8px 10px;font-weight:700;font-size:13px;border-right:2px solid #dbeafe">成\u54c1 ' + (i+1) + '\uff1a' + fmt(item.fg_no) + '</td>'
-      + '<td style="padding:4px 8px;border-right:1px solid #e5e7eb"><span style="font-size:11px;color:#888">数量</span><br><input type="number" id="clQ_' + i + '" value="' + (item.fg_qty || '') + '" min="1" oninput="bomRecalc(' + i + ');calcCompJZ(' + i + ')" style="width:110px;padding:6px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:13px;text-align:center"></td>'
-      + '<td style="padding:4px 8px;border-right:1px solid #e5e7eb"><span style="font-size:11px;color:#888">仓库</span><br><input type="text" id="clWh_' + i + '" list="cm_wh_in_opts" value="' + escAttr(item.fg_wh||'G') + '" oninput="bomRecalc(' + i + ')" style="width:110px;padding:6px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:13px"></td>'
-      + '<td style="padding:4px 8px;border-right:1px solid #e5e7eb"><span style="font-size:11px;color:#888">指令单</span><br><input type="text" id="clRef_' + i + '" value="' + escAttr(item.ref||'') + '" style="width:130px;padding:6px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:13px"></td>'
-      + '<td style="padding:4px 8px;border-right:1px solid #e5e7eb"><span style="font-size:11px;color:#888">客户</span><br><input type="text" id="clCus_' + i + '" value="' + escAttr(item.customer||'') + '" style="width:110px;padding:6px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:13px"></td>'
-      + '<td style="padding:4px 8px;border-right:1px solid #e5e7eb"><span style="font-size:11px;color:#888">外发计划</span><br><input type="text" id="clDdjh_' + i + '" value="' + escAttr(item.ddjh||'') + '" style="width:120px;padding:6px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:13px"></td>'
-      + '<td style="padding:4px 8px;border-right:1px solid #e5e7eb"><span style="font-size:11px;color:#888">单重(g)</span><br><input type="number" id="clDz_' + i + '" value="' + (item.danzhong||'') + '" step="0.001" oninput="calcCompJZ(' + i + ')" style="width:110px;padding:6px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:13px;text-align:right"></td>'
-      + '<td style="padding:4px 8px"><span style="font-size:11px;color:#888">净重(kg)</span><br><span id="clJz_' + i + '" style="display:inline-block;min-width:110px;padding:6px 8px;font-size:13px;text-align:right;color:var(--text)">' + fmtJZ(item.fg_qty, item.danzhong) + '</span></td>'
+    const nShort = cmShortage(item);
+    fgRows += '<tr data-idx="' + i + '" onclick="cmSelect(' + i + ')" style="cursor:pointer;border-bottom:1px solid #e5e7eb;background:' + (i === 0 ? '#EFF6FF' : '#fff') + ';box-shadow:' + (i === 0 ? 'inset 3px 0 0 #2563eb' : 'none') + '">'
+      + '<td style="padding:6px 8px;font-weight:700;color:#6b7280;text-align:center;border-right:1px solid #e5e7eb">' + (i + 1) + '</td>'
+      + '<td style="padding:6px 8px;font-weight:700;font-size:12px;border-right:1px solid #e5e7eb">' + fmt(item.fg_no)
+      + (item.fg_name ? '<span style="font-weight:400;color:var(--name);font-size:11px;margin-left:6px">' + fmt(item.fg_name) + '</span>' : '') + '</td>'
+      + '<td style="padding:4px 8px;border-right:1px solid #e5e7eb"><input type="number" id="clQ_' + i + '" value="' + (item.fg_qty || '') + '" min="1" oninput="bomRecalc(' + i + ');calcCompJZ(' + i + ')" style="width:80px; padding:6px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:13px;text-align:center"></td>'
+      + '<td style="padding:4px 8px;border-right:1px solid #e5e7eb"><input type="text" id="clWh_' + i + '" list="cm_wh_in_opts" value="' + escAttr(item.fg_wh || 'G') + '" oninput="bomRecalc(' + i + ')" style="width:80px; padding:6px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:13px"></td>'
+      + '<td style="padding:4px 8px;border-right:1px solid #e5e7eb"><input type="text" id="clRef_' + i + '" value="' + escAttr(item.ref || '') + '" style="width:100px; padding:6px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:13px"></td>'
+      + '<td style="padding:4px 8px;border-right:1px solid #e5e7eb"><input type="text" id="clCus_' + i + '" value="' + escAttr(item.customer || '') + '" style="width:80px; padding:6px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:13px"></td>'
+      + '<td style="padding:4px 8px;border-right:1px solid #e5e7eb"><input type="text" id="clDdjh_' + i + '" value="' + escAttr(item.ddjh || '') + '" style="width:95px; padding:6px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:13px"></td>'
+      + '<td style="padding:4px 8px;border-right:1px solid #e5e7eb"><input type="number" id="clDz_' + i + '" value="' + (item.danzhong || '') + '" step="0.001" oninput="calcCompJZ(' + i + ')" style="width:85px; padding:6px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:13px;text-align:right"></td>'
+      + '<td style="padding:6px 8px;font-size:13px;text-align:right;border-right:1px solid #e5e7eb"><span id="clJz_' + i + '">' + fmtJZ(item.fg_qty, item.danzhong) + '</span></td>'
+      + '<td id="clOk_' + i + '" style="padding:6px 8px;font-size:12px;text-align:center;white-space:nowrap">'
+      + (!item.fg_qty ? '<span style="color:#9ca3af">—</span>' : (nShort ? '<span style="color:#dc2626;font-weight:700">⚠️ 缺' + nShort + '</span>' : '<span style="color:#16a34a;font-weight:700">✅</span>'))
+      + '</td>'
       + '</tr>';
-
-    // BOM sub-items header
-    rows += '<tr style="background:#dbeafe;font-size:11px">'
-      + '<th style="padding:4px 8px;font-weight:600;color:#1e40af;text-align:left;border-bottom:1px solid #bfdbfe;border-right:1px solid #e5e7eb" colspan="2">品号 / 品名</th>'
-      + '<th style="padding:4px 8px;font-weight:600;color:#1e40af;text-align:right;border-bottom:1px solid #bfdbfe;border-right:1px solid #e5e7eb">配比</th>'
-      + '<th style="padding:4px 8px;font-weight:600;color:#1e40af;text-align:right;border-bottom:1px solid #bfdbfe;border-right:1px solid #e5e7eb">×数量</th>'
-      + '<th style="padding:4px 8px;font-weight:600;color:#1e40af;text-align:right;border-bottom:1px solid #bfdbfe;border-right:1px solid #e5e7eb">需用量</th>'
-      + '<th style="padding:4px 8px;font-weight:600;color:#1e40af;text-align:right;border-bottom:1px solid #bfdbfe;border-right:1px solid #e5e7eb">可用量</th>'
-      + '<th style="padding:4px 8px;font-weight:600;color:#1e40af;text-align:center;border-bottom:1px solid #bfdbfe;border-right:1px solid #e5e7eb">状态</th>'
-      + '<th style="padding:4px 8px;font-weight:600;color:#1e40af;text-align:left;border-bottom:1px solid #bfdbfe">调拨单</th>'
-      + '</tr>';
-
-    const bom = item.bom || [];
-    if (!bom.length) {
-      rows += '<tr><td colspan="8" style="padding:8px 12px;font-size:12px;color:#9ca3af;font-style:italic">无 BOM 数据</td></tr>';
-    } else {
-      for (const m of bom) {
-        const ratio = m.qty_per_unit || 0;
-        const fgQty = item.fg_qty || 0;
-        const need = Math.ceil(ratio * fgQty);
-        // 可用量 = 该材料所有调拨单剩余之和（不分仓，MAK 2026-09-30）
-        // 原来按仓挑 (t.wh1 === wh)，挑不中就当 0 → 明明有剩余却显示 ❌
-        const avail = compSumAvail(m);
-        const tRow = compPickTransfer(m, need, item.transfer_ic_no);
-        const ok = avail >= need;
-        rows += '<tr style="border-bottom:1px solid #f3f4f6;background:#fff" data-item-idx="' + i + '" data-prd="' + m.prd_no + '">'
-          + '<td colspan="2" style="padding:5px 8px;font-size:12px;border-right:1px solid #e5e7eb">' + fmt(m.prd_no)
-          + (m.prd_name ? '<span style="color:var(--name);font-size:11px;margin-left:6px">' + fmt(m.prd_name) + '</span>' : '') + '</td>'
-          + '<td style="padding:5px 8px;font-size:12px;text-align:right;font-weight:600;border-right:1px solid #e5e7eb">' + ratio + '</td>'
-          + '<td style="padding:5px 8px;font-size:12px;text-align:right;border-right:1px solid #e5e7eb">×' + fgQty + '</td>'
-          + '<td style="padding:5px 8px;font-size:12px;text-align:right;font-weight:700;color:#2563eb;border-right:1px solid #e5e7eb" class="bom-need">' + (fgQty > 0 ? need : '—') + '</td>'
-          + '<td style="padding:5px 8px;font-size:12px;text-align:right;border-right:1px solid #e5e7eb">' + avail + '</td>'
-          + '<td class="bom-ok" style="padding:5px 8px;font-size:12px;text-align:center;font-weight:700;color:' + (!fgQty ? '#9ca3af' : (ok?'#16a34a':'#dc2626')) + ';border-right:1px solid #e5e7eb">' + (!fgQty ? '—' : (ok?'✅':'❌')) + '</td>'
-          + '<td style="padding:5px 8px;font-size:11px;color:#6b7280">' + (tRow ? (tRow.ic_no||'').substring(0,10) : '—') + '</td>'
-          + '</tr>';
-      }
-    }
   }
 
   // ── Render overlay ───────────────────────────────────────────────
@@ -1669,8 +1690,14 @@ async function openBatchCompletionModal() {
     + '</div>'
     + '<div style="flex:1;overflow-y:auto;padding:10px 0">'
     + '<div style="padding:0 16px;overflow-x:auto">'
-    + '<table style="width:100%;min-width:980px;border-collapse:collapse;font-size:12px">'
-    + '<tbody>' + rows + '</tbody></table></div>'
+    + '<table style="width:100%;min-width:1140px;border-collapse:collapse;font-size:12px">'
+    + '<thead><tr style="background:#f3f4f6;color:#374151">' + headCells + '</tr></thead>'
+    + '<tbody id="cmFgBody">' + fgRows + '</tbody></table></div>'
+    + '<div style="padding:0 16px;overflow-x:auto;margin-top:14px">'
+    + '<div id="cmMatTitle" style="padding:0 0 6px;font-size:12px;font-weight:700"></div>'
+    + '<table style="width:100%;min-width:860px;border-collapse:collapse;font-size:12px">'
+    + '<thead><tr style="background:#dbeafe;color:#1e40af">' + matHeadCells + '</tr></thead>'
+    + '<tbody id="cmMatBody"></tbody></table></div>'
     + '<div style="padding:12px 16px 4px;font-size:12px;font-weight:600">\u8fd0\u8f93\u5de5\u5177</div>'
     + '<div id="cmToolArea" style="padding:4px 16px 6px"></div>'
     + '<button id="cmAddToolBtn" style="margin:0 16px 6px;padding:4px 10px;background:#f9fafb;border:1px dashed #d1d5db;border-radius:8px;font-size:11px;cursor:pointer;color:#6b7280">+ \u6dfb\u52a0\u5de5\u5177</button>'
@@ -1680,6 +1707,7 @@ async function openBatchCompletionModal() {
   _setupCmOverlayClose();
   // 属性 autofocus 在鼠标点击路径下不生效（Chrome 仅在焦点位于 body 时认）→ 显式聚焦首格
   const _fc = $id('clQ_0'); if (_fc) _fc.focus();
+  cmSelect(0);   // 默认选中第 1 个成品，点其他行切换下面的材料明细
 
   // 填充入库仓库 datalist（确保 __allWarehouses 已加载）
   async function fillWhOpts() {
