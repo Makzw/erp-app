@@ -1824,7 +1824,8 @@ async def completion_batch(
     """
     批量完工：多成品 → 入库单(KND=13) + 出库单(KND=23)。
     payload: {
-      items: [{fg_no, qty, dzhw, jzhw, materials:[{prd_no,ratio,transfer_ic_no,transfer_wh1,ddjh,customer}]}],
+      items: [{fg_no, qty, dzhw, jzhw, fg_wh, materials:[{prd_no,ratio,transfer_ic_no,transfer_wh1,ddjh,customer}]}],
+      #   fg_wh 可省略 → 回落顶层 fg_wh（向后兼容）
       fg_wh, tool_rows: [{code, qty}]
     }
     """
@@ -1879,6 +1880,17 @@ async def completion_batch(
     cur.execute("SELECT NAME FROM MY_WH WITH(NOLOCK) WHERE WH=%s", (fg_wh,))
     wr = cur.fetchone()
     fg_wh_name = wr[0] if wr else fg_wh
+    # 每个成品自己的入库仓（items[].fg_wh，前端在「选成品」时填）→ 仓名按需查一次并缓存
+    # ponytail: 只影响成品入库行（FG KND=13）；工具行仍用批次仓，材料出库行沿用调拨单来源仓
+    _wh_cache = {}
+
+    def _wh_of(item):
+        w = (item.get("fg_wh") or "").strip() or fg_wh
+        if w not in _wh_cache:
+            cur.execute("SELECT NAME FROM MY_WH WITH(NOLOCK) WHERE WH=%s", (w,))
+            _r = cur.fetchone()
+            _wh_cache[w] = _r[0] if _r else w
+        return w, _wh_cache[w]
 
     # 收集第一条 material 的指令单号/客户作为入库单信息
     all_ddjh, all_customer = '', ''
@@ -1902,6 +1914,7 @@ async def completion_batch(
         fg_qty = int(item.get("qty") or 0)  # 数量必填（已全量校验），不再静默按 1
         dzhw = float(item.get("danzhong") or 0)
         jzhw = float(item.get("jingzhong") or 0)
+        item_wh, item_wh_name = _wh_of(item)   # 每成品自己的入库仓
         cur.execute("SELECT NAME, ISNULL(UT,'') FROM PRDT WITH(NOLOCK) WHERE PRD_NO=%s", (fg_no,))
         pr = cur.fetchone()
         fg_name_gbk = pr[0] if pr else b''
@@ -1910,7 +1923,7 @@ async def completion_batch(
         # ①a FG 成品行（WH1=生产仓(增加)，WH2=''）
         FG_IN_COLS = ['IC_NO','IC_DD','IC_KND','PRD_NO','PRD_NAME','QTY','UT','WH1','WH1NAME','WH2',
                        'USR','USABLE','ITM','REM','FLD1','指令单号','客户','DDJH','单重','净重']
-        FG_IN_VALS = [ic_in, now_str, 13, fg_no, fg_name_gbk, fg_qty, fg_ut, fg_wh, fg_wh_name, '',
+        FG_IN_VALS = [ic_in, now_str, 13, fg_no, fg_name_gbk, fg_qty, fg_ut, item_wh, item_wh_name, '',
                        'phone', 1, prod_itm + 1,
                        f"完工入库{'; 外发:'+all_ddjh if all_ddjh else ''}",
                        ic_out,
