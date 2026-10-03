@@ -2808,6 +2808,7 @@ async function pmcMakeQd() {
 function pmcQdConfirmHtml(pre, rows) {
   // 表格用后端 dry-run 返回的 lines（带着 PRDT 的品名/单位），不用前端行（树行没有 ut）
   var lines = (pre.lines && pre.lines.length) ? pre.lines : rows;
+  window.__qdLines = lines;   // 确认时要按行取备注输入框的值
   var trs = lines.map(function (r, n) {
     return '<tr style="border-top:1px solid var(--border)">' +
       '<td style="padding:6px 8px;text-align:center;color:var(--sub)">' + (n + 1) + '</td>' +
@@ -2816,12 +2817,14 @@ function pmcQdConfirmHtml(pre, rows) {
       '<td style="padding:6px 8px;text-align:center">' + escHtml(r.ut || '') + '</td>' +
       '<td style="padding:6px 8px;text-align:right;font-weight:700;font-variant-numeric:tabular-nums">' + Number(r.qty).toLocaleString('zh-CN') +
         (Number(r.merges || 1) > 1 ? ' <span style="font-size:10px;color:var(--sub);font-weight:400">(' + r.merges + ' 处合并)</span>' : '') + '</td>' +
-      '<td style="padding:6px 8px;font-size:11px;color:var(--sub);white-space:nowrap">' + escHtml((r['指令单号'] || '') + ' / ' + (r['成品编号'] || '')) + '</td></tr>';
+      '<td style="padding:6px 8px;font-size:11px;color:var(--sub);white-space:nowrap">' + escHtml((r['指令单号'] || '') + ' / ' + (r['成品编号'] || '')) + '</td>' +
+      '<td style="padding:6px 8px"><input id="qdRem_' + (r.itm || (n + 1)) + '" value="' + escAttr(r.rem1 || '') +
+        '" placeholder="可改/可清空" style="width:200px;padding:4px 6px;border:1px solid #d1d5db;border-radius:6px;font-size:12px"></td></tr>';
   }).join('');
   var ov = document.createElement('div');
   ov.id = 'qdConfirmOv';
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:500;display:flex;align-items:center;justify-content:center;padding:16px';
-  ov.innerHTML = '<div style="background:#fff;border-radius:14px;max-width:min(92vw,1020px);max-height:90vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.25)">' +
+  ov.innerHTML = '<div style="background:#fff;border-radius:14px;max-width:min(94vw,1220px);max-height:90vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.25)">' +
     '<div style="padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px">' +
       '<div style="font-size:15px;font-weight:700;flex:1">确认生成请购单（' + rows.length + ' 行）</div>' +
       '<button onclick="pmcQdClose()" style="padding:7px 18px;border-radius:16px;border:1px solid var(--border);background:#fff;font-size:13px;cursor:pointer">取消</button>' +
@@ -2849,7 +2852,8 @@ function pmcQdConfirmHtml(pre, rows) {
     '<div style="padding:12px 20px 18px"><table style="width:100%;border-collapse:collapse;font-size:12px;background:#fff">' +
       '<thead><tr style="background:#f3f4f6;color:var(--sub)"><th style="padding:6px 8px">#</th><th style="padding:6px 8px;text-align:left">品号</th>' +
       '<th style="padding:6px 8px;text-align:left">品名</th><th style="padding:6px 8px">单位</th><th style="padding:6px 8px;text-align:right">请购数量</th>' +
-      '<th style="padding:6px 8px;text-align:left">挂靠（指令单号 / 成品）</th></tr></thead>' +
+      '<th style="padding:6px 8px;text-align:left">挂靠（指令单号 / 成品）</th>' +
+      '<th style="padding:6px 8px;text-align:left">备注（写入 QTS.REM1）</th></tr></thead>' +
       '<tbody>' + trs + '</tbody></table></div></div>';
   document.body.appendChild(ov);
 }
@@ -2857,6 +2861,13 @@ function pmcQdConfirmHtml(pre, rows) {
 async function pmcQdConfirm() {
   var b = window.__pmcQdBody;
   if (!b) { pmcQdClose(); return; }
+  // 行备注：弹窗里那个输入框就是写入值（预填的是后端算好的 REM1，改/清空都听你的；
+  // 清空 → 后端回落到「<成品> PMC请购」）。行序跟预校验返回的 lines 一一对应。
+  var _lns = window.__qdLines || [];
+  for (var _i = 0; _i < (b.items || []).length && _i < _lns.length; _i++) {
+    var _ri = $id('qdRem_' + (_lns[_i].itm || (_i + 1)));
+    if (_ri) b.items[_i].rem = _ri.value;
+  }
   var btn = $id('qdOkBtn');
   if (btn) { btn.disabled = true; btn.textContent = '写入中\u2026'; }
   var res;

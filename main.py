@@ -5275,7 +5275,9 @@ async def pmc_make_qd(
             so_si = it["so_no_itm"]
             order_ref, cus_ref, order_qty = refs[so_si]
             line_fg = it["fg_no"]
-            rem1 = f"{line_fg} PMC请购" if line_fg else "PMC请购"
+            # 行备注：弹窗里填的备注直接用（MAK 2026-10-03）；留空的回落到自动文本，
+            # 保证仍能追溯到成品。REM1 是 nvarchar(500) → 截断保护。
+            rem1 = (str(it.get("rem") or "").strip() or (f"{line_fg} PMC请购" if line_fg else "PMC请购"))[:500]
             cur.execute("""
                 INSERT INTO QTS (QT_NO,QT_ID,QT_DD,USR,USABLE,CUS_NO,CUS_NAME,ITM,PRD_NO,PRD_NAME,UT,
                                  QTY,EST_DD,CLS_ID,SO_NO_ITM,指令单号,客户代号,成品编号,订单数量,
@@ -5288,7 +5290,7 @@ async def pmc_make_qd(
             ))
             lines.append({"itm": itm, "prd_no": prd_no, "prd_name": prd_name, "ut": ut, "qty": qty,
                           "so_no_itm": so_si, "指令单号": order_ref, "成品编号": line_fg,
-                          "merges": int(it.get("merges") or 1)})
+                          "merges": int(it.get("merges") or 1), "rem1": rem1})
 
         # 每张单挂的成品（同一 SO 行只对应一个成品；取该单第一行的 fg_no）
         fg_by_so = {}
