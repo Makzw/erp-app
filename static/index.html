@@ -1427,8 +1427,9 @@ async function openCompletionModal(icNo, prdNo) {
   // 成品表（样式对齐批量完工弹窗：宽面板 + 表格式明细）
   let fgRows = '';
   filtered.forEach((d, idx) => {
+    const defWh = (completionData.find(x => x.ic_no === icNo && x.prd_no === matPrd) || {}).wh1 || 'G';   // 默认=该调拨单收货仓
     const allOk = d.all_fulfilled;
-    fgRows += '<tr style="background:#EFF6FF;border-bottom:2px solid #2563eb;cursor:pointer" data-fg="' + escAttr(d.fg_no) + '" data-qty="fgQty_' + idx + '">'
+    fgRows += '<tr style="background:#EFF6FF;border-bottom:2px solid #2563eb;cursor:pointer" data-fg="' + escAttr(d.fg_no) + '" data-qty="fgQty_' + idx + '" data-wh="fgWh_' + idx + '">'
       + '<td colspan="2" style="padding:8px 10px;font-weight:700;font-size:13px;border-right:2px solid #dbeafe">'
       +   '<span style="color:#6b7280;font-weight:400">' + (idx+1) + '\uff0e</span>' + fmt(d.fg_no)
       +   '<span style="font-weight:400;font-size:13px;color:var(--name);margin-left:8px">' + fmt(d.fg_name||'') + '</span>'
@@ -1441,26 +1442,14 @@ async function openCompletionModal(icNo, prdNo) {
       +   '<span style="font-size:11px;color:#888">\u6570\u91cf(\u4ef6)</span><br>'
       +   '<input type="number" id="fgQty_' + idx + '" value="" min="1" step="1" onclick="event.stopPropagation()" style="width:110px;padding:6px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:13px;text-align:center">'
       + '</td>'
+      + '<td style="padding:4px 8px;border-right:1px solid #e5e7eb">'
+      +   '<span style="font-size:11px;color:#888">\u4ed3\u5e93</span><br>'
+      +   '<input type="text" id="fgWh_' + idx + '" list="fg_wh_opts" value="' + escAttr(defWh) + '" onclick="event.stopPropagation()" style="width:110px;padding:6px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:13px">'
+      + '</td>'
       + '<td style="padding:4px 8px;text-align:center">'
-      +   '<button style="padding:6px 16px;background:' + (allOk ? 'var(--green)' : 'var(--orange)') + ';color:#fff;border:none;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer" onclick="event.stopPropagation();completionAddFgDetail(\'' + escAttr(d.fg_no) + '\',\'' + escAttr(icNo) + '\',\'' + escAttr(matPrd) + '\',\'fgQty_' + idx + '\')">' + (allOk ? '+ \u52a0\u5165' : '+ \u52a0\u5165(\u7f3a\u6599)') + '</button>'
+      +   '<button style="padding:6px 16px;background:' + (allOk ? 'var(--green)' : 'var(--orange)') + ';color:#fff;border:none;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer" onclick="event.stopPropagation();completionAddFgDetail(\'' + escAttr(d.fg_no) + '\',\'' + escAttr(icNo) + '\',\'' + escAttr(matPrd) + '\',\'fgQty_' + idx + '\',\'fgWh_' + idx + '\')">' + (allOk ? '+ \u52a0\u5165' : '+ \u52a0\u5165(\u7f3a\u6599)') + '</button>'
       + '</td>'
       + '</tr>';
-    fgRows += '<tr style="background:#dbeafe;font-size:11px">'
-      + '<th style="padding:4px 8px;font-weight:600;color:#1e40af;text-align:left;border-bottom:1px solid #bfdbfe;border-right:1px solid #e5e7eb" colspan="2">\u54c1\u53f7</th>'
-      + '<th style="padding:4px 8px;font-weight:600;color:#1e40af;text-align:right;border-bottom:1px solid #bfdbfe;border-right:1px solid #e5e7eb">\u914d\u6bd4</th>'
-      + '<th style="padding:4px 8px;font-weight:600;color:#1e40af;text-align:right;border-bottom:1px solid #bfdbfe">\u53ef\u7528\u91cf</th>'
-      + '</tr>';
-    d.materials.forEach(m => {
-      const thisOne = m.transfers.find(x => x.ic_no === icNo);
-      const status = thisOne ? (m.fulfilled ? '\u2705' : '\u26a0\ufe0f') : (m.fulfilled ? '\u2705' : '\u274c');
-      const avail = thisOne ? (thisOne.available||0).toFixed(1) : (m.total_available||0).toFixed(1);
-      fgRows += '<tr style="border-bottom:1px solid #f3f4f6;background:#fff">'
-        + '<td colspan="2" style="padding:5px 8px;font-size:12px;border-right:1px solid #e5e7eb">' + fmt(m.prd_no)
-        + (m.prd_name ? '<span style="color:var(--name);font-size:11px;margin-left:6px">' + fmt(m.prd_name) + '</span>' : '') + '</td>'
-        + '<td style="padding:5px 8px;font-size:12px;text-align:right;font-weight:600;border-right:1px solid #e5e7eb">' + m.ratio + '</td>'
-        + '<td style="padding:5px 8px;font-size:12px;text-align:right;border-right:1px solid #e5e7eb;color:' + (m.fulfilled ? '#16a34a' : '#d97706') + '">' + status + ' ' + avail + '</td>'
-        + '</tr>';
-    });
   });
 
   overlay.innerHTML = ''
@@ -1471,7 +1460,7 @@ async function openCompletionModal(icNo, prdNo) {
     +     '</div>'
     +     '<button onclick="document.getElementById(\'cmOverlay\').remove()" style="padding:5px 12px;border:1px solid #e5e7eb;border-radius:20px;background:#f9fafb;font-size:12px;cursor:pointer">\u53d6\u6d88</button>'
     +   '</div>'
-    +   '<div id="cmFgList" style="flex:1;overflow-y:auto;padding:10px 0">'
+    +   '<div id="cmFgList" style="flex:1;overflow-y:auto;padding:10px 0">' + '<datalist id="fg_wh_opts"></datalist>'
     +     '<div style="padding:0 16px;overflow-x:auto">'
     +       '<table style="width:100%;min-width:1000px;border-collapse:collapse;font-size:12px"><tbody>' + fgRows + '</tbody></table>'
     +     '</div>'
@@ -1479,6 +1468,17 @@ async function openCompletionModal(icNo, prdNo) {
     +   '</div>'
     + '</div>';
   document.body.appendChild(overlay);
+  // 仓库候选：懒加载，与批量完工弹窗同一数据源（/warehouses/all）
+  (async function fillFgWhOpts() {
+    if (!window.__allWarehouses || !window.__allWarehouses.length) {
+      try {
+        const whRes = await api(BASE + '/warehouses/all');
+        window.__allWarehouses = whRes.warehouses || whRes.items || whRes || [];
+      } catch(e) { window.__allWarehouses = []; }
+    }
+    const dl = document.getElementById('fg_wh_opts');
+    if (dl) dl.innerHTML = (window.__allWarehouses||[]).map(w => '<option value="' + w.code + '">' + w.code + ' ' + escHtml(w.name||'') + '</option>').join('');
+  })();
   _setupCmOverlayClose();
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
 
@@ -1489,12 +1489,12 @@ async function openCompletionModal(icNo, prdNo) {
   }
   // 点成品行 = 加入完工列表（与「+ 加入」同一入口）
   listEl.querySelectorAll('tr[data-fg]').forEach(tr => {
-    tr.onclick = () => completionAddFgDetail(tr.dataset.fg, icNo, matPrd, tr.dataset.qty);
+    tr.onclick = () => completionAddFgDetail(tr.dataset.fg, icNo, matPrd, tr.dataset.qty, tr.dataset.wh);
   });
 }
 
 // 加入完工列表：查 BOM materials + 调拨单字段，再暂存
-async function completionAddFgDetail(fgNo, icNo, prdNo, qtyInputId) {
+async function completionAddFgDetail(fgNo, icNo, prdNo, qtyInputId, whInputId) {
   if (completionList.some(x => x.fg_no === fgNo)) { toast('\u26a0\ufe0f \u5df2\u6dfb\u52a0'); return; }
   const _qEl = document.getElementById(qtyInputId);
   const fgQty = parseInt(_qEl && _qEl.value);
@@ -1506,7 +1506,8 @@ async function completionAddFgDetail(fgNo, icNo, prdNo, qtyInputId) {
   const ddjh = tRec.ddjh || '';
   const danzhong = tRec.dzhw || 0;
   const jingzhong = tRec.jzhw || 0;
-  const fg_wh = tRec.wh1 || 'G';
+  const _wEl = document.getElementById(whInputId);
+  const fg_wh = ((_wEl && _wEl.value) || '').trim() || tRec.wh1 || 'G';   // 选成品时填的仓优先
   let bomData;
   try {
     bomData = await api(BASE + '/completion/fg_detail?' + new URLSearchParams({fg_no: fgNo}));
@@ -1579,6 +1580,13 @@ function compPickTransfer(m, need, preferIcNo) {
 }
 
 // 批量完工弹窗：显示暂存成品+BOM+运输工具，点确认写 IC
+// 头部「入库仓」改动 → 同步给每个成品行（每行仍可单独改；行值优先于头部）
+function cmApplyWh(el) {
+  const v = (el.value || '').trim();
+  if (!v) return;
+  completionList.forEach((it, i) => { it.fg_wh = v; const e = document.getElementById('clWh_' + i); if (e) e.value = v; });
+}
+
 async function openBatchCompletionModal() {
   if (!completionList.length) { toast('\u26a0\ufe0f \u6682\u5b58\u5217\u8868\u4e3a\u7a7a'); return; }
 
@@ -1653,7 +1661,7 @@ async function openBatchCompletionModal() {
     + '<div style="padding:14px 20px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
     + '<div style="flex:1;font-size:15px;font-weight:700">\u6279\u91cf\u5b8c\u5de5\u786e\u8ba4 \u00b7 ' + completionList.length + ' \u9879\u6210\u54c1</div>'
     + '<label style="font-size:12px;color:#6b7280;display:flex;align-items:center;gap:6px">'
-    + '\u5165\u5e93\u4ed3 <input type="text" id="cm_wh_in" list="cm_wh_in_opts" value="G" placeholder="\u9009\u62e9\u4ed3" style="padding:4px 8px;border:1.5px solid #d1d5db;border-radius:6px;font-size:12px;min-width:100px">'
+    + '\u5165\u5e93\u4ed3 <input type="text" id="cm_wh_in" onchange="cmApplyWh(this)" list="cm_wh_in_opts" value="G" placeholder="\u9009\u62e9\u4ed3" style="padding:4px 8px;border:1.5px solid #d1d5db;border-radius:6px;font-size:12px;min-width:100px">'
     + '<datalist id="cm_wh_in_opts"></datalist>'
     + '</label>'
     + '<button id="cmCancelBtn" style="padding:5px 12px;border:1px solid #e5e7eb;border-radius:20px;background:#f9fafb;font-size:12px;cursor:pointer">\u53d6\u6d88</button>'
@@ -1779,6 +1787,7 @@ async function openBatchCompletionModal() {
       return {
         fg_no: item.fg_no,
         qty: item.fg_qty,
+        fg_wh: item.fg_wh || '',
         dzhw: item.danzhong||0,
         jzhw: item.jingzhong||0,
         ref: item.ref||'',
