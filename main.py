@@ -808,6 +808,107 @@ async def stock_in(
     return {"ok": True, "count": len(results), "items": results}
 
 
+# ── API: 形态转换（一次提交 = N 行 KND=23 出 + M 行 KND=13 入，共用一个 IC 单号）──
+@app.post("/api/stock/shape_convert")
+async def stock_shape_convert(
+    sources: List[dict] = Body(default=[]),
+    targets: List[dict] = Body(default=[]),
+    rem: str = Body(default=""),
+    db: str = Query(default="c041"),
+):
+    """
+    形态转换：物料形态/品号变化的一次库存转换（一转一 / 多合一）。
+    sources: [{"prd_no": "...", "wh": "源仓", "qty": 数量}]  -> KND=23 出库（WH2=源仓）
+    targets: [{"prd_no": "...", "wh": "目标仓", "qty": 数量}] -> KND=13 入库（WH1=目标仓）
+    两侧数量都手填、允许不等（差额天然就是损耗，不写损耗行）。
+    """
+    db_name = "T041" if db.lower() == "t041" else "C041"
+    if not sources:
+        return {"error": "至少要有 1 行源料"}
+    if not targets:
+        return {"error": "至少要有 1 行目标料"}
+
+    # 先全量校验、再写任何一行（中途 return 会留下半截数据，照 /api/stock/out 的防御写法）
+    plan = []
+    for side, label in (("sources", "源料"), ("targets", "目标料")):
+        for i, it in enumerate(sources if side == "sources" else targets, 1):
+            try:
+                qty = float(it.get("qty") or 0)
+            except (TypeError, ValueError):
+                qty = 0
+            prd_no = (it.get("prd_no") or "").strip()
+            wh = (it.get("wh") or "").strip()
+            if not prd_no:
+                return {"error": "%s第 %d 行没填品号" % (label, i)}
+            if qty <= 0:
+                return {"error": "%s第 %d 行数量必须大于 0（%s）" % (label, i, prd_no)}
+            if not wh:
+                return {"error": "%s第 %d 行必须选仓库（%s）" % (label, i, prd_no)}
+            plan.append((side, prd_no, wh, qty))
+
+    conn = get_conn(db=db_name)
+    cur = conn.cursor()
+    today = datetime.now().strftime('%y%m')
+    now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    rem = (rem or "").strip() or "形态转换"
+    try:
+        # 品号必须存在 —— 不存在就整单不写（不许写出一条查不到品名的幽灵库存）
+        prd_info = {}
+        for _, prd_no, _, _ in plan:
+            if prd_no in prd_info:
+                continue
+            cur.execute("SELECT NAME, UT FROM PRDT WITH(NOLOCK) WHERE PRD_NO=%s", (prd_no,))
+            pr = cur.fetchone()
+            if not pr:
+                conn.rollback()
+                conn.close()
+                return {"error": "品号 %s 在 PRDT 里不存在" % prd_no}
+            prd_info[prd_no] = (g(pr[0]), pr[1] or "")
+
+        # 单号：与出/入库同一套取号 IC + YYMM + 4位流水
+        cur.execute("""
+            SELECT ISNULL(MAX(TRY_CAST(SUBSTRING(IC_NO,7,4) AS INT)), 0)
+            FROM IC WITH(NOLOCK)
+            WHERE IC_NO LIKE %s AND LEN(IC_NO)=10
+        """, (f"IC{today}%",))
+        ic_no = f"IC{today}{(cur.fetchone()[0] or 0) + 1:04d}"
+
+        wh_names = {}
+        results = []
+        itm = 0
+        for side, prd_no, wh, qty in plan:
+            if wh not in wh_names:
+                cur.execute("SELECT NAME FROM MY_WH WITH(NOLOCK) WHERE WH=%s", (wh,))
+                r_wh = cur.fetchone()
+                wh_names[wh] = g(r_wh[0]) if r_wh else ""
+            prd_name, ut = prd_info[prd_no]
+            itm += 1
+            if side == "sources":      # 出库行：WH2=源仓，WH1 不写
+                cur.execute("""
+                    INSERT INTO IC (IC_NO,IC_DD,IC_KND,PRD_NO,PRD_NAME,QTY,UT,WH2,WH2NAME,
+                                    USR,USABLE,ITM,REM,FLD1,指令单号,DDJH,客户,单重,净重)
+                    VALUES (%s,%s,23,%s,%s,%s,%s,%s,%s,'phone',1,%s,%s,%s,'','','',0,0)
+                """, (ic_no, now_str, prd_no, prd_name, qty, ut, wh, wh_names[wh], itm, rem, ic_no))
+            else:                      # 入库行：WH1=目标仓，WH2 不写
+                cur.execute("""
+                    INSERT INTO IC (IC_NO,IC_DD,IC_KND,PRD_NO,PRD_NAME,QTY,UT,WH1,WH1NAME,
+                                    USR,USABLE,ITM,REM,FLD1,指令单号,DDJH,客户,单重,净重)
+                    VALUES (%s,%s,13,%s,%s,%s,%s,%s,%s,'phone',1,%s,%s,%s,'','','',0,0)
+                """, (ic_no, now_str, prd_no, prd_name, qty, ut, wh, wh_names[wh], itm, rem, ic_no))
+            results.append({"knd": 23 if side == "sources" else 13,
+                            "prd_no": prd_no, "wh": wh, "qty": qty, "itm": itm})
+        conn.commit()
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        conn.close()
+        return {"error": "形态转换写库失败: %s" % e}
+    conn.close()
+    return {"ok": True, "ic_no": ic_no, "count": len(results), "items": results}
+
+
 # ── API: 调拨单（批量写入单张IC）─────────────────────────────────────────
 @app.post("/api/stock/transfer")
 async def stock_transfer(
