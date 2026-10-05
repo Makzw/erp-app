@@ -1094,7 +1094,13 @@ async def completion_transfer_list(
             ISNULL(t.客户, '') AS cus,
             ISNULL(t.DDJH, '') AS ddjh,
             ISNULL(t.单重, 0) AS dzhw,
-            ISNULL(t.净重, 0) AS jzhw
+            ISNULL(t.净重, 0) AS jzhw,
+            -- 该调拨单是否已退过料（退料单 KND=13、REM='生产退料%'、FLD1=本单）→ 前端标「已退料」并禁止再退
+            CASE WHEN EXISTS (
+                SELECT 1 FROM IC r WITH(NOLOCK)
+                WHERE r.IC_KND = 13 AND ISNULL(r.删除, 0) = 0
+                  AND ISNULL(r.FLD1, '') = t.IC_NO AND r.REM LIKE N'生产退料%'
+            ) THEN 1 ELSE 0 END AS returned
         FROM IC t WITH(NOLOCK)
         JOIN PRDT p WITH(NOLOCK) ON p.PRD_NO = t.PRD_NO
         LEFT JOIN MY_WH w WITH(NOLOCK) ON w.WH = t.WH1
@@ -1134,8 +1140,161 @@ async def completion_transfer_list(
                 "ddjh":  g(r[10]),
                 "dzhw":  r[11] or 0,
                 "jzhw":  r[12] or 0,
+                "returned": bool(r[13]),
             })
     return {"items": items}
+
+
+@app.get("/api/completion/return_preview")
+async def completion_return_preview(
+    ic_no: str = Query(default=""),
+    db: str = Query(default="c041"),
+):
+    """
+    退料预览：该调拨单(KND=30)能被退的料 = 完工时扣掉的那些行(KND=23, REM='完工出库%', FLD1=本单)，
+    按品号汇总、全量退。返回默认退回仓 = 扣料行的 WH2（料当前所在仓，外协厂/车间仓），可改；
+    另返回原发出仓（调拨单自己的 WH2 = 材料仓）供参考 —— 两者通常不同。
+    returned=True 表示该单据已经退过料，前端禁止再退。
+    """
+    db_name = "T041" if db.lower() == "t041" else "C041"
+    conn = get_conn(db=db_name)
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT ISNULL(客户, ''), ISNULL(指令单号, ''), ISNULL(DDJH, ''),
+                   ISNULL(WH2, ''), ISNULL(WH2NAME, ''), ISNULL(单重, 0), ISNULL(净重, 0),
+                   CONVERT(VARCHAR(10), MIN(IC_DD), 120)
+            FROM IC WITH(NOLOCK)
+            WHERE IC_KND = 30 AND ISNULL(删除, 0) = 0 AND IC_NO = %s
+            GROUP BY 客户, 指令单号, DDJH, WH2, WH2NAME, 单重, 净重
+        """, (ic_no,))
+        h = cur.fetchone()
+        cur.execute("""
+            SELECT t.PRD_NO, ISNULL(p.NAME, ''), ISNULL(t.UT, ''), SUM(t.QTY),
+                   ISNULL(t.WH2, ''), ISNULL(MAX(t.WH2NAME), '')
+            FROM IC t WITH(NOLOCK)
+            LEFT JOIN PRDT p WITH(NOLOCK) ON p.PRD_NO = t.PRD_NO
+            WHERE t.IC_KND = 23 AND ISNULL(t.删除, 0) = 0
+              AND ISNULL(t.FLD1, '') = %s AND t.REM LIKE N'完工出库%'
+            GROUP BY t.PRD_NO, p.NAME, t.UT, t.WH2
+            ORDER BY t.PRD_NO
+        """, (ic_no,))
+        rows = cur.fetchall()
+        cur.execute("""
+            SELECT TOP 1 IC_NO FROM IC WITH(NOLOCK)
+            WHERE IC_KND = 13 AND ISNULL(删除, 0) = 0
+              AND ISNULL(FLD1, '') = %s AND REM LIKE N'生产退料%'
+        """, (ic_no,))
+        returned = cur.fetchone() is not None
+    finally:
+        conn.close()
+
+    items = [{
+        "prd_no": g(r[0]), "prd_name": g(r[1]), "ut": g(r[2]), "qty": float(r[3] or 0),
+        "wh2": g(r[4]), "wh2_name": g(r[5]),
+    } for r in rows]
+    from_wh = g(h[3]) if h else ""
+    return {
+        "ic_no": ic_no,
+        "found": h is not None,
+        "ic_dd": (g(h[7]) if h else "") or "",
+        "cus": g(h[0]) if h else "",
+        "ref": g(h[1]) if h else "",
+        "ddjh": g(h[2]) if h else "",
+        "from_wh": from_wh, "from_wh_name": g(h[4]) if h else "",   # 原发出仓（调拨单 WH2）
+        "dzhw": float(h[5] or 0) if h else 0.0,
+        "jzhw": float(h[6] or 0) if h else 0.0,
+        # 默认退回仓：料当前所在仓（扣料行 WH2）；没有扣料行时退回到原发出仓
+        "default_wh": (items[0]["wh2"] if items and items[0]["wh2"] else from_wh),
+        "returned": returned,
+        "items": items,
+        "total_qty": sum(i["qty"] for i in items),
+    }
+
+
+@app.post("/api/completion/return_material")
+async def completion_return_material(
+    payload: dict = Body(...),
+    db: str = Query(default="c041"),
+    dry: str = Query(default=""),
+):
+    """
+    退料写入：一张 KND=13 其他入库单，逐品号一行，数量 = 该品号完工扣料量之和。
+    payload: {ic_no, wh}   wh = 退回的仓（预填料所在仓，可改）。
+    数量输入框仅作参考 —— 服务端一律按"该单据全退"写（MAK 2026-10-05 定）。
+    护栏：找不到调拨单 / 已退过料 / 没有完工扣料记录 → 一行都不写。
+    """
+    ic_no = (payload.get("ic_no") or "").strip()
+    wh = (payload.get("wh") or "").strip()
+    if not ic_no or not wh:
+        return {"error": "缺少调拨单号或退回仓库"}
+
+    db_name = "T041" if db.lower() == "t041" else "C041"
+    conn = get_conn(db=db_name)
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT TOP 1 ISNULL(客户, ''), ISNULL(指令单号, ''), ISNULL(DDJH, ''),
+                         ISNULL(单重, 0), ISNULL(净重, 0)
+            FROM IC WITH(NOLOCK)
+            WHERE IC_KND = 30 AND ISNULL(删除, 0) = 0 AND IC_NO = %s
+        """, (ic_no,))
+        h = cur.fetchone()
+        if not h:
+            return {"error": f"找不到调拨单 {ic_no}"}
+        cur.execute("""
+            SELECT TOP 1 IC_NO FROM IC WITH(NOLOCK)
+            WHERE IC_KND = 13 AND ISNULL(删除, 0) = 0
+              AND ISNULL(FLD1, '') = %s AND REM LIKE N'生产退料%'
+        """, (ic_no,))
+        done = cur.fetchone()
+        if done:
+            return {"error": f"该单据已退过料，不能重复退（退料单 {g(done[0])}）"}
+        cur.execute("""
+            SELECT t.PRD_NO, ISNULL(p.NAME, ''), ISNULL(t.UT, ''), SUM(t.QTY),
+                   ISNULL(t.WH2, ''), ISNULL(MAX(t.WH2NAME), '')
+            FROM IC t WITH(NOLOCK)
+            LEFT JOIN PRDT p WITH(NOLOCK) ON p.PRD_NO = t.PRD_NO
+            WHERE t.IC_KND = 23 AND ISNULL(t.删除, 0) = 0
+              AND ISNULL(t.FLD1, '') = %s AND t.REM LIKE N'完工出库%'
+            GROUP BY t.PRD_NO, p.NAME, t.UT, t.WH2
+            ORDER BY t.PRD_NO
+        """, (ic_no,))
+        rows = cur.fetchall()
+        if not rows:
+            return {"error": "该单据没有完工扣料记录，无需退料"}
+        total_qty = sum(float(r[3] or 0) for r in rows)
+        if str(dry).lower() in ("1", "true", "yes"):
+            return {"dry": True, "ok": True, "ic_no": ic_no, "rows": len(rows), "total_qty": total_qty}
+
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        today = datetime.now().strftime("%y%m")
+        cur.execute(
+            "SELECT ISNULL(MAX(TRY_CONVERT(INT, SUBSTRING(RTRIM(IC_NO),7,4))), 0) "
+            "FROM IC WITH(NOLOCK) WHERE RTRIM(IC_NO) LIKE %s", (f"IC{today}%",))
+        seq = int(cur.fetchone()[0] or 0)
+        ic_in = f"IC{today}{seq + 1:04d}"
+
+        cur.execute('SELECT NAME FROM MY_WH WITH(NOLOCK) WHERE WH=%s', (wh,))
+        wr = cur.fetchone()
+        wh_name = g(wr[0]) if wr else ""
+
+        itm = 0
+        for r in rows:
+            itm += 1
+            cur.execute("""
+                INSERT INTO IC (IC_NO,IC_DD,IC_KND,PRD_NO,PRD_NAME,QTY,UT,WH1,WH1NAME,WH2,WH2NAME,
+                                USR,USABLE,ITM,REM,FLD1,指令单号,DDJH,客户,单重,净重)
+                VALUES (%s,%s,13,%s,%s,%s,%s,%s,%s,%s,%s,
+                        %s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            """, (ic_in, now_str, g(r[0]), g(r[1]), float(r[3] or 0), g(r[2]),
+                  wh, wh_name, g(r[4]), g(r[5]),
+                  "phone", 1, itm, f"生产退料({ic_no})", ic_no,
+                  g(h[1]), g(h[2]), g(h[0]), float(h[3] or 0), float(h[4] or 0)))
+        conn.commit()
+        return {"ok": True, "ic_no": ic_in, "items": itm, "total_qty": total_qty}
+    finally:
+        conn.close()
 
 
 @app.get("/api/completion/bom_match")
