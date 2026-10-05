@@ -1017,7 +1017,7 @@ async def stock_transfer(
         results.append({"ic_no": ic_no, "prd_no": prd_no,
                        "wh2": wh2, "wh1": wh, "qty": qty, "itm": i + 1})
 
-    # 运输工具行：只写品号、品名、单位、数量，其余留空
+    # 运输工具行：写在 KND=30 调拨单里，跟材料行同方向（WH1=收货仓、WH2=发货仓，两个都要写）
     prod_count = sum(1 for item in items if float(item.get('qty') or 0) > 0)
     for trow in tool_rows:
         code = trow.get('code', ''); qty = trow.get('qty', 0)
