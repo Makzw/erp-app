@@ -14,7 +14,7 @@
 import openpyxl, pymssql, sys
 
 # ── 连接 ─────────────────────────────────────────────────────────────────
-DB_HOST = '39.108.237.63:11039'  # 与 main.py 保持一致
+DB_HOST = '8.163.110.192:11039'  # 与 main.py 保持一致
 DB_USER = 'Hermes'
 DB_PASS = 'aeg123456'
 DB_NAME = 'C041'
