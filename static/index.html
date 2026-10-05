@@ -2497,9 +2497,22 @@ async function pmcShowSummary(refresh) {
 }
 
 // ── PMC 批量提交（旧版）──────────────────────────────────────────────
+// 生成 MPS 排哪张单（MAK 2026-10-05 报「请先勾选指令单」）
+//   ① 列表里勾了行 → 就用勾选的（合并树、底部按钮都走这条，跟以前一样）
+//   ② 没勾选、但正站在某张单的树里（点卡片开的）→ 就排这张单
+// 旧写法只认 ① → 直接点开卡片看树再点生成 MPS 会被挡（已实测复现）
+function pmcSubmitTargets() {
+  if (pmcSelected && pmcSelected.length) return pmcSelected;       // 列表勾选优先（合并树/底部按钮都走这条）
+  var t = window.__pmcTreeCtx || {};
+  if (t.kind === 'one' && t.so_no_itm && t.prd_no) {               // 没勾选 → 就排当前这张单的树
+    return [{so_no_itm: t.so_no_itm, prd_no: t.prd_no, qty: t.qty || 0}];
+  }
+  return [];
+}
 async function pmcSubmit() {
-  if (!pmcSelected || !pmcSelected.length) {
-    alert('\u8bf7\u5148\u52fe\u9009\u6307\u4ee4\u5355');
+  var targets = pmcSubmitTargets();
+  if (!targets.length) {
+    alert('\u8bf7\u5148\u52fe\u9009\u4ee4\u5355\uff08\u5217\u8868\u91cc\u52fe\u9009\uff0c\u6216\u70b9\u5f00\u67d0\u5f20\u5355\u7684\u5361\u7247\u540e\u76f4\u63a5\u751f\u6210\uff09');
     return;
   }
   var el = $id('content');
@@ -2508,7 +2521,7 @@ async function pmcSubmit() {
     var res = await api(BASE + '/pmc/generate_mps', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({items: pmcSelected})
+      body: JSON.stringify({items: targets})
     });
     if (res.error) { el.innerHTML = '<div class="error-msg">' + res.error + '</div>'; return; }
     pmcSelected = [];   // 这批单已生成 MPS → 清多选态（否则「继续分析」回来还挂着 已选 N + 勾选，MAK 2026-10-03 报）
@@ -2533,6 +2546,7 @@ async function pmcPreviewBatch() {
       body: JSON.stringify({items: pmcSelected})
     });
     allRows = (data && data.items) || [];
+    window.__pmcTreeCtx = {kind: 'batch'};   // 合并树：生成 MPS 用勾选的 pmcSelected
     // ⚠ 调整弹窗(pmcOpenAdjust)从 __pmcBomRows 里取该料的仓库明细 —— 批量预览以前没设这个
     //    变量，导致「调整」按钮全弹「该品号无原材料仓库存」（MAK 2026-09-30 报）
     window.__pmcBomRows = allRows;
@@ -2562,6 +2576,8 @@ async function pmcAnalyzeRow(soNoItm, prdNo, qty) {
     // 保存 BOM 行供调整弹窗用
     window.__pmcBomRows = items;
     window.__pmcPending = {soNoItm: soNoItm, prdNo: prdNo, qty: qty};
+    // 这棵树 = 哪一张单（生成 MPS 的目标，见 pmcSubmitTargets）
+    window.__pmcTreeCtx = {kind: 'one', so_no_itm: soNoItm, prd_no: prdNo, qty: qty};
     // 请购上下文：只有「单张单」的树才能生成请购单（合并树没有单一 SO 行，挂不上指令单号/客户）
     window.__pmcQdCtx = {so_no_itm: soNoItm, fg_no: prdNo, qty: qty};
     renderPMCTree(items, soNoItm + ' ' + prdNo);
