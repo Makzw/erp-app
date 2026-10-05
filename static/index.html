@@ -1730,7 +1730,7 @@ async function openReturnModal(icNo) {
       <div style="padding:10px;background:var(--bg);border-radius:8px;font-size:12px;line-height:1.8">
         <div>调拨单 <b>${fmt(pv.ic_no)}</b>${pv.ic_dd ? ' · ' + fmt(pv.ic_dd) : ''}</div>
         <div>客户 ${fmt(pv.cus || '—')} · 指令单 ${fmt(pv.ref || '—')} · 外发计划 ${fmt(pv.ddjh || '—')}</div>
-        <div>原发出仓 <b>${fmt(pv.from_wh || '')}</b> ${fmt(pv.from_wh_name || '')}</div>
+        <div>原发出仓 <b>${fmt(pv.from_wh || '')}</b> ${fmt(pv.from_wh_name || '')} <span style="color:var(--sub)">（默认退回到这个仓，可改）</span></div>
       </div>
       <div style="margin:12px 0 4px;font-size:12px;font-weight:600">
         将退回的料（全量 ${pv.items.length} 行 / 合计 <span style="color:var(--orange)">${pv.total_qty}</span>）

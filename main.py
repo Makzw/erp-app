@@ -1204,8 +1204,8 @@ async def completion_return_preview(
         "from_wh": from_wh, "from_wh_name": g(h[4]) if h else "",   # 原发出仓（调拨单 WH2）
         "dzhw": float(h[5] or 0) if h else 0.0,
         "jzhw": float(h[6] or 0) if h else 0.0,
-        # 默认退回仓：料当前所在仓（扣料行 WH2）；没有扣料行时退回到原发出仓
-        "default_wh": (items[0]["wh2"] if items and items[0]["wh2"] else from_wh),
+        # 默认退回仓 = 原发出仓（调拨单 WH2，MAK 2026-10-05 拍板）；料当前所在仓（扣料行 WH2）另列给用户参考
+        "default_wh": from_wh,
         "returned": returned,
         "items": items,
         "total_qty": sum(i["qty"] for i in items),
@@ -2037,7 +2037,9 @@ async def completion_confirm(
     if not fg_no or fg_qty <= 0 or not components:
         return {"error": "缺少成品/数量/子件"}
 
-    conn = get_conn()
+    # db 参数必须落到实处：以前这里写死 get_conn()（恒连 C041），传 db=t041 也会写进生产库
+    db_name = "T041" if db.lower() == "t041" else "C041"
+    conn = get_conn(db=db_name)
     cur = conn.cursor()
 
     # 库存校验：前端能被绕过，这里是最后防线（不通过 → 一行都不写）
@@ -2096,11 +2098,11 @@ async def completion_confirm(
         INSERT INTO IC (IC_NO,IC_DD,IC_KND,PRD_NO,PRD_NAME,QTY,UT,WH1,WH1NAME,WH2,
                         USR,USABLE,ITM,REM,FLD1,指令单号,DDJH,客户,单重,净重)
         VALUES (%s,%s,13,%s,%s,%s,%s,%s,%s,'',
-                %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                %s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
     """, (ic_in, now_str, fg_no, fg_name, fg_qty, fg_ut, fg_wh, fg_wh_name,
           "phone", 1, 1, rem_in or "完工入库", fld1_val,
           ref_info["ref"], ref_info["ddjh"], ref_info["cus"],
-          ref_info["dzhw"], ref_info["jzhw"], "phone"))
+          ref_info["dzhw"], ref_info["jzhw"]))
 
     # ② 出库单 KND=23（多行ITM）
     itm = 0
@@ -2114,8 +2116,14 @@ async def completion_confirm(
         cur.execute('SELECT NAME FROM PRDT WITH(NOLOCK) WHERE PRD_NO=%s', (prd_no,))
         pr2 = cur.fetchone()
         prd_name = g(pr2[0]) if pr2 else ""
-        # 该调拨单的收货仓作WH2（减少仓），WH1=生产仓(来源)
+        # 该调拨单的收货仓作 WH2（减少/来源仓）；WH1、WH1NAME 必须留空 ——
+        # 出库单只写来源仓，一张单不能同时出入库（跟批量完工、形态转换同口径，MAK 2026-10-05 定）
         twh1 = comp.get("transfer_wh1","")
+        twh1_name = ""
+        if twh1:
+            cur.execute("SELECT ISNULL(NAME,'') FROM MY_WH WITH(NOLOCK) WHERE WH=%s", (twh1,))
+            _rw = cur.fetchone()
+            twh1_name = g(_rw[0]) if _rw else ""
         # 查子件 UT
         cur.execute('SELECT ISNULL(UT,\'\') FROM PRDT WITH(NOLOCK) WHERE PRD_NO=%s', (prd_no,))
         pr_out = cur.fetchone()
@@ -2124,8 +2132,8 @@ async def completion_confirm(
             INSERT INTO IC (IC_NO,IC_DD,IC_KND,PRD_NO,PRD_NAME,QTY,UT,WH1,WH2,WH1NAME,WH2NAME,
                             USR,USABLE,ITM,REM,FLD1,指令单号,DDJH,客户,单重,净重)
             VALUES (%s,%s,23,%s,%s,%s,%s,%s,%s,%s,%s,
-                    %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-        """, (ic_out, now_str, prd_no, prd_name, qty, comp_ut, fg_wh, twh1, fg_wh_name, "",
+                    %s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        """, (ic_out, now_str, prd_no, prd_name, qty, comp_ut, "", twh1, "", twh1_name,
               "phone", 1, itm, f"完工出库({fg_no}×{fg_qty})", tic,
               ref_info["ref"], ref_info["ddjh"], ref_info["cus"],
               0.0, 0.0))

@@ -63,6 +63,10 @@ def cleanup():
     if RETURNED_NO:
         cur.execute("DELETE FROM IC WHERE IC_NO = %s", (RETURNED_NO,))
         n += cur.rowcount
+    for no in (CONFIRM_IN, CONFIRM_OUT):
+        if no:
+            cur.execute("DELETE FROM IC WHERE IC_NO = %s", (no,))
+            n += cur.rowcount
     cur.execute("DELETE FROM IC WHERE IC_NO LIKE 'ICTESTR%'")
     n += cur.rowcount
     tc.commit()
@@ -70,6 +74,7 @@ def cleanup():
 
 
 RETURNED_NO = None
+CONFIRM_IN = CONFIRM_OUT = None
 print("── 准备：从 T041 现成料/仓里取样 + 造测试调拨单与完工扣料行 ──")
 cur.execute("SELECT TOP 2 PRD_NO, NAME, ISNULL(UT,'PCE') FROM PRDT WITH(NOLOCK) WHERE LEN(PRD_NO)>4 ORDER BY PRD_NO")
 prds = cur.fetchall()
@@ -108,7 +113,7 @@ try:
     qs = sorted(round(i["qty"], 3) for i in pv.get("items") or [])
     chk(qs == [7, 11], f"退料量 = 完工扣料量（7 / 11，实际 {qs}）")
     chk(round(pv.get("total_qty") or 0, 3) == 18, f"合计 18（实际 {pv.get('total_qty')}）")
-    chk(pv.get("default_wh") == wh_src, f"默认退回仓 = 扣料行 WH2 料所在仓 {wh_src}（实际 {pv.get('default_wh')}）")
+    chk(pv.get("default_wh") == wh_from, f"默认退回仓 = 原发出仓（调拨单 WH2）{wh_from}（实际 {pv.get('default_wh')}）")
     chk(pv.get("from_wh") == wh_from, f"原发出仓 = 调拨单 WH2 {wh_from}（实际 {pv.get('from_wh')}）")
     chk((pv.get("cus"), pv.get("ref"), pv.get("ddjh")) == ("TESTCUS", "9999", "TESTPLAN"), "客户/指令单/外发计划带过来")
     chk(pv.get("returned") is False, "尚未退料（returned=False）")
@@ -164,6 +169,23 @@ try:
     chk("没有完工扣料记录" in (no23.get("error") or ""), f"无扣料记录被拒：{no23.get('error')}")
     nowh = call("POST", "/return_material?db=t041", {"ic_no": T30, "wh": "  "})
     chk("缺少调拨单号或退回仓库" in (nowh.get("error") or ""), f"空仓被拒：{nowh.get('error')}")
+
+    print("⑨ 单笔完工的扣料行只写 WH2（一张单不能同时出入库）")
+    cf = call("POST", "/confirm?db=t041", {
+        "fg_no": p2, "fg_qty": 1, "fg_wh": wh_dst,
+        "components": [{"prd_no": p1, "qty": 5, "transfer_ic_no": T30, "transfer_wh1": wh_from}]})
+    if not cf.get("ic_out"):
+        print("     ↳ 调试：confirm 返回 =", json.dumps(cf, ensure_ascii=False)[:500])
+    if cf.get("error"):
+        chk(False, f"单笔完工被拒：{cf.get('error')}")
+    else:
+        CONFIRM_IN, CONFIRM_OUT = cf.get("ic_in"), cf.get("ic_out")
+        cur.execute("SELECT ISNULL(WH1,''), ISNULL(WH2,''), IC_KND FROM IC WITH(NOLOCK) WHERE IC_NO=%s", (CONFIRM_OUT,))
+        out_rows = cur.fetchall()
+        chk(bool(out_rows), f"写出出库单 {CONFIRM_OUT}")
+        chk(all(int(r[2]) == 23 for r in out_rows), "出库单全是 KND=23")
+        chk(all(g(r[0]) == "" for r in out_rows), f"WH1 留空（实际 {[g(r[0]) for r in out_rows]}）")
+        chk(all(g(r[1]) == wh_from for r in out_rows), f"WH2 = 来源仓 {wh_from}")
 
     print("⑦ C041 一行没动")
     ccur.execute("SELECT COUNT(*) FROM IC WITH(NOLOCK)")
