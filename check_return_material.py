@@ -138,7 +138,7 @@ try:
     got = {g(r[2]): float(r[3]) for r in rows}
     chk(got.get(p1) == 7 and got.get(p2) == 11, f"数量 = 全退量 7/11，不是手填的 3（实际 {got}）")
     chk(all(g(r[5]) == wh_dst for r in rows), f"WH1 = 输入的退回仓 {wh_dst}")
-    chk(all(g(r[7]) == wh_src for r in rows), f"WH2 = 料所在仓 {wh_src}")
+    chk(all(g(r[7]) == "" for r in rows), "WH2 留空（纯入库单：不能同时带出库方向，一张单不能同时出入库）")
     chk(all(g(r[8]) == T30 for r in rows), f"FLD1 = 调拨单号 {T30}（可反查）")
     chk(all(g(r[9]) == f"生产退料({T30})" for r in rows), "REM 标了生产退料+单号")
     chk(all(r[11] == 1 for r in rows), "USABLE=1")

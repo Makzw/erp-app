@@ -1285,10 +1285,10 @@ async def completion_return_material(
             cur.execute("""
                 INSERT INTO IC (IC_NO,IC_DD,IC_KND,PRD_NO,PRD_NAME,QTY,UT,WH1,WH1NAME,WH2,WH2NAME,
                                 USR,USABLE,ITM,REM,FLD1,指令单号,DDJH,客户,单重,净重)
-                VALUES (%s,%s,13,%s,%s,%s,%s,%s,%s,%s,%s,
+                VALUES (%s,%s,13,%s,%s,%s,%s,%s,%s,'','',
                         %s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             """, (ic_in, now_str, g(r[0]), g(r[1]), float(r[3] or 0), g(r[2]),
-                  wh, wh_name, g(r[4]), g(r[5]),
+                  wh, wh_name,
                   "phone", 1, itm, f"生产退料({ic_no})", ic_no,
                   g(h[1]), g(h[2]), g(h[0]), float(h[3] or 0), float(h[4] or 0)))
         conn.commit()
