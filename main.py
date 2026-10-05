@@ -2287,6 +2287,65 @@ async def list_pos_unreceived(
     return {"items": items, "total": total}
 
 
+# ── API: 关闭采购未回的一行 ───────────────────────────────────────────────────
+@app.post("/api/pos-unreceived/close")
+async def close_pos_unreceived(
+    os_no: str = Body(default=""),
+    itm: int = Body(default=0),
+    db: str = Query(default="c041"),
+):
+    """
+    关闭采购未回的一行：把该行（单号 + 行号）的 USABLE 置 0。
+
+    基表是 dbo.POS（VW_POS 只是它的包装视图），列表过滤条件里本来就有 USABLE=1，
+    所以置 0 之后该行自然从「采购未回」消失。
+
+    ⚠ POS 上有启用中的触发器 UP_SO（FOR INSERT,UPDATE），它会按**整张单号**动作：
+    改整单日期、WJ=1 时整单 CLS_ID=1、作废且无入库行时清 MRP.PO_NO。那是 ERP 自己的
+    「作废采购单」惯例 —— 不拦、也不在 app 里重写一遍。
+    也正因为它会连带改字段，这里**不信 rowcount**，写完读回真实状态为准。
+    """
+    db_name = "T041" if db.lower() == "t041" else "C041"
+    os_no = (os_no or "").strip().upper()
+    if not re.fullmatch(r"PO\d{8}", os_no):
+        return {"error": "单号格式不对（应形如 PO26070002）：%s" % os_no}
+    try:
+        itm = int(itm)
+    except (TypeError, ValueError):
+        return {"error": "行号不对"}
+    if itm <= 0:
+        return {"error": "行号不对"}
+
+    conn = get_conn(db=db_name)
+    cur = conn.cursor()
+    try:
+        # 先确认这行存在、且当前是未关闭 —— 不存在/已关闭都明说，不装作成功
+        cur.execute("""SELECT ISNULL(USABLE, 1) FROM POS WITH(NOLOCK)
+                       WHERE OS_NO=%s AND ITM=%s AND OS_ID='PO'""", (os_no, itm))
+        row = cur.fetchone()
+        if not row:
+            conn.rollback()
+            return {"error": "没找到这行：%s 行 %s" % (os_no, itm)}
+        if int(row[0] or 0) != 1:
+            conn.rollback()
+            return {"error": "这行已经是关闭状态：%s 行 %s" % (os_no, itm)}
+
+        cur.execute("""UPDATE POS SET USABLE=0
+                       WHERE OS_NO=%s AND ITM=%s AND OS_ID='PO' AND ISNULL(USABLE,1)=1""",
+                    (os_no, itm))
+        cur.execute("""SELECT ISNULL(USABLE, 1), ISNULL(CLS_ID, 0) FROM POS WITH(NOLOCK)
+                       WHERE OS_NO=%s AND ITM=%s AND OS_ID='PO'""", (os_no, itm))
+        after = cur.fetchone()
+        if not after or int(after[0] or 0) != 0:
+            conn.rollback()
+            return {"error": "写入没生效（该行 USABLE 仍为 1），已回滚：%s 行 %s" % (os_no, itm)}
+        conn.commit()
+        return {"ok": True, "os_no": os_no, "itm": itm, "usable": 0,
+                "cls_id": int(after[1] or 0)}
+    finally:
+        conn.close()
+
+
 # ── API: 工单列表（已废弃，用 /api/smo）─────────────────────────────────
 @app.get("/api/mom")
 async def list_mom_legacy():
