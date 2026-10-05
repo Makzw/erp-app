@@ -1615,8 +1615,9 @@ async def smo_bom_stock(fg_no: str = Query(...), db: str = Query(default="c041")
         cur.execute(f"""
             SELECT PRD_NO, WH, SUM(QTY_WH) AS qty
             FROM VW_STOCK_DETAIL2 WITH(NOLOCK)
-            WHERE PRD_NO IN ({ph}) AND QTY_WH > 0
+            WHERE PRD_NO IN ({ph})
             GROUP BY PRD_NO, WH
+            HAVING SUM(QTY_WH) <> 0    -- 放开负库存：负数仓也进各仓明细（MAK 2026-10-05）
         """, tuple(all_prds))
         wh_stock_map = {}
         for r in cur.fetchall():
