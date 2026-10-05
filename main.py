@@ -1060,7 +1060,9 @@ async def completion_transfer_list(
         args.append(f"%{ddjh}%")
     if wh:
         where += " AND (t.WH1 LIKE %s OR w.NAME LIKE %s)"
-        args.append(f"%{wh}%")
+        # 两个占位符（仓码 WH1 或 仓名 w.NAME）绑同一个值 —— 少补一个会抛
+        # ValueError: more placeholders in sql than params available → 整个接口 500
+        args.extend([f"%{wh}%"] * 2)
 
     cur.execute(f"""
         SELECT
@@ -4003,6 +4005,47 @@ async def _gnet_invalidate_on_write(request, call_next):
     if request.method in ("POST", "PUT", "PATCH", "DELETE") and resp.status_code < 400:
         _GNET["ts"] = 0.0
     return resp
+
+
+# 客户库那条链路会偶发「查询途中连接被掐断」：pymssql 20017 Unexpected EOF from the server
+# （实测 2026-10-05 15:06:25 一秒内 5 个接口同时 500，MAK 在完工 tab 上看到的就是它）。
+# 每次请求都新开连接、GET 全是只读 ⇒ 换一条新连接原样重放一次就能扛过去。
+# ⚠ 必须用 ASGI 中间件重新 dispatch，不能用 @app.middleware + call_next：
+#   starlette 1.0 的 BaseHTTPMiddleware 会把首次异常缓存住，第二次 call_next
+#   原样再抛同一条异常（实测端点被调 2 次、仍返回第一次的 500）。
+# ponytail: 只重放 GET、且只在「还没发出任何响应字节」时；写接口一律不重试（会重复写库）。
+_DB_BLIP_MARKERS = ("20017", "Unexpected EOF from the server", "Read from the server failed")
+
+
+def _is_transient_db_error(exc: BaseException) -> bool:
+    text = f"{type(exc).__name__}: {exc}"
+    return any(m in text for m in _DB_BLIP_MARKERS)
+
+
+class _RetryGetOnDbBlip:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") != "http" or scope.get("method") != "GET":
+            return await self.app(scope, receive, send)
+        started = False
+
+        async def _watch(message):
+            nonlocal started
+            if message["type"] == "http.response.start":
+                started = True
+            await send(message)
+
+        try:
+            await self.app(scope, receive, _watch)
+        except Exception as e:                     # 未发出响应字节 → 重放安全
+            if started or not _is_transient_db_error(e):
+                raise
+            await self.app(scope, receive, send)
+
+
+app.add_middleware(_RetryGetOnDbBlip)
 _GNET_DIRTY_PRD = "JDPE03C01200003"
 _GNET_MADE_TYPES = ("20000", "30000")   # 成品/半成品：没 BOM 就是缺 BOM
 
