@@ -973,13 +973,14 @@ function resetPosUnFilters() {
   loadPosUnreceived();
 }
 
-// 关闭单据：把该行（单号 + 行号）的 USABLE 置 0 → 不再出现在采购未回列表。
+// 关闭单据：把该行（单号 + 行号）的 CLS_ID（关单标志）置 1 → 该行不再出现在采购未回列表。
+// 不动 USABLE —— 那是**整单级**（写它等于作废整张采购单）。
 // ponytail: 二次确认用原生 confirm（本项目没有自建确认弹窗，1 行够用、手机上照样弹）
 async function closePosUnRow(btn) {
   const osNo = btn.getAttribute('data-osno') || '';
   const itm = parseInt(btn.getAttribute('data-itm') || '0', 10);
   if (!osNo || !itm) { toast('⚠️ 这行缺单号/行号，关不了'); return; }
-  if (!confirm('关闭采购单 ' + osNo + ' 第 ' + itm + ' 行？\n关闭后该行不再出现在「采购未回」。')) return;
+  if (!confirm('关闭 ' + osNo + ' 第 ' + itm + ' 行？\n只关这一行（置关单标志），该行不再出现在「采购未回」，同单其他行不动。')) return;
   const old = btn.textContent;
   btn.disabled = true;
   btn.textContent = '关闭中…';

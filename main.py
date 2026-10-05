@@ -2295,15 +2295,20 @@ async def close_pos_unreceived(
     db: str = Query(default="c041"),
 ):
     """
-    关闭采购未回的一行：把该行（单号 + 行号）的 USABLE 置 0。
+    关闭采购未回的一行：把该行（单号 + 行号）的 **CLS_ID 置 1（关单标志）**。
 
-    基表是 dbo.POS（VW_POS 只是它的包装视图），列表过滤条件里本来就有 USABLE=1，
-    所以置 0 之后该行自然从「采购未回」消失。
+    口径（2026-10-05 核对真库后定）：
+    · **USABLE 是整单级的** —— C041 里 117 张多行采购单，USABLE 整单一致的 116 张
+      （唯一的例外 PO26080028 是脏数据）；写它等于作废整张采购单，会连带清 MRP.PO_NO。
+    · **CLS_ID 是行级的** —— 库里有真实单行关单样例 PO26080029：行 1（CLS_ID=0）照常
+      出现在采购未回，行 2（CLS_ID=1、QTY=0）已关。列表过滤条件是 ISNULL(CLS_ID,0)=0，
+      所以该行置 1 之后自然从「采购未回」消失，**不动同单其他行**。
 
-    ⚠ POS 上有启用中的触发器 UP_SO（FOR INSERT,UPDATE），它会按**整张单号**动作：
-    改整单日期、WJ=1 时整单 CLS_ID=1、作废且无入库行时清 MRP.PO_NO。那是 ERP 自己的
-    「作废采购单」惯例 —— 不拦、也不在 app 里重写一遍。
-    也正因为它会连带改字段，这里**不信 rowcount**，写完读回真实状态为准。
+    基表是 dbo.POS（VW_POS 只是它的包装视图）。
+
+    ⚠ POS 上有启用中的触发器 UP_SO（FOR INSERT,UPDATE），任何 UPDATE 都会按**整张单号**
+    连带动作：改整单日期、WJ=1 时整单 CLS_ID=1。那是 ERP 自己的惯例 —— 不拦、也不在 app
+    里重写一遍。也正因为它会连带改字段，这里**不信 rowcount**，写完读回真实状态为准。
     """
     db_name = "T041" if db.lower() == "t041" else "C041"
     os_no = (os_no or "").strip().upper()
@@ -2319,8 +2324,8 @@ async def close_pos_unreceived(
     conn = get_conn(db=db_name)
     cur = conn.cursor()
     try:
-        # 先确认这行存在、且当前是未关闭 —— 不存在/已关闭都明说，不装作成功
-        cur.execute("""SELECT ISNULL(USABLE, 1) FROM POS WITH(NOLOCK)
+        # 先确认这行存在、且当前未关 —— 不存在/已关都明说，不装作成功
+        cur.execute("""SELECT ISNULL(USABLE, 1), ISNULL(CLS_ID, 0) FROM POS WITH(NOLOCK)
                        WHERE OS_NO=%s AND ITM=%s AND OS_ID='PO'""", (os_no, itm))
         row = cur.fetchone()
         if not row:
@@ -2328,20 +2333,25 @@ async def close_pos_unreceived(
             return {"error": "没找到这行：%s 行 %s" % (os_no, itm)}
         if int(row[0] or 0) != 1:
             conn.rollback()
+            return {"error": "这行的整单已作废（USABLE=0），不用再关：%s 行 %s" % (os_no, itm)}
+        if int(row[1] or 0) == 1:
+            conn.rollback()
             return {"error": "这行已经是关闭状态：%s 行 %s" % (os_no, itm)}
 
-        cur.execute("""UPDATE POS SET USABLE=0
-                       WHERE OS_NO=%s AND ITM=%s AND OS_ID='PO' AND ISNULL(USABLE,1)=1""",
+        # 只关这一行：CLS_ID=1（不改 USABLE —— 那是整单级）
+        cur.execute("""UPDATE POS SET CLS_ID=1
+                       WHERE OS_NO=%s AND ITM=%s AND OS_ID='PO'
+                         AND ISNULL(USABLE,1)=1 AND ISNULL(CLS_ID,0)=0""",
                     (os_no, itm))
         cur.execute("""SELECT ISNULL(USABLE, 1), ISNULL(CLS_ID, 0) FROM POS WITH(NOLOCK)
                        WHERE OS_NO=%s AND ITM=%s AND OS_ID='PO'""", (os_no, itm))
         after = cur.fetchone()
-        if not after or int(after[0] or 0) != 0:
+        if not after or int(after[1] or 0) != 1:
             conn.rollback()
-            return {"error": "写入没生效（该行 USABLE 仍为 1），已回滚：%s 行 %s" % (os_no, itm)}
+            return {"error": "写入没生效（该行 CLS_ID 仍为 0），已回滚：%s 行 %s" % (os_no, itm)}
         conn.commit()
-        return {"ok": True, "os_no": os_no, "itm": itm, "usable": 0,
-                "cls_id": int(after[1] or 0)}
+        return {"ok": True, "os_no": os_no, "itm": itm, "cls_id": 1,
+                "usable": int(after[0] or 0)}
     finally:
         conn.close()
 
