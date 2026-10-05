@@ -226,11 +226,45 @@ L2 SC0037-ZN             需求 16,000（配比 8）
 
 ### 11.1 生成 MPS（`POST /api/pmc/generate_mps`）
 
-- 合并规则：**同成品品号 + 同销售订单**才合并数量。
-- 生成单号 `MP{YYMM}{4位流水}`（`LEN(MPS_NO)=10`），单头取第一条 POS 的客户/价格/交期。
-- 每个成品一行 ITM，其 BOM 子件顺序接在后面；插入 `MPS` 表 24 列：
-  `MPS_NO, MPS_DD, USR('Hermes'), USABLE=1, ITM, CUS_NO, CUS_NAME, FG_NO_SO, SO_NO_ITM, REF_ITM, PRD_NO, PRD_NAME, SPC, UT, QTY, WH, WH_NAME, QTY_WH, QTY_AV, 指令单号, EST_DD, UP, BOM=1, STA_DD`。
-- `QTY_WH/QTY_AV`：成品行取生产仓，子件行取原材料仓。
+> 入口：PMC tab → 勾选待分析单（可多选）→「生成 MPS」。body `{items:[{so_no_itm, prd_no, qty}], dry}`。
+> **`dry=1`**：走完全套校验和 INSERT 后 `ROLLBACK`（预览/自检用，不留单）。
+
+**① 合并规则：按 `so_no_itm`（销售订单行）分组、数量相加 —— 一个 SO 行 = 一个成品行**，不跨行合并。
+为什么不能合并：`VW_POS.MP` 只认 `REF_ITM = OS_NO + PadLeft(ITM,3)` 的 `SUM(QTY_SO)`，
+合并了那张 SO 就不会从「待分析」列表走掉。
+
+**② 单号**：`MP{YYMM}{4位流水}`（`LEN(MPS_NO)=10`，取当天 `MAX(SUBSTRING(MPS_NO,7,4))`+1）。
+
+**③ 构行**（一张 MPS 内 ITM 顺序 = 成品行 + 它的 BOM 子件）：
+
+| | 成品行 | 子件行 |
+|---|---|---|
+| `QTY_SO` | 毛需求 = 本单销售未出 | 父件需求 × BOM 配比（`QTY ÷ QTY_BAS`） |
+| `QTY` | **净需求** = 毛需求 − 池抵冲 − 材料仓抵冲 | 同左 |
+| `REF_ITM` | **本 SO 行**（只有成品行填） | 留空 |
+| `WH` / `QTY_WH` | 生产仓（无则材料仓）/ 其现存量 | 材料仓 / 其现存量 |
+| `QTY_AV` | 该行扣减前的剩余库存 − 本行毛需求 | 同左 |
+| `BOM` | 该品号有没有 BOM 头 | 同左 |
+| `UP` | POS 单价 | 0 |
+
+- **池抵冲 `_take_pool`**：先扣「挂本单的在途 + 挂本单的在单请购」（`_v2_odr_split(ref=指令单号, fg=成品, so_itm=SO行)` 挂单），
+  再扣「别人采购多下」（全厂共享、先到先得）。
+- **材料仓抵冲 `_take_stock`**：同品号**按行顺序累计扣、扣完为止**（不是每行各扣一遍）。
+  真单实证 `MP26070015/H20554-01-05`：库存 2,600 → 头两行各 1,002 扣成 0、第三行 1,002−596=406；
+  `MP26080031/P20365-01-03`：库存 12,800 → 首行 27,200−12,800=14,400。负库存夹 0。
+- 生产仓**不参与**净需求（MAK 2026-09-29 定）；屏上「缺口」是下单口径（需求 − 全厂池 − 材料仓），
+  **与这里的排产口径不是同一个数**。
+- 品名/规格/单位一律取 PRDT（子件不硬编码 `PCE`，原材料是 KG）。
+
+**④ 写库**：一次 INSERT，`MPS` 25 列 —— `MPS_NO, MPS_DD, USR='0014'(PMC), USABLE=1, ITM,
+CUS_NO, CUS_NAME, FG_NO_SO, SO_NO_ITM, REF_ITM, PRD_NO, PRD_NAME, SPC, UT, QTY, QTY_SO,
+WH, WH_NAME, QTY_WH, QTY_AV, 指令单号, EST_DD, UP, BOM, STA_DD(空)`。
+
+**⑤ 门槛（ERP 硬规则）**：`MPS_insert` 触发器 `WHERE ISNULL(POS.APP_ID,0)=0` →
+`print '引用订单未审批'` + `rollback transaction` → **整张单打回**（多选里只要有一张没「系统核准」就全都进不去）。
+app 把这条错误翻成人话：「ERP 拒绝排产：…请先在桌面 ERP 核准」。
+
+**⑥ 写完之后**：`VW_POS.MP` 变 1 → 该 SO 行从「待分析」列表消失。
 
 ### 11.2 库存调整（`POST /api/pmc/adjust_stock`）
 
@@ -258,7 +292,7 @@ diff > 0 → IC KND=13（其他入库），diff < 0 → IC KND=23（其他出库
 | 6 | 已审核判定用 `APP_ID=1` | 已改 `CHK_MAN` |
 | 7 | 品号汇总轮询每次开新线程 | 已加单飞 |
 | 8 | BOM 基数被写成用量（`QTY_BAS = QTY`）→ 配比恒为 1 | 2026-09-29 按 `BOM_2026.9.24_.xlsx` 修 6,049 行 |
-| 9 | **`generate_mps` 里 `for c_prd, c_name, c_qty, c_knd in comp_rows` 是 4 元解包，而 `_mps_bom_tree` 返回 7 元 → 点「生成 MPS」必 500（`ValueError: too many values to unpack`）。** | ⚠ **未修** |
+| 9 | `generate_mps` 里 `for c_prd, c_name, c_qty, c_knd in comp_rows` 4 元解包 vs `_mps_bom_tree` 返回 7 元 → 点「生成 MPS」必 500 | **已修（commit `14f02c5`，2026-09-30）**；同批还修了口径：一个 SO 行一个成品行、`REF_ITM` 只成品行填、补写 `QTY_SO`、`UT`/品名取 PRDT、`USR` 改 `0014`、加 `dry=1` |
 | 10 | 库里有 89 行 `QTY_WH < 0`（最大 −113,546），会把某些品号净缺口撑大 | ERP 里的真数据，不是算错 |
 | 11 | 待分析单 SQL 仍是 `TOP 200` | 积压超 200 会静默截断 |
 | 12 | `9999` 测试单（`SO26090024`）满足筛选条件会进列表 | 待 MAK 定去留 |
