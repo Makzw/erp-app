@@ -4205,7 +4205,7 @@ function renderGlobalNet() {
 
 // 启动加载：默认 tab（请购单）自己拉数。以前全 app 没有任何启动加载 —— 用户不点 tab
 // 就永远停在「加载中…」；放在 <script> 最末尾，避开上面 let 变量的 TDZ。
-// ── 形态转换（一转一 / 多合一）：N 行源料出库(KND=23) + M 行目标料入库(KND=13)，共用一个 IC 单号 ──
+// ── 形态转换（一转一 / 多合一）：N 行源料出库(KND=23)一张单 + M 行目标料入库(KND=13)另一张单 ──
 function shapeRow(side) {
   var id = (side === 'sources' ? 'shs_' : 'sht_') + Date.now() + Math.random().toString(36).slice(2, 6);
   return '<div class="shape-row" data-side="' + side + '">'
@@ -4318,7 +4318,8 @@ async function doShapeConvert() {
       body: JSON.stringify({ sources: src, targets: tgt, rem: ($id('shapeRem') || {}).value || '' }),
     });
     if (res && res.error) throw new Error(res.error);
-    toast('✅ 形态转换成功 ' + res.ic_no + '（' + src.length + ' 出 / ' + tgt.length + ' 入）');
+    toast('✅ 形态转换成功：出库单 ' + res.ic_no_out + ' / 入库单 ' + res.ic_no_in
+          + '（' + src.length + ' 出 / ' + tgt.length + ' 入）');
     loadShape();
   } catch (e) {
     toast('❌ 形态转换失败: ' + e.message);

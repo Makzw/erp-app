@@ -808,7 +808,7 @@ async def stock_in(
     return {"ok": True, "count": len(results), "items": results}
 
 
-# ── API: 形态转换（一次提交 = N 行 KND=23 出 + M 行 KND=13 入，共用一个 IC 单号）──
+# ── API: 形态转换（一次提交 = 一张 KND=23 出库单 + 一张 KND=13 入库单，两张单互为关联）──
 @app.post("/api/stock/shape_convert")
 async def stock_shape_convert(
     sources: List[dict] = Body(default=[]),
@@ -821,6 +821,9 @@ async def stock_shape_convert(
     sources: [{"prd_no": "...", "wh": "源仓", "qty": 数量}]  -> KND=23 出库（WH2=源仓）
     targets: [{"prd_no": "...", "wh": "目标仓", "qty": 数量}] -> KND=13 入库（WH1=目标仓）
     两侧数量都手填、允许不等（差额天然就是损耗，不写损耗行）。
+    一张单只能有一种 KND（MAK 立的规矩，与 ERP 自己的「其他出库/其他入库」一致）：
+    出库行全部进 23 那张单、入库行全部进 13 那张单，取连续两个流水号，
+    并在 FLD1 里交叉填对方单号，两张单互为关联可追溯。
     """
     db_name = "T041" if db.lower() == "t041" else "C041"
     if not sources:
@@ -865,37 +868,49 @@ async def stock_shape_convert(
                 return {"error": "品号 %s 在 PRDT 里不存在" % prd_no}
             prd_info[prd_no] = (g(pr[0]), pr[1] or "")
 
-        # 单号：与出/入库同一套取号 IC + YYMM + 4位流水
+        # 单号：与出/入库同一套取号 IC + YYMM + 4位流水。
+        # 出库、入库各一张单（一张单只能一种 KND），取连续两个流水号。
         cur.execute("""
             SELECT ISNULL(MAX(TRY_CAST(SUBSTRING(IC_NO,7,4) AS INT)), 0)
             FROM IC WITH(NOLOCK)
             WHERE IC_NO LIKE %s AND LEN(IC_NO)=10
         """, (f"IC{today}%",))
-        ic_no = f"IC{today}{(cur.fetchone()[0] or 0) + 1:04d}"
+        _base = cur.fetchone()[0] or 0
+        ic_no_out = f"IC{today}{_base + 1:04d}"
+        ic_no_in = f"IC{today}{_base + 2:04d}"
 
         wh_names = {}
         results = []
-        itm = 0
+        itm_out = itm_in = 0
         for side, prd_no, wh, qty in plan:
             if wh not in wh_names:
                 cur.execute("SELECT NAME FROM MY_WH WITH(NOLOCK) WHERE WH=%s", (wh,))
                 r_wh = cur.fetchone()
                 wh_names[wh] = g(r_wh[0]) if r_wh else ""
             prd_name, ut = prd_info[prd_no]
-            itm += 1
+            # 行号按「单」从 1 连续：出库单、入库单各自从 1 开始（ERP 的 其他出库/其他入库 就是这样）
+            if side == "sources":
+                itm_out += 1
+                itm = itm_out
+            else:
+                itm_in += 1
+                itm = itm_in
+            # 一张单只能有一种 KND：出库行只进 23 那张单、入库行只进 13 那张单
+            ic_no = ic_no_out if side == "sources" else ic_no_in
+            fld1 = ic_no_in if side == "sources" else ic_no_out   # FLD1 交叉填对方单号（互为关联）
             if side == "sources":      # 出库行：WH2=源仓，WH1 不写
                 cur.execute("""
                     INSERT INTO IC (IC_NO,IC_DD,IC_KND,PRD_NO,PRD_NAME,QTY,UT,WH2,WH2NAME,
                                     USR,USABLE,ITM,REM,FLD1,指令单号,DDJH,客户,单重,净重)
                     VALUES (%s,%s,23,%s,%s,%s,%s,%s,%s,'phone',1,%s,%s,%s,'','','',0,0)
-                """, (ic_no, now_str, prd_no, prd_name, qty, ut, wh, wh_names[wh], itm, rem, ic_no))
+                """, (ic_no, now_str, prd_no, prd_name, qty, ut, wh, wh_names[wh], itm, rem, fld1))
             else:                      # 入库行：WH1=目标仓，WH2 不写
                 cur.execute("""
                     INSERT INTO IC (IC_NO,IC_DD,IC_KND,PRD_NO,PRD_NAME,QTY,UT,WH1,WH1NAME,
                                     USR,USABLE,ITM,REM,FLD1,指令单号,DDJH,客户,单重,净重)
                     VALUES (%s,%s,13,%s,%s,%s,%s,%s,%s,'phone',1,%s,%s,%s,'','','',0,0)
-                """, (ic_no, now_str, prd_no, prd_name, qty, ut, wh, wh_names[wh], itm, rem, ic_no))
-            results.append({"knd": 23 if side == "sources" else 13,
+                """, (ic_no, now_str, prd_no, prd_name, qty, ut, wh, wh_names[wh], itm, rem, fld1))
+            results.append({"knd": 23 if side == "sources" else 13, "ic_no": ic_no,
                             "prd_no": prd_no, "wh": wh, "qty": qty, "itm": itm})
         conn.commit()
     except Exception as e:
@@ -906,7 +921,8 @@ async def stock_shape_convert(
         conn.close()
         return {"error": "形态转换写库失败: %s" % e}
     conn.close()
-    return {"ok": True, "ic_no": ic_no, "count": len(results), "items": results}
+    return {"ok": True, "ic_no_out": ic_no_out, "ic_no_in": ic_no_in,
+            "count": len(results), "items": results}
 
 
 # ── API: 调拨单（批量写入单张IC）─────────────────────────────────────────
