@@ -2140,7 +2140,8 @@ function renderStock(d) {
   // 顶部品号信息
   const hasAnyRecord = whs.length > 0;
   const hasStock = whs.filter(w => w.qty > 0);
-  const hasZero  = whs.filter(w => w.qty <= 0);
+  const hasNeg   = whs.filter(w => w.qty < 0);    // 负库存单独一档：账上缺的，要看得见
+  const hasZero  = whs.filter(w => w.qty === 0);
 
   let header = `<div style="padding:4px 0 8px">
     <div style="font-size:14px;font-weight:600;color:var(--text)">${fmt(d.prd_no)} &nbsp;${fmt(d.prd_name||'')}</div>
@@ -2178,8 +2179,30 @@ function renderStock(d) {
     }
   }
 
+  if (hasNeg.length) {
+    html += `<div class="stock-wh-head" style="color:var(--red)">负库存（${hasNeg.length}个仓库）</div>`;
+    for (const w of hasNeg) {
+      const transferCls = curTab === 'transfer' ? ' transfer-wh-card' : '';
+      const e = s => String(s||'').replace(/'/g, "\\'");
+      const openFn = curTab === 'transfer' ? 'openTransferModal' : 'openInModal';
+      // 负数是缺账：预填绝对值，入这么多正好归 0（用户可改）
+      const onClick = openFn + "('" + e(d.prd_no) + "','" + e(w.wh) + "','" + e(w.wh_name) + "'," + Math.abs(w.qty||0) + ")";
+      html += `
+        <div class="stock-wh-card${transferCls}" style="background:rgba(220,38,38,.10);border:1px solid rgba(220,38,38,.45)" onclick="${onClick}">
+          <div class="stock-wh-icon" style="background:rgba(220,38,38,.12);color:var(--red)">⚠️</div>
+          <div class="stock-wh-info">
+            <div class="stock-wh-name">${fmt(w.wh_name)} <span style="font-size:11px;color:var(--sub)">(${fmt(w.wh)})</span></div>
+            <div class="stock-wh-qty">
+              库存 <b style="color:var(--red)">${fmtNum(w.qty)}</b> 件
+            </div>
+          </div>
+          <div class="stock-wh-arrow">›</div>
+        </div>`;
+    }
+  }
+
   if (hasZero.length) {
-    html += `<div class="stock-wh-head" style="color:var(--orange)">无库存（${hasZero.length}个仓库有历史记录）</div>`;
+    html += `<div class="stock-wh-head" style="color:var(--orange)">零库存（${hasZero.length}个仓库）</div>`;
     for (const w of hasZero) {
       const transferCls = curTab === 'transfer' ? ' transfer-wh-card' : '';
       const e = s => String(s||'').replace(/'/g, "\\'");
