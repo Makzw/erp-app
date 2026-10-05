@@ -2502,6 +2502,16 @@ async function pmcSubmit() {
     alert('\u8bf7\u5148\u52fe\u9009\u6307\u4ee4\u5355');
     return;
   }
+  // 生成前明示「该料已被别的在排计划占用」（只读；MAK 2026-10-05 拍 B）
+  // ⚠ 这里不动 #content：取消时树上的勾选/请购数量必须原样留着
+  var occ = await pmcOccEnsure();
+  if (occ.length) {
+    var _lines = pmcOccLines(occ);
+    var _msg = '⚠️ 有 ' + occ.length + ' 个品号已被别的在排 MPS 单占用：\n\n' +
+      _lines.slice(0, 8).join('\n') + (_lines.length > 8 ? '\n… 共 ' + _lines.length + ' 个' : '') +
+      '\n\n本次仍按当前库存扣，分次生成会让同一个料被两张单各扣一遍。\n继续生成 MPS？';
+    if (!confirm(_msg)) return;
+  }
   var el = $id('content');
   el.innerHTML = '<div class="state-msg"><div class="spinner"></div>\u751f成 MPS \u4e2d\u2026</div>';
   try {
@@ -2519,6 +2529,56 @@ async function pmcSubmit() {
   } catch(e) { el.innerHTML = '<div class="error-msg">' + e.message + '</div>'; }
 }
 
+// ── PMC「已被别的在排计划占用」提示（只读；MAK 2026-10-05 拍 B 方案）────────────
+// 为什么要有：库存/池的抵冲只在**一次生成调用内**共享 —— 分两次给两个成品生成 MPS，
+// 同一个料会被两张单各扣一遍，而这不进库存表、从库存上看不出来。
+// 所以生成前把这个数摊出来，让人自己决定（同料的成品一次勾选一起生成最稳）。
+function pmcSelSig() {
+  return (pmcSelected || []).map(function(x) {
+    return (x.so_no_itm || '') + '|' + (x.prd_no || '') + '|' + (x.qty || 0);
+  }).sort().join(',');
+}
+function pmcOccLines(occ) {
+  var out = [];
+  for (var i = 0; i < occ.length; i++) {
+    var o = occ[i];
+    var s = o.prd_no + '：未转派工单 ' + Number(o.open || 0).toLocaleString('zh-CN') + ' 件';
+    if ((o.issued || 0) > 0) s += ' ／已转派工单 ' + Number(o.issued).toLocaleString('zh-CN') + ' 件（可能已部分领料）';
+    out.push(s);
+  }
+  return out;
+}
+function pmcOccBannerHtml() {
+  var occ = window.__pmcOcc || [];
+  if (!occ.length) return '';
+  var openTot = 0, issTot = 0;
+  for (var i = 0; i < occ.length; i++) { openTot += (occ[i].open || 0); issTot += (occ[i].issued || 0); }
+  var lines = pmcOccLines(occ);
+  var h = '<div style="margin-bottom:12px;padding:10px 12px;border:1px solid #fcd34d;background:#fffbeb;border-radius:8px;font-size:12px;line-height:1.6">' +
+    '<div style="font-weight:700;color:#b45309">⚠️ 有 ' + occ.length + ' 个品号已被别的在排 MPS 单占用（未转派工单 <b>' +
+    Number(openTot).toLocaleString('zh-CN') + '</b> 件' +
+    (issTot > 0 ? '；已转派工单 ' + Number(issTot).toLocaleString('zh-CN') + ' 件，可能已部分领料' : '') + '）</div>' +
+    '<div style="color:#92400e;margin-top:4px">本次仍按<b>当前库存</b>扣 —— 分次生成会让同一个料被两张单各扣一遍（计划层面重复占用，不动库存）。建议同料的成品一次勾选一起生成。</div>' +
+    '<details style="margin-top:6px"><summary style="cursor:pointer;color:#1d4ed8">看是哪些品号（共 ' + occ.length + ' 个）</summary><div style="margin-top:4px">';
+  for (var j = 0; j < lines.length; j++) h += '<div>' + escHtml(lines[j]) + '</div>';
+  h += '</div></details></div>';
+  return h;
+}
+// 生成前用：本批选择没有缓存就拉一次 preview_batch（只读）拿占用
+async function pmcOccEnsure() {
+  var sig = pmcSelSig();
+  if (window.__pmcOccSig === sig) return window.__pmcOcc || [];
+  try {
+    var d = await api(BASE + '/pmc/preview_batch', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({items: pmcSelected})
+    });
+    window.__pmcOcc = (d && d.occupancy) || [];
+  } catch (e) { window.__pmcOcc = []; }
+  window.__pmcOccSig = sig;
+  return window.__pmcOcc || [];
+}
+
 // PMC 批量预览（BOM 树合并）
 async function pmcPreviewBatch() {
   if (!pmcSelected || !pmcSelected.length) { alert('\u8bf7\u5148\u52fe\u9009\u6307\u4ee4\u5355'); return; }
@@ -2533,6 +2593,8 @@ async function pmcPreviewBatch() {
       body: JSON.stringify({items: pmcSelected})
     });
     allRows = (data && data.items) || [];
+    window.__pmcOcc = (data && data.occupancy) || [];   // 同料占用提示（只读）
+    window.__pmcOccSig = pmcSelSig();
     // ⚠ 调整弹窗(pmcOpenAdjust)从 __pmcBomRows 里取该料的仓库明细 —— 批量预览以前没设这个
     //    变量，导致「调整」按钮全弹「该品号无原材料仓库存」（MAK 2026-09-30 报）
     window.__pmcBomRows = allRows;
@@ -2561,6 +2623,8 @@ async function pmcAnalyzeRow(soNoItm, prdNo, qty) {
     var items = data.items || [];
     // 保存 BOM 行供调整弹窗用
     window.__pmcBomRows = items;
+    window.__pmcOcc = [];   // 单张单的树不带批量占用提示（生成时会按本单选择现算）
+    window.__pmcOccSig = '';
     window.__pmcPending = {soNoItm: soNoItm, prdNo: prdNo, qty: qty};
     // 请购上下文：只有「单张单」的树才能生成请购单（合并树没有单一 SO 行，挂不上指令单号/客户）
     window.__pmcQdCtx = {so_no_itm: soNoItm, fg_no: prdNo, qty: qty};
@@ -2578,6 +2642,7 @@ function renderPMCTree(items, title) {
   var bomRows = items.filter(function(r) { return !r.is_fg; });
 
   var html = '<div style="padding:12px">';
+  html += pmcOccBannerHtml();   // 同料占用提示（只读；批量预览/生成前算出）
   html += '<div style="margin-bottom:12px"><button onclick="loadPMC()" style="background:#6b7280;color:#fff;border:none;border-radius:6px;padding:6px 14px;cursor:pointer;font-size:13px">\u2190 \u8fd4\u56de\u5217\u8868</button></div>';
   // 页头 = 全厂净需求合计（本树涉及的品号去重累加；成品行的 gross_plant 不计入——成品未出 ≠ 料净需求）
   var summaryTag = fgRow ? '<span id="gnTotalSpan">' + gnTotalTagHtml() + '</span>' : '';
