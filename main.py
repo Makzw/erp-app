@@ -4600,47 +4600,6 @@ async def pmc_preview_mps(
         conn.close()
 
 
-def _mps_open_occupancy(prd_nos, db_conn):
-    """这些品号**已经被别的在排 MPS 单占用多少**（只读，不写库）。
-
-    为什么要有它：库存/池的抵冲是**每次生成调用内**累积的，跨调用不共享 ——
-    分两次给两个成品生成 MPS，同一个料会被两张单各扣一遍（计划层面重复占用，
-    不进库存表，所以从库存上看不出来）。生成前把这个数摊给用户。
-
-    口径（MAK 2026-10-05 拍：先只做提示、不改算法）：
-      占用 = MPS 行 USABLE=1 且 CLS_ID=0（计划还没收口），按品号分两档
-        · 未转派工单（MO_NO 空）：料一定还没被领走 —— 确定的占用
-        · 已转派工单：可能已部分领料（材料仓已跟着降），只作参考，别双算
-    """
-    prd_nos = [p for p in dict.fromkeys(prd_nos) if p]
-    if not prd_nos:
-        return {}
-    cur = db_conn.cursor()
-    ph = ','.join(['%s'] * len(prd_nos))
-    cur.execute(f"""
-        SELECT CONVERT(varbinary(60), PRD_NO) PN, ISNULL(RTRIM(MO_NO),'') MO_NO,
-               ISNULL(QTY,0) QTY, ISNULL(RTRIM(MPS_NO),'') MPS_NO
-        FROM MPS WITH(NOLOCK)
-        WHERE PRD_NO IN ({ph}) AND ISNULL(USABLE,1)=1 AND ISNULL(CLS_ID,0)=0
-    """, tuple(p.encode("gbk") for p in prd_nos))
-    out = {}
-    for r in cur.fetchall():
-        prd = g(r[0])
-        d = out.setdefault(prd, {"open": 0.0, "open_no": 0, "issued": 0.0, "issued_no": 0,
-                                 "mps": set()})
-        q = float(r[2] or 0)
-        if r[1]:
-            d["issued"] += q; d["issued_no"] += 1
-        else:
-            d["open"] += q; d["open_no"] += 1
-        if r[3]:
-            d["mps"].add(r[3])
-    for d in out.values():
-        d["mps_no"] = len(d["mps"]); del d["mps"]
-        d["open"] = round(d["open"], 4); d["issued"] = round(d["issued"], 4)
-    return out
-
-
 @app.post("/api/pmc/preview_batch")
 async def pmc_preview_batch(payload: dict = Body(...), db: str = Query(default="c041")):
     """批量预览：几个成品合在一起跑需求（不写库）。
@@ -4660,14 +4619,9 @@ async def pmc_preview_batch(payload: dict = Body(...), db: str = Query(default="
             d = _pmc_preview_one(conn, so_no_itm, prd_no, float(it.get("qty") or 0), alloc)
             all_rows.extend(d["items"])
             groups.append({"so_no_itm": so_no_itm, "prd_no": prd_no, "count": len(d["items"])})
-        # 已被别的在排 MPS 单占用的料（只读提示，MAK 2026-10-05 拍 B 方案）：
-        # 抵冲只在单次调用内共享，分次生成会让同一个料被两张单各扣一遍 —— 把这个数摊出来
-        occ_map = _mps_open_occupancy([r.get("prd_no") for r in all_rows], conn)
     finally:
         conn.close()
-    occupancy = [dict(prd_no=k, **v) for k, v in occ_map.items()]
-    occupancy.sort(key=lambda d: (d["open"] + d["issued"]), reverse=True)
-    return {"items": all_rows, "groups": groups, "batch": True, "occupancy": occupancy}
+    return {"items": all_rows, "groups": groups, "batch": True}
 
 
 def _prd_meta(prd_nos, db_conn):
