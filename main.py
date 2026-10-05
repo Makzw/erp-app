@@ -2269,10 +2269,11 @@ async def completion_batch(
         code = tool.get("code", ""); qty = int(tool.get("qty") or 1)
         if not code:
             continue
-        # ①b 工具行（KND=30，WH1=生产仓(减少)，WH2=地面仓(增加)）
+        # ①b 工具行（KND=30，只写 WH1=地面仓）—— 这张单是完工入库单，工具行不能带出库方向
+        # （WH2/WH2NAME 留空；MAK 2026-10-05：一张单不能同时出入库）
         T_IN_COLS = ['IC_NO','IC_DD','IC_KND','PRD_NO','QTY','WH1','WH2','WH1NAME','WH2NAME',
                       'USR','USABLE','ITM','REM']
-        T_IN_VALS = [ic_in, now_str, 30, code, qty, 'G', fg_wh, '地面(临时堆放)', fg_wh_name,
+        T_IN_VALS = [ic_in, now_str, 30, code, qty, 'G', '', '地面(临时堆放)', '',
                        'phone', 1, prod_itm + 1, f"完工入库；运输工具:{code}"]
         prod_itm += 1
         sql = f"INSERT INTO IC ({','.join(T_IN_COLS)}) VALUES ({','.join(['%s']*len(T_IN_COLS))})"

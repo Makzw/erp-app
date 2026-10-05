@@ -63,7 +63,7 @@ def cleanup():
     if RETURNED_NO:
         cur.execute("DELETE FROM IC WHERE IC_NO = %s", (RETURNED_NO,))
         n += cur.rowcount
-    for no in (CONFIRM_IN, CONFIRM_OUT):
+    for no in (CONFIRM_IN, CONFIRM_OUT, BATCH_IN):
         if no:
             cur.execute("DELETE FROM IC WHERE IC_NO = %s", (no,))
             n += cur.rowcount
@@ -75,6 +75,7 @@ def cleanup():
 
 RETURNED_NO = None
 CONFIRM_IN = CONFIRM_OUT = None
+BATCH_IN = None
 print("── 准备：从 T041 现成料/仓里取样 + 造测试调拨单与完工扣料行 ──")
 cur.execute("SELECT TOP 2 PRD_NO, NAME, ISNULL(UT,'PCE') FROM PRDT WITH(NOLOCK) WHERE LEN(PRD_NO)>4 ORDER BY PRD_NO")
 prds = cur.fetchall()
@@ -186,6 +187,26 @@ try:
         chk(all(int(r[2]) == 23 for r in out_rows), "出库单全是 KND=23")
         chk(all(g(r[0]) == "" for r in out_rows), f"WH1 留空（实际 {[g(r[0]) for r in out_rows]}）")
         chk(all(g(r[1]) == wh_from for r in out_rows), f"WH2 = 来源仓 {wh_from}")
+
+    print("⑩ 批量完工的工具行不带 WH2（一张单不能同时出入库）")
+    cur.execute("SELECT TOP 1 PRD_NO FROM PRDT WITH(NOLOCK) WHERE PRD_NO LIKE '03000%' ORDER BY PRD_NO")
+    tr = cur.fetchone()
+    tool_code = g(tr[0]) if tr else p1
+    bt = call("POST", "/batch?db=t041", {
+        "items": [{"fg_no": p2, "qty": 1, "fg_wh": wh_dst, "materials": []}],
+        "tool_rows": [{"code": tool_code, "qty": 1}]})
+    if bt.get("ic_in"):
+        BATCH_IN = bt["ic_in"]
+        cur.execute("""SELECT IC_KND, ISNULL(WH1,''), ISNULL(WH2,''), ISNULL(WH1NAME,''), ISNULL(WH2NAME,''), PRD_NO
+                       FROM IC WITH(NOLOCK) WHERE IC_NO=%s AND IC_KND=30""", (BATCH_IN,))
+        trows = cur.fetchall()
+        chk(bool(trows), f"写出工具行（单 {BATCH_IN}，工具 {tool_code}）")
+        chk(all(int(r[0]) == 30 for r in trows), "工具行 KND=30")
+        chk(all(g(r[1]) == "G" for r in trows), f"工具行 WH1=G（实际 {[g(r[1]) for r in trows]}）")
+        chk(all(g(r[2]) == "" for r in trows), f"工具行 WH2 留空（实际 {[g(r[2]) for r in trows]}）")
+        chk(all(g(r[4]) == "" for r in trows), "工具行 WH2NAME 也留空")
+    else:
+        chk(False, f"批量完工被拒：{bt.get('error') or bt}")
 
     print("⑦ C041 一行没动")
     ccur.execute("SELECT COUNT(*) FROM IC WITH(NOLOCK)")
