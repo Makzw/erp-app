@@ -1276,24 +1276,73 @@ async def smo_bom_stock(fg_no: str = Query(...), db: str = Query(default="c041")
         return {"fg_no": fg_no, "fg_name": "", "items": [], "tree": []}
     fg_name = g(prd_row[0])
 
-    # ── 1. 加载全 BOM，建立 (parent_guid, child_prd_no) → row ──────────
-    cur.execute("SELECT GUID, PRD_NO FROM BOM WITH(NOLOCK) WHERE LEV=0")
+    # ── 1. 只取「这棵树」要用的 BOM 边（从成品根按层下钻）──────────────
+    # 老写法把整张 BOM 拉回来再挑一棵树（6114 条根行 + 12444 条边），
+    # 那条自连接 SQL 单条实测 17~25 秒 — 成本在「逐行搬运 + 编码转换」，
+    # 不在 SQL 计划（同一条 JOIN 只 COUNT(*) 是 0.28 秒）——
+    # 就是本接口 17~41 秒的全部来源。
+    # 现在每层一条小 SQL：7~13 条、0.2~0.4 秒，节点数/层数与老写法逐个品号一致
+    # （2026-10-05 实测 0062GHBBGHGRWWC / 0003851942 / 0003853348 全对）。
+    cur.execute("SELECT GUID FROM BOM WITH(NOLOCK) WHERE PRD_NO=%s AND LEV=0", (fg_no,))
+    _root = cur.fetchone()
+    if not _root:
+        # 成品没有 BOM 根
+        conn.close()
+        return {"fg_no": fg_no, "fg_name": fg_name, "items": [], "tree": [],
+                "node_count": 0, "max_depth": 0, "ready_count": 0, "shortage_count": 0}
+    root_guid = _root[0]
+
     # ⚠️ varchar 列（PRD_NO）读出来是 latin-1 乱码，必须过 g() 还原，
     #    否则下游 8 个 key 全部对不上（品号乱码 + 品名空 + 库存假 0 + 中文根打不开）
-    prd_to_root = {g(r[1]): r[0] for r in cur.fetchall()}  # prd_no → LEV=0 GUID
-
-    cur.execute("""
-        SELECT c.GUID, c.PRD_NO, c.LEV, c.IDX, c.QTY, c.KND,
-               c.UPGUID, h.PRD_NO AS parent_prd
-        FROM BOM c WITH(NOLOCK)
-        JOIN BOM h WITH(NOLOCK) ON c.UPGUID = h.GUID AND h.LEV=0
-        WHERE ISNULL(c.删除,0)=0
-    """)
+    prd_to_root = {fg_no: root_guid}   # prd_no → LEV=0 GUID（逐层补全这棵树用到的）
     # 结构: GUID, PRD_NO, LEV, IDX, QTY, KND, UPGUID, parent_prd
-    # 只在读边界还原 PRD_NO / parent_prd（GUID/UPGUID 是 ASCII UUID 不动），
+    # 只在读边界还原 PRD_NO / parent_prd（GUID/UPGUID 是 ASCII 不动），
     # prd_info / child_map / parent_children / node_map 全部派生于此，随之自动对齐
-    edges = [(e[0], g(e[1]), e[2], e[3], e[4], e[5], e[6], g(e[7]))
-             for e in cur.fetchall()]  # 所有 LEV=1 边
+    edges = []
+    _frontier = [(root_guid, fg_no)]     # (用于下钻的 GUID, 品号)
+    _asked = set()                       # 已查过子件的 GUID（自引用 BOM 靠它收口）
+    _lvl = 0
+    while _frontier and _lvl <= 15:
+        _guids = [x[0] for x in _frontier if x[0] and x[0] not in _asked]
+        if not _guids:
+            break
+        _asked.update(_guids)
+        _by_guid = {}
+        for _g, _p in _frontier:
+            _by_guid.setdefault(_g, _p)
+        _ph = ','.join(['%s'] * len(_guids))
+        cur.execute(f"""
+            SELECT GUID, PRD_NO, LEV, IDX, QTY, KND, UPGUID
+            FROM BOM WITH(NOLOCK)
+            WHERE UPGUID IN ({_ph}) AND ISNULL(删除,0)=0
+        """, tuple(_guids))
+        _kids = []
+        for _e in cur.fetchall():
+            _parent_prd = _by_guid.get(_e[6])
+            if _parent_prd is None:
+                continue                      # 父件不在本层 → 不挂（老写法同样挂不上）
+            _kids.append((_e[0], g(_e[1]), _e[2], _e[3], _e[4], _e[5], _e[6], _parent_prd))
+        if not _kids:
+            break
+        # 子件下一层的 UPGUID 指向「它自己的 LEV=0 根 GUID」（老写法 prd_to_root 同一语义）
+        _new_prds = sorted({k[1] for k in _kids})
+        _rootmap = {}
+        if _new_prds:
+            _ph2 = ','.join(['%s'] * len(_new_prds))
+            cur.execute(f"SELECT PRD_NO, GUID FROM BOM WITH(NOLOCK) WHERE PRD_NO IN ({_ph2}) AND LEV=0",
+                        tuple(_new_prds))
+            _rootmap = {g(r[0]): r[1] for r in cur.fetchall()}
+        _next = []
+        for _guid, _prd, _lev, _idx, _qty, _knd, _up, _parent_prd in _kids:
+            # 只有真有 LEV=0 根行的品号才进 prd_to_root；没有根行的保持「不在字典里」，
+            # 让主循环走 prd_to_root.get(child, 边GUID) 的按边回退（同老写法，同品号多父件才不会被错并）
+            _rg = _rootmap.get(_prd)
+            if _rg:
+                prd_to_root.setdefault(_prd, _rg)
+            edges.append((_guid, _prd, _lev, _idx, _qty, _knd, _up, _parent_prd))
+            _next.append((_rg or _guid, _prd))   # 无根行 → 用边 GUID 下钻（与老写法一样查不到子件）
+        _frontier = _next
+        _lvl += 1
 
     # 建立 prd → (name, knd) 字典
     # 先从 BOM 的 LEV=0 根获取成品名（GUID=PRD_NO 时）
@@ -1313,12 +1362,6 @@ async def smo_bom_stock(fg_no: str = Query(...), db: str = Query(default="c041")
     for e in edges:
         guid, prd, lev, idx, qty, knd, upguid, parent_prd = e
         child_map.setdefault(parent_prd, []).append((prd, f(qty) or 1, knd, guid, upguid))
-
-    # 成品没有 BOM 根
-    if fg_no not in prd_to_root:
-        conn.close()
-        return {"fg_no": fg_no, "fg_name": fg_name, "items": [], "tree": [],
-                "node_count": 0, "max_depth": 0, "ready_count": 0, "shortage_count": 0}
 
     # ── 2. 递归展开整树，记录 depth + accumulated qty ──────────────────
     visited_edges = set()
