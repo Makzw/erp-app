@@ -1379,7 +1379,7 @@ function renderCompletionList() {
       <td style="padding:8px 10px;text-align:center">
         ${t.returned
           ? `<span style="font-size:11px;color:var(--green);font-weight:600">已退料</span>`
-          : `<button onclick="event.stopPropagation();openReturnModal('${escJs(t.ic_no)}')" style="padding:3px 10px;border:1px solid #bfdbfe;border-radius:12px;background:#fff;font-size:11px;cursor:pointer;color:#1e40af">退料</button>`}
+          : `${t.ret_qty > 0 ? `<div style="font-size:10px;color:var(--orange);font-weight:600;margin-bottom:3px">部分退 ${t.ret_qty}</div>` : ''}<button onclick="event.stopPropagation();openReturnModal('${escJs(t.ic_no)}')" style="padding:3px 10px;border:1px solid #bfdbfe;border-radius:12px;background:#fff;font-size:11px;cursor:pointer;color:#1e40af">退料</button>`}
       </td>
     </tr>`;
   }).join('');
@@ -1697,7 +1697,7 @@ async function openReturnModal(icNo) {
     pv = await api(BASE + '/completion/return_preview?' + new URLSearchParams({ ic_no: icNo }));
   } catch (e) { toast('❌ 查询失败: ' + e.message); return; }
   if (!pv || !(pv.items || []).length) { toast('⚠️ 该单据没有完工扣料记录，无需退料'); return; }
-  if (pv.returned) { toast('⚠️ 该单据已退过料，不能重复退'); return; }
+  if (pv.returned) { toast('⚠️ 该单据已全部退料，没有可退的行'); return; }
 
   // 仓库候选：复用批量完工那个懒加载源（/warehouses/all）
   if (!window.__allWarehouses || !window.__allWarehouses.length) {
@@ -1709,12 +1709,20 @@ async function openReturnModal(icNo) {
   const whOpts = (window.__allWarehouses || []).map(w =>
     '<option value="' + escAttr(w.code) + '">' + escAttr(w.code) + ' ' + escHtml(w.name || '') + '</option>').join('');
 
-  const rowsHtml = pv.items.map((r, i) => `
+  const openRows = pv.items.filter(r => (r.remaining || 0) > 0);   // 只列还能退的行
+  const rowsHtml = openRows.map((r, i) => `
     <tr style="${i % 2 ? 'background:var(--bg)' : ''}">
+      <td style="padding:6px 8px;text-align:center">
+        <input type="checkbox" class="retPick" data-prd="${escAttr(r.prd_no)}" checked style="width:16px;height:16px;cursor:pointer">
+      </td>
       <td style="padding:6px 8px;color:var(--sub)">${i + 1}</td>
       <td style="padding:6px 8px;font-weight:600">${fmt(r.prd_no)}</td>
-      <td style="padding:6px 8px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escAttr(r.prd_name || '')}">${fmt(r.prd_name || '')}</td>
-      <td style="padding:6px 8px;text-align:right;font-weight:600;color:var(--orange)">${r.qty}</td>
+      <td style="padding:6px 8px;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escAttr(r.prd_name || '')}">${fmt(r.prd_name || '')}</td>
+      <td style="padding:6px 8px;text-align:right;font-weight:600;color:var(--orange)">${r.remaining}${r.returned_qty > 0 ? `<span style="color:var(--sub);font-weight:400;font-size:10px"> / 已退 ${r.returned_qty}</span>` : ''}</td>
+      <td style="padding:4px 8px;text-align:center">
+        <input type="number" class="retQty" data-prd="${escAttr(r.prd_no)}" value="${r.remaining}" min="0" max="${r.remaining}" step="any"
+          style="width:80px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit;background:var(--card)">
+      </td>
       <td style="padding:6px 8px;text-align:center">${fmt(r.wh2 || '')} ${fmt(r.wh2_name || '')}</td>
     </tr>`).join('');
 
@@ -1732,16 +1740,21 @@ async function openReturnModal(icNo) {
         <div>客户 ${fmt(pv.cus || '—')} · 指令单 ${fmt(pv.ref || '—')} · 外发计划 ${fmt(pv.ddjh || '—')}</div>
         <div>原发出仓 <b>${fmt(pv.from_wh || '')}</b> ${fmt(pv.from_wh_name || '')} <span style="color:var(--sub)">（默认退回到这个仓，可改）</span></div>
       </div>
-      <div style="margin:12px 0 4px;font-size:12px;font-weight:600">
-        将退回的料（全量 ${pv.items.length} 行 / 合计 <span style="color:var(--orange)">${pv.total_qty}</span>）
+      <div style="margin:12px 0 4px;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:space-between">
+        <span>可退的料（${openRows.length} 行 / 可退合计 <span style="color:var(--orange)">${pv.remaining_total}</span>${pv.remaining_total !== pv.total_qty ? `<span style="color:var(--sub);font-weight:400"> · 扣料合计 ${pv.total_qty}</span>` : ''}）</span>
+        <label style="font-size:11px;font-weight:400;color:var(--sub);cursor:pointer">
+          <input type="checkbox" id="retAll" checked onclick="document.querySelectorAll('#returnModal .retPick').forEach(function(x){x.checked=document.getElementById('retAll').checked})" style="width:14px;height:14px;vertical-align:-2px;cursor:pointer"> 全选
+        </label>
       </div>
       <div style="overflow-x:auto">
         <table style="width:100%;border-collapse:collapse;font-size:11px">
           <thead><tr style="background:var(--bg)">
+            <th style="padding:6px 8px;text-align:center;color:var(--sub)">退</th>
             <th style="padding:6px 8px;text-align:left;color:var(--sub)">#</th>
             <th style="padding:6px 8px;text-align:left;color:var(--sub)">品号</th>
             <th style="padding:6px 8px;text-align:left;color:var(--sub)">品名</th>
-            <th style="padding:6px 8px;text-align:right;color:var(--sub)">退料数量</th>
+            <th style="padding:6px 8px;text-align:right;color:var(--sub)">可退量</th>
+            <th style="padding:6px 8px;text-align:center;color:var(--sub)">本次退</th>
             <th style="padding:6px 8px;text-align:center;color:var(--sub)">料所在仓</th>
           </tr></thead>
           <tbody>${rowsHtml}</tbody>
@@ -1753,12 +1766,9 @@ async function openReturnModal(icNo) {
             style="display:block;width:100%;margin-top:4px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card)">
           <datalist id="retWhOpts">${whOpts}</datalist>
         </label>
-        <label style="font-size:12px;color:var(--sub)">退料数量（仅作参考，提交后按该单据全退量写入）
-          <input type="number" id="retQty" value="${pv.total_qty}"
-            style="display:block;width:100%;margin-top:4px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card)">
-        </label>
         <div style="font-size:11px;color:var(--sub);line-height:1.6">
-          提交后写一张 KND=13 其他入库单，数量 = 该调拨单已完工扣掉的量；该单据退过之后不能再退。
+          <b>一行一行退</b>：只退勾中（数量 &gt; 0）的行，每行上限 = 可退量（完工扣料量 − 已退量）。
+          提交后写一张 KND=13 其他入库单；没全退完之前，还能继续退剩下的行。
         </div>
       </div>
       <div style="display:flex;gap:8px;margin-top:14px">
@@ -1772,12 +1782,24 @@ async function openReturnModal(icNo) {
 async function submitReturnMaterial(icNo) {
   const wh = (($id('retWh') || {}).value || '').trim();
   if (!wh) { toast('⚠️ 请填退回仓库'); return; }
+  // 一行一行退：只收勾中且数量 > 0 的行
+  const ov = $id('returnModal');
+  const items = [];
+  if (ov) ov.querySelectorAll('.retPick').forEach(function (cb) {
+    if (!cb.checked) return;
+    const prd = cb.getAttribute('data-prd');
+    const qi = ov.querySelector('.retQty[data-prd="' + (window.CSS && CSS.escape ? CSS.escape(prd) : prd) + '"]');
+    const q = qi ? parseFloat(qi.value) : NaN;
+    if (!(q > 0)) return;
+    items.push({ prd_no: prd, qty: q });
+  });
+  if (!items.length) { toast('⚠️ 请至少勾选一行，并填大于 0 的数量'); return; }
   const btn = $id('retSubmit');
   if (btn) { btn.disabled = true; btn.textContent = '提交中…'; }
   try {
     const res = await api(BASE + '/completion/return_material', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ic_no: icNo, wh: wh }),
+      body: JSON.stringify({ ic_no: icNo, wh: wh, items: items }),
     });
     if (res && res.error) { toast('❌ ' + res.error); if (btn) { btn.disabled = false; btn.textContent = '确认退料'; } return; }
     const ov = $id('returnModal'); if (ov) ov.remove();
