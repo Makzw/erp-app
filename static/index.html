@@ -3608,6 +3608,20 @@ function openBatchTransferModal() {
             </div>
           </div>
         </div>
+        <!-- 顶头「客户代号 / 指令单号」= 批量完工「入库仓」那套：填了就全覆盖下面每一行，行内仍可单独改 -->
+        <label style="font-size:12px;color:var(--sub)">
+          客户代号
+          <input type="text" id="bt_cus_all" list="bt_cus_opts" placeholder="填了覆盖下面所有行"
+            oninput="btApplyAll('batch-cus', this)"
+            style="display:block;width:100%;padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card)">
+          <datalist id="bt_cus_opts"></datalist>
+        </label>
+        <label style="font-size:12px;color:var(--sub)">
+          指令单号
+          <input type="text" id="bt_ref_all" placeholder="填了覆盖下面所有行"
+            oninput="btApplyAll('batch-ref', this)"
+            style="display:block;width:100%;padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card)">
+        </label>
       </div>
       <div id="batchScroll" style="flex:1;overflow-y:auto;padding:0;max-height:65vh">
         <div id="batchTableBody"></div>
@@ -3621,6 +3635,12 @@ function openBatchTransferModal() {
   document.body.appendChild(overlay);
   _setupOverlayClose();
   renderBatchTable(allItems, allWhs, whOpts);
+  // 顶头「客户代号」候选 = 各行已有的客户（去重），有就点着选，没有就直接打
+  const _cusOpts = $id('bt_cus_opts');
+  if (_cusOpts) {
+    const _set = [...new Set(allItems.map(x => (x.cus_no || x.CUS_NO || x.客户代号 || '')).filter(Boolean))];
+    _cusOpts.innerHTML = _set.map(c => `<option value="${escAttr(c)}"></option>`).join('');
+  }
   // 同上：显式聚焦。这里聚焦 TO 仓（★必填、且是自然填写第一步）；
   // 表格首格 FROM 仓目前仍是 select，聚焦后滚轮/字母会直接改仓库值 → 留到组3 换成 datalist 再聚焦
   const _ft = $id('bt_to_wh'); if (_ft) _ft.focus();
@@ -3748,6 +3768,13 @@ function calcBatchJZ(el) {
   const q = parseFloat(qtyEl.value) || 0;
   const d = parseFloat(dzEl.value) || 0;
   jzEl.textContent = (q > 0 && d > 0) ? (q * d / 1000).toFixed(3) + ' kg' : '—';
+}
+
+// 批量调拨：顶头「客户代号 / 指令单号」填一次 → 覆盖下面每一行（行内还能单独改）。
+// cls = 'batch-cus' | 'batch-ref'；和批量完工的 cmApplyWh（顶头入库仓）同一套行为。
+function btApplyAll(cls, el) {
+  const v = (el && el.value || '').trim();
+  document.querySelectorAll('#bomBatchOverlay .' + cls).forEach(inp => { inp.value = v; });
 }
 
 async function bomBatchConfirm() {
