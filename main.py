@@ -1097,8 +1097,11 @@ async def completion_transfer_list(
             ISNULL(t.净重, 0) AS jzhw,
             -- 退料量 / 扣料量：按行退料后，只有「退料量 ≥ 扣料量 且 扣料量 > 0」才算退完（MAK 2026-10-06）
             ISNULL((SELECT SUM(r.QTY) FROM IC r WITH(NOLOCK)
-                    WHERE r.IC_KND = 13 AND ISNULL(r.删除, 0) = 0
-                      AND ISNULL(r.FLD1, '') = t.IC_NO AND r.REM LIKE N'生产退料%'), 0) AS ret_qty,
+                    -- 退料单据类型：13=旧写法(单边入，已废) / 50=生产退料单 / 51=外发加工退料单
+                    WHERE r.IC_KND IN (13, 50, 51) AND ISNULL(r.删除, 0) = 0
+                      AND ISNULL(r.FLD1, '') = t.IC_NO AND r.REM LIKE N'生产退料%'
+                      -- ⚠ 同样必须按品号：一张单调拨含多个品号时，不按品号会把整单退料算到每个品号头上
+                      AND r.PRD_NO = t.PRD_NO), 0) AS ret_qty,
             ISNULL((SELECT SUM(c.QTY) FROM IC c WITH(NOLOCK)
                     WHERE c.IC_KND = 23 AND ISNULL(c.删除, 0) = 0
                       AND ISNULL(c.FLD1, '') = t.IC_NO AND c.REM LIKE N'完工出库%'), 0) AS cut_qty
@@ -1125,7 +1128,9 @@ async def completion_transfer_list(
         total = float(r[6] or 0)      # 索引整体后移 1（SELECT 里 IC_NO 后插了 ic_dd）
         done = float(r[7] or 0)
         remaining = total - done
-        if remaining > 0:
+        ret = float(r[13] or 0)       # 退料量（按品号）
+        # 剩余料已全部退料（退料 ≥ 剩余）→ 该批没有可完工的料了，不再进完工列表（MAK 2026-10-08）
+        if remaining > 0 and remaining - ret > 1e-6:
             items.append({
                 "ic_no":         g(r[0]),
                 "ic_dd":         g(r[1]) or '',
@@ -1189,7 +1194,9 @@ async def completion_return_preview(
         # 已退量（按品号）—— 退料是一行一行退的，所以可退量也要按行算（MAK 2026-10-06）
         cur.execute("""
             SELECT PRD_NO, SUM(QTY) FROM IC WITH(NOLOCK)
-            WHERE IC_KND = 13 AND ISNULL(删除, 0) = 0
+            -- 13 = 旧写法（其他入库，单边：只加退回仓、不减车间仓 → 账上重复，2026-10-08 修）
+            -- 50 = 生产退料单 / 51 = 外发加工退料单（调拨类，WH1=退回仓 WH2=料当前所在仓）
+            WHERE IC_KND IN (13, 50, 51) AND ISNULL(删除, 0) = 0
               AND ISNULL(FLD1, '') = %s AND REM LIKE N'生产退料%'
             GROUP BY PRD_NO
         """, (ic_no,))
@@ -1236,7 +1243,10 @@ async def completion_return_material(
     dry: str = Query(default=""),
 ):
     """
-    退料写入：一张 KND=13 其他入库单，**按行退**（MAK 2026-10-06：「一行一行的退，而不是一退就一张单」）。
+    退料写入：一张 KND=50/51 **调拨类**退料单（生产退料单 / 外发加工退料单），**按行退**（MAK 2026-10-06：「一行一行的退，而不是一退就一张单」）。
+    料从车间/外协仓（扣料行的 WH2）调回退回仓 wh —— 两个仓同步变动。
+    ⚠ 旧写法是 KND=13「其他入库」，天生单边：只给退回仓加账、来源仓不减 → 同一批料在两个仓各算一次
+    （MAK 2026-10-08 发现；库存视图 VW_IO_DETAIL 只看 WH1/WH2、不看 KND，所以关键是补 WH2）。
     payload: {ic_no, wh, items:[{prd_no, qty}]}
       wh    = 退回的仓；
       items = 要退的行（勾中的）。不传 = 该单**还能退的行全退**（兼容旧调用）。
@@ -1280,7 +1290,9 @@ async def completion_return_material(
         # 已退量（按品号）：可退量 = 扣料 − 已退 —— 一行一行退，判定也按行
         cur.execute("""
             SELECT PRD_NO, SUM(QTY) FROM IC WITH(NOLOCK)
-            WHERE IC_KND = 13 AND ISNULL(删除, 0) = 0
+            -- 13 = 旧写法（其他入库，单边：只加退回仓、不减车间仓 → 账上重复，2026-10-08 修）
+            -- 50 = 生产退料单 / 51 = 外发加工退料单（调拨类，WH1=退回仓 WH2=料当前所在仓）
+            WHERE IC_KND IN (13, 50, 51) AND ISNULL(删除, 0) = 0
               AND ISNULL(FLD1, '') = %s AND REM LIKE N'生产退料%'
             GROUP BY PRD_NO
         """, (ic_no,))
@@ -1310,8 +1322,30 @@ async def completion_return_material(
             if not picks:
                 return {"error": "该单据已全部退料，没有可退的行"}
         total_qty = round(sum(q for _, q in picks), 3)
+
+        # ── 退料单据类型 + 来源仓（2026-10-08 修）──────────────────────────────
+        # 退料 = 把料从「料当前所在仓」（扣料行的 WH2 = 车间仓/外协厂）调回「退回仓」(材料仓)。
+        # 原来是 KND=13 其他入库 —— 单边入：只给退回仓加账、来源仓不减，同一批料两个仓各算一次
+        # （MAK 2026-10-08 发现；实测 D2-23 加了 631 而 20378 那 631 还挂着）。
+        # 库存视图 VW_IO_DETAIL 只看 WH1(入)/WH2(出)、**不看 KND** → 关键是补上 WH2；
+        # KND 换调拨类的退料码让单据地道（ICKND 字典：50 生产退料单 / 51 外发加工退料单）：
+        #   来源仓 ATTRIB=6（外协厂）→ 51；其余（车间仓 5 等）→ 50
+        src_whs = sorted({g(row_by_prd[p][4]) for p, _ in picks if g(row_by_prd[p][4])})
+        knd = 50
+        if src_whs:
+            attrs = []
+            for s in src_whs:
+                cur.execute("SELECT ISNULL(ATTRIB, '') FROM MY_WH WITH(NOLOCK) WHERE WH=%s", (s,))
+                a = cur.fetchone()
+                attrs.append(g(a[0]) if a else "")
+            if all(a == "6" for a in attrs):
+                knd = 51
+
         if str(dry).lower() in ("1", "true", "yes"):
-            return {"dry": True, "ok": True, "ic_no": ic_no, "rows": len(picks), "total_qty": total_qty}
+            return {"dry": True, "ok": True, "ic_no": ic_no, "rows": len(picks),
+                    "total_qty": total_qty, "knd": knd, "wh": wh, "src_wh": src_whs,
+                    "rows_detail": [{"prd_no": p, "qty": q, "wh1": wh, "wh2": g(row_by_prd[p][4])}
+                                    for p, q in picks]}
 
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         today = datetime.now().strftime("%y%m")
@@ -1329,17 +1363,19 @@ async def completion_return_material(
         for p, q in picks:
             itm += 1
             r = row_by_prd[p]
+            src_wh, src_wh_name = g(r[4]), g(r[5])      # 料当前所在仓（扣料行 WH2）
             cur.execute("""
                 INSERT INTO IC (IC_NO,IC_DD,IC_KND,PRD_NO,PRD_NAME,QTY,UT,WH1,WH1NAME,WH2,WH2NAME,
                                 USR,USABLE,ITM,REM,FLD1,指令单号,DDJH,客户,单重,净重)
-                VALUES (%s,%s,13,%s,%s,%s,%s,%s,%s,'','',
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
                         %s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-            """, (ic_in, now_str, p, g(r[1]), q, g(r[2]),
-                  wh, wh_name,
+            """, (ic_in, now_str, knd, p, g(r[1]), q, g(r[2]),
+                  wh, wh_name, src_wh, src_wh_name,
                   "phone", 1, itm, f"生产退料({ic_no})", ic_no,
                   g(h[1]), g(h[2]), g(h[0]), float(h[3] or 0), float(h[4] or 0)))
         conn.commit()
-        return {"ok": True, "ic_no": ic_in, "items": itm, "total_qty": total_qty}
+        return {"ok": True, "ic_no": ic_in, "items": itm, "total_qty": total_qty,
+                "knd": knd, "wh": wh, "src_wh": src_whs}
     finally:
         conn.close()
 
@@ -1442,6 +1478,28 @@ async def completion_fg_detail(fg_no: str = Query(...), db: str = Query(default=
         mat_name = g(r[1]) if r[1] else ''
         ratio = float(r[2] or 1)
         transfers = transfer_by_prd.get(prd, [])
+        # ── 方案 A（MAK 2026-10-08 拍）：没有调拨单的料 → 看它**实际有货的仓** ──
+        # KND=3 自制半成品、外购件常常直接有库存却没走过调拨单，旧逻辑只认 KND=30 → 永远「有 0」完不了工。
+        # 实测这些料多在普通仓（B4-26 / C3-17 / 地面 G，ATTRIB=1），不只是生产仓，所以**不限仓**、
+        # 只要求「有货」；排序让生产仓（ATTRIB 5 车间 / 6 外协）优先，其次按库存量。
+        # 造出来的来源 transfer_ic_no 留空（不挂调拨单），wh1 = 选中的仓 → 出库行 WH2 就填它。
+        if not transfers:
+            cur.execute("""
+                SELECT d.WH, ISNULL(w.NAME, ''), SUM(d.QTY_WH)
+                FROM VW_STOCK_DETAIL2 d WITH(NOLOCK)
+                LEFT JOIN MY_WH w WITH(NOLOCK) ON w.WH = d.WH
+                WHERE d.PRD_NO = %s
+                GROUP BY d.WH, w.NAME, ISNULL(w.ATTRIB, '')
+                HAVING SUM(d.QTY_WH) > 0
+                ORDER BY CASE WHEN ISNULL(w.ATTRIB, '') IN ('5', '6') THEN 0 ELSE 1 END,
+                         SUM(d.QTY_WH) DESC
+            """, (prd,))
+            for _sr in cur.fetchall():
+                transfers.append({
+                    "ic_no": "", "wh1": g(_sr[0]), "wh1_name": g(_sr[1]),
+                    "available": float(_sr[2] or 0), "ddjh": "", "customer": "",
+                    "source": "prod",
+                })
         total_avail = sum(t["available"] for t in transfers)
         fulfilled = total_avail >= ratio
         if not fulfilled:
@@ -2015,14 +2073,20 @@ async def completion_transfer_by_fg(fg_no: str = Query(...), db: str = Query(def
 
 def _comp_stock_err(cur, rows, tool_rows=None):
     """完工扣料的库存校验（必须在写库同一事务内调用，INSERT 之前）。
-    rows = [(prd_no, need, transfer_ic_no)]
-    规则：① 调拨单必须存在（KND=30/USABLE=1/未删除）；② 该单**该品号**的剩余 ≥ 本次扣料量。
-         （剩余 = 该单调拨量 − 挂该单该品号已扣的 KND=23）
+    rows = [(prd_no, need, transfer_ic_no, transfer_wh1)]
+    规则：
+      ① 有调拨单（transfer_ic_no 非空）：调拨单必须存在（KND=30/USABLE=1/未删除），
+         且该单**该品号**的剩余 ≥ 本次扣料量（剩余 = 该单调拨量 − 挂该单该品号已扣的 KND=23）。
+      ② 没调拨单（方案 A，MAK 2026-10-08）：按该料**实际有货的仓**校验 ——
+         transfer_wh1 指定的那个仓（没指定就算全库合计）的库存 ≥ 本次扣料量。
+         （实测这些料常在普通仓 B4-26/C3-17/地面 G，所以不限仓，只要求有货。）
     工具行（运输工具）只验品号存在，不校验库存（是搬运用具，不在 BOM 里）。
     返回 '' 或错误文案（最多列 3 条）。
     """
     shorts = []
-    for prd_no, need, tic in rows:
+    for row in rows:
+        prd_no, need, tic = row[0], row[1], row[2]
+        twh1 = row[3] if len(row) > 3 else ''
         try:
             need = float(need or 0)
         except (TypeError, ValueError):
@@ -2030,7 +2094,16 @@ def _comp_stock_err(cur, rows, tool_rows=None):
         if not prd_no or need <= 0:
             continue
         if not tic:
-            shorts.append('%s 需 %g，未指定调拨单' % (prd_no, need))
+            # 方案 A：没调拨单 → 看该料实际有货的仓（前端给了来源仓就只看那个仓，否则算全库）
+            if twh1:
+                cur.execute("""SELECT ISNULL(SUM(QTY_WH), 0) FROM VW_STOCK_DETAIL2 WITH(NOLOCK)
+                                WHERE PRD_NO = %s AND WH = %s""", (prd_no, twh1))
+            else:
+                cur.execute("""SELECT ISNULL(SUM(QTY_WH), 0) FROM VW_STOCK_DETAIL2 WITH(NOLOCK)
+                                WHERE PRD_NO = %s""", (prd_no,))
+            stock = float(cur.fetchone()[0] or 0)
+            if stock + 0.001 < need:
+                shorts.append('%s 需 %g，%s库存 %g' % (prd_no, need, (twh1 + ' 仓 ') if twh1 else '全库', stock))
             continue
         cur.execute("""SELECT ISNULL(SUM(QTY),0) FROM IC WITH(NOLOCK)
                        WHERE IC_KND=30 AND PRD_NO=%s AND RTRIM(IC_NO)=%s AND USABLE=1 AND ISNULL(删除,0)=0""",
@@ -2091,7 +2164,8 @@ async def completion_confirm(
     cur = conn.cursor()
 
     # 库存校验：前端能被绕过，这里是最后防线（不通过 → 一行都不写）
-    _rows = [(c.get("prd_no", ""), c.get("qty", 0), c.get("transfer_ic_no", "")) for c in components]
+    _rows = [(c.get("prd_no", ""), c.get("qty", 0), c.get("transfer_ic_no", ""),
+              c.get("transfer_wh1", "")) for c in components]
     _err = _comp_stock_err(cur, _rows)
     if _err:
         conn.rollback(); conn.close()
@@ -2234,7 +2308,8 @@ async def completion_batch(
             except (TypeError, ValueError):
                 _need = 0.0
             if _need > 0:
-                _rows.append((_m.get("prd_no", ""), _need, _m.get("transfer_ic_no", "")))
+                _rows.append((_m.get("prd_no", ""), _need, _m.get("transfer_ic_no", ""),
+                              _m.get("transfer_wh1", "")))
     _err = _comp_stock_err(cur, _rows, tool_rows)
     if _err:
         conn.rollback(); conn.close()
@@ -3633,7 +3708,8 @@ def _v2_stock_detail(prd_nos, db_conn):
 
 
 # PMC 待分析销售订单的筛选口径（MAK 2026-09-29 定）：
-#   已审核（CHK_MAN 有值）+ 销售未出>0（QTY−SAQTY）+ 指令单号>7721 + MP=0
+#   已系统审核（APP_ID=1）+ 销售未出>0（QTY−SAQTY）+ MP=0
+#   2026-10-07 起不再按指令单号门槛过滤（MAK：不限制单号，7721 之前的也要显示并计算）
 # ⚠ 销售未出必须用 SAQTY（= VW_SO_QTY / VW_STOCK_DETAIL2.QTY_ON_ODR 的口径）；
 #   VW_POS.QTYPS 在整库 850 行 SO 里全是 0/NULL，是废列 —— 用它会得到「整单量」，
 #   已部分出货的单需求虚高、已出完的单还会被列进待分析（实测 QTYPS≠SAQTY 有 129 行）
@@ -3642,12 +3718,14 @@ def _v2_stock_detail(prd_nos, db_conn):
 #   = 系统审核（551 行有，其中 181 行不带人）——POS 上没有任何触发器写这两列，都是桌面端按钮写的。
 #   只有 APP_ID=1 的单能排产：MPS_insert 触发器 WHERE ISNULL(POS.APP_ID,0)=0 → rollback transaction。
 #   （1f434b3 曾误改成 CHK_MAN<>'' → 列表里混进排不了的单，正是「能选不能生成」的第二层原因）
-# ⚠ 老单（指令单号 ≤7721）不排产；空/非数字的指令单号（含 TEST01）一律不要
+# ⚠ 单号门槛已取消（MAK 2026-10-07：不限制单号，7721 之前的单也要显示并计算）。
+#   老单若被误关/误废，先重开（USABLE=1 + CLS_ID=0）并系统审核（APP_ID=1）才会出现在本列表。
+#   空/非数字的指令单号（含 TEST01）仍然排除（ISNUMERIC 把关）。
 _PMC_POS_FILTER = """
     MP=0 AND USABLE=1 AND OS_NO LIKE 'SO%'
       AND ISNULL(APP_ID,0) = 1
       AND ISNULL(QTY,0) - ISNULL(SAQTY,0) > 0
-      AND ISNUMERIC(指令单号) = 1 AND CAST(指令单号 AS INT) > 7721
+      AND ISNUMERIC(指令单号) = 1
 """
 
 
@@ -3657,7 +3735,7 @@ async def pmc_pos_unanalyzed(
     db: str = Query(default="c041")
 ):
     """
-    返回 MP=0 未分析、且【已审核 + 销售未出>0 + 指令单号>7721】的 POS 行（按 VW_POS 视图）。
+    返回 MP=0 未分析、且【已系统审核 + 销售未出>0】的 POS 行（按 VW_POS 视图）。不再按指令单号门槛过滤。
     q: 品号/品名模糊搜索。
     """
     db_name = "T041" if db.lower() == "t041" else "C041"
@@ -3668,7 +3746,7 @@ async def pmc_pos_unanalyzed(
 
     if q:
         cur.execute(f"""
-            SELECT TOP 200 OS_NO,ITM,SO_NO_ITM,PRD_NO,PRD_NAME,SPC,QTY,CUS_NO,CUS_NAME,指令单号,EST_DD,
+            SELECT TOP 1000 OS_NO,ITM,SO_NO_ITM,PRD_NO,PRD_NAME,SPC,QTY,CUS_NO,CUS_NAME,指令单号,EST_DD,
                    ISNULL(QTY,0)-ISNULL(SAQTY,0) AS so_remain
             FROM VW_POS WITH(NOLOCK)
             WHERE {flt}
@@ -3677,7 +3755,7 @@ async def pmc_pos_unanalyzed(
         """, (f"%{q}%", f"%{q}%", f"%{q}%", f"%{q}%"))
     else:
         cur.execute(f"""
-            SELECT TOP 200 OS_NO,ITM,SO_NO_ITM,PRD_NO,PRD_NAME,SPC,QTY,CUS_NO,CUS_NAME,指令单号,EST_DD,
+            SELECT TOP 1000 OS_NO,ITM,SO_NO_ITM,PRD_NO,PRD_NAME,SPC,QTY,CUS_NO,CUS_NAME,指令单号,EST_DD,
                    ISNULL(QTY,0)-ISNULL(SAQTY,0) AS so_remain
             FROM VW_POS WITH(NOLOCK)
             WHERE {flt}
@@ -4798,21 +4876,22 @@ async def pmc_global_net(
 
 
 @app.get("/api/pmc/flat_src")
-async def pmc_flat_src(prd_no: str = Query(...), db: str = Query(default="c041")):
+async def pmc_flat_src(prd_no: str = Query(...), refresh: int = Query(default=0), db: str = Query(default="c041")):
     """「全厂毛需求」的来源明细（只读，前端 hover 用）：
     所有相关成品 × 未出 × 累计用量 = 本料毛需求（不滚算口径）。
 
     数据取自上一次 _calc_global_net 存下的内存包（不重算），包过期就先重算一次。
+    refresh=1 强制重算（与 /api/pmc/global_net 同一套缓存，供 DB 直改后同步 hover）。
     ⚠ 往上爬必须遵守「只有可展开的母件才把量推给子件」——与 _flat 的纯展开同规则，
       否则合计对不上不滚算毛需求（响应里给 diff 自检，正常应为 0）。
     """
     import time as _t
     db_name = "T041" if db.lower() == "t041" else "C041"
-    if _FLATSRC["data"] is None or (_t.time() - _FLATSRC["ts"]) > _GNET_TTL:
-        if _GNET["data"] is None or (_t.time() - _GNET["ts"]) > _GNET_TTL:
+    if refresh or _FLATSRC["data"] is None or (_t.time() - _FLATSRC["ts"]) > _GNET_TTL:
+        if refresh or _GNET["data"] is None or (_t.time() - _GNET["ts"]) > _GNET_TTL:
             with _GNET_LOCK:
-                if _GNET["data"] is None or (_t.time() - _GNET["ts"]) > _GNET_TTL:
-                    _GNET["data"] = _calc_global_net(db_name)
+                if refresh or _GNET["data"] is None or (_t.time() - _GNET["ts"]) > _GNET_TTL:
+                    _GNET["data"] = _calc_global_net(db_name, refresh=1 if refresh else 0)
                     _GNET["ts"] = _GNET["data"].get("ts", _t.time())
     b = _FLATSRC["data"] or {}
     rvg = b.get("rvg") or {}
