@@ -1436,7 +1436,9 @@ async def completion_fg_detail(fg_no: str = Query(...), db: str = Query(default=
         JOIN BOM h WITH(NOLOCK) ON c.UPGUID = h.GUID AND h.LEV=0
         JOIN PRDT p WITH(NOLOCK) ON p.PRD_NO = c.PRD_NO
         WHERE h.PRD_NO=%s AND c.LEV=1 AND ISNULL(c.删除,0)=0
-        ORDER BY c.PRD_NO
+        -- 必须按 BOM 的 IDX 排，不能按品号字典序：
+        -- 全库 6,110 个成品里有 929 个 IDX 顺序 ≠ 品号顺序，按品号排会让完工材料表显示得和 BOM 不一致（2026-10-08 修）
+        ORDER BY c.IDX
     """, (fg_no,))
     bom_rows = cur.fetchall()
 
