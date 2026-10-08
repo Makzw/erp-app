@@ -1703,7 +1703,7 @@ async function openReturnModal(icNo) {
   try {
     pv = await api(BASE + '/completion/return_preview?' + new URLSearchParams({ ic_no: icNo }));
   } catch (e) { toast('❌ 查询失败: ' + e.message); return; }
-  if (!pv || !(pv.items || []).length) { toast('⚠️ 该单据没有完工扣料记录，无需退料'); return; }
+  if (!pv || !(pv.items || []).length) { toast('⚠️ 该单据没有可退的料（没有调拨行，或已全部退完）'); return; }
   if (pv.returned) { toast('⚠️ 该单据已全部退料，没有可退的行'); return; }
 
   // 仓库候选：复用批量完工那个懒加载源（/warehouses/all）
@@ -1748,7 +1748,7 @@ async function openReturnModal(icNo) {
         <div>原发出仓 <b>${fmt(pv.from_wh || '')}</b> ${fmt(pv.from_wh_name || '')} <span style="color:var(--sub)">（默认退回到这个仓，可改）</span></div>
       </div>
       <div style="margin:12px 0 4px;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:space-between">
-        <span>可退的料（${openRows.length} 行 / 可退合计 <span style="color:var(--orange)">${pv.remaining_total}</span>${pv.remaining_total !== pv.total_qty ? `<span style="color:var(--sub);font-weight:400"> · 扣料合计 ${pv.total_qty}</span>` : ''}）</span>
+        <span>可退的料（${openRows.length} 行 / 可退合计 <span style="color:var(--orange)">${pv.remaining_total}</span>${pv.remaining_total !== pv.total_qty ? `<span style="color:var(--sub);font-weight:400"> · 调拨 ${pv.total_qty}</span>` : ''}）</span>
         <label style="font-size:11px;font-weight:400;color:var(--sub);cursor:pointer">
           <input type="checkbox" id="retAll" checked onclick="document.querySelectorAll('#returnModal .retPick').forEach(function(x){x.checked=document.getElementById('retAll').checked})" style="width:14px;height:14px;vertical-align:-2px;cursor:pointer"> 全选
         </label>

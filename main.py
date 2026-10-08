@@ -1155,17 +1155,62 @@ async def completion_transfer_list(
     return {"items": items}
 
 
+def _return_avail(cur, ic_no):
+    """退料口径（MAK 2026-10-08 收口）：可退量 = 该调拨单该品号的「调拨量 − 已扣料量 − 已退量」。
+    - 扣料量 = 已经做进成品的料（KND=23 完工出库），**不能退**；
+    - 所以真正可退的就是「还堆在车间/外协厂、没被消耗掉」的那部分。
+    rows 以**调拨行**为准 → 「调拨了但还没完工」的料也能退（料就在目的地仓）。
+    料所在仓 = 调拨行的 WH1（调拨目的地 = 车间仓/外协厂）；运输工具行按完工列表同一口径排除。
+    返回 [(prd_no, prd_name, ut, 调拨量, 已扣料量, 已退量, 料所在仓, 仓名)]，只含可退 > 0 的行。
+    """
+    cur.execute("""
+        SELECT t.PRD_NO, ISNULL(p.NAME, ''), ISNULL(t.UT, ''), SUM(t.QTY),
+               ISNULL(t.WH1, ''), ISNULL(MAX(t.WH1NAME), '')
+        FROM IC t WITH(NOLOCK)
+        LEFT JOIN PRDT p WITH(NOLOCK) ON p.PRD_NO = t.PRD_NO
+        WHERE t.IC_KND = 30 AND t.USABLE = 1 AND ISNULL(t.删除, 0) = 0
+          AND RTRIM(t.IC_NO) = %s
+          AND LEFT(t.PRD_NO, 5) NOT IN ('03002', '03000')
+        GROUP BY t.PRD_NO, p.NAME, t.UT, t.WH1
+        ORDER BY t.PRD_NO
+    """, (ic_no,))
+    trans = cur.fetchall()
+    cur.execute("""
+        SELECT PRD_NO, SUM(QTY) FROM IC WITH(NOLOCK)
+        WHERE IC_KND = 23 AND ISNULL(删除, 0) = 0
+          AND ISNULL(FLD1, '') = %s AND REM LIKE N'完工出库%'
+        GROUP BY PRD_NO
+    """, (ic_no,))
+    cut_map = {g(x[0]): float(x[1] or 0) for x in cur.fetchall()}
+    cur.execute("""
+        SELECT PRD_NO, SUM(QTY) FROM IC WITH(NOLOCK)
+        -- 13 = 旧写法（其他入库，单边：只加退回仓、不减车间仓 → 账上重复，2026-10-08 修）
+        -- 50 = 生产退料单 / 51 = 外发加工退料单（调拨类，WH1=退回仓 WH2=料当前所在仓）
+        WHERE IC_KND IN (13, 50, 51) AND ISNULL(删除, 0) = 0
+          AND ISNULL(FLD1, '') = %s AND REM LIKE N'生产退料%'
+        GROUP BY PRD_NO
+    """, (ic_no,))
+    ret_map = {g(x[0]): float(x[1] or 0) for x in cur.fetchall()}
+    out = []
+    for r in trans:
+        _p = g(r[0])
+        _total, _cut, _ret = float(r[3] or 0), cut_map.get(_p, 0.0), ret_map.get(_p, 0.0)
+        if _total - _cut - _ret <= 0:
+            continue
+        out.append((_p, g(r[1]), g(r[2]), _total, _cut, _ret, g(r[4]), g(r[5])))
+    return out
+
+
 @app.get("/api/completion/return_preview")
 async def completion_return_preview(
     ic_no: str = Query(default=""),
     db: str = Query(default="c041"),
 ):
     """
-    退料预览：该调拨单(KND=30)能被退的料 = 完工时扣掉的那些行(KND=23, REM='完工出库%', FLD1=本单)，
-    按品号汇总，并给每行的「已退量 / 可退量」（一行一行退，可退量 = 扣料 − 已退）。
-    返回默认退回仓 = 扣料行的 WH2（料当前所在仓，外协厂/车间仓），可改；
-    另返回原发出仓（调拨单自己的 WH2 = 材料仓）供参考 —— 两者通常不同。
-    returned=True 表示**全部**退完（前端才锁）；部分退过时 partial=True，还能继续退剩下的行。
+    退料预览：以该调拨单(KND=30)的**调拨行**为准，逐品号给「调拨量 / 已扣料 / 已退量 / 可退量」。
+    可退量 = 调拨量 − 已扣料量 − 已退量（扣掉的料已经做进成品，不能退 —— MAK 2026-10-08 收口）。
+    料所在仓 = 调拨行的 WH1（调拨目的地：车间仓/外协厂）；默认退回仓 = 调拨单自己的 WH2（材料仓，可改）。
+    returned=True 表示没有可退的行了（前端才锁）；部分退过时 partial=True。
     """
     db_name = "T041" if db.lower() == "t041" else "C041"
     conn = get_conn(db=db_name)
@@ -1180,38 +1225,17 @@ async def completion_return_preview(
             GROUP BY 客户, 指令单号, DDJH, WH2, WH2NAME, 单重, 净重
         """, (ic_no,))
         h = cur.fetchone()
-        cur.execute("""
-            SELECT t.PRD_NO, ISNULL(p.NAME, ''), ISNULL(t.UT, ''), SUM(t.QTY),
-                   ISNULL(t.WH2, ''), ISNULL(MAX(t.WH2NAME), '')
-            FROM IC t WITH(NOLOCK)
-            LEFT JOIN PRDT p WITH(NOLOCK) ON p.PRD_NO = t.PRD_NO
-            WHERE t.IC_KND = 23 AND ISNULL(t.删除, 0) = 0
-              AND ISNULL(t.FLD1, '') = %s AND t.REM LIKE N'完工出库%'
-            GROUP BY t.PRD_NO, p.NAME, t.UT, t.WH2
-            ORDER BY t.PRD_NO
-        """, (ic_no,))
-        rows = cur.fetchall()
-        # 已退量（按品号）—— 退料是一行一行退的，所以可退量也要按行算（MAK 2026-10-06）
-        cur.execute("""
-            SELECT PRD_NO, SUM(QTY) FROM IC WITH(NOLOCK)
-            -- 13 = 旧写法（其他入库，单边：只加退回仓、不减车间仓 → 账上重复，2026-10-08 修）
-            -- 50 = 生产退料单 / 51 = 外发加工退料单（调拨类，WH1=退回仓 WH2=料当前所在仓）
-            WHERE IC_KND IN (13, 50, 51) AND ISNULL(删除, 0) = 0
-              AND ISNULL(FLD1, '') = %s AND REM LIKE N'生产退料%'
-            GROUP BY PRD_NO
-        """, (ic_no,))
-        ret_map = {g(x[0]): float(x[1] or 0) for x in cur.fetchall()}
+        rows = _return_avail(cur, ic_no)
     finally:
         conn.close()
 
     items = []
     for r in rows:
-        _p = g(r[0]); _cut = float(r[3] or 0); _ret = ret_map.get(_p, 0.0)
         items.append({
-            "prd_no": _p, "prd_name": g(r[1]), "ut": g(r[2]), "qty": _cut,
-            "returned_qty": round(_ret, 3),
-            "remaining": round(max(_cut - _ret, 0.0), 3),
-            "wh2": g(r[4]), "wh2_name": g(r[5]),
+            "prd_no": r[0], "prd_name": r[1], "ut": r[2], "qty": round(r[3], 3),
+            "cut_qty": round(r[4], 3), "returned_qty": round(r[5], 3),
+            "remaining": round(r[3] - r[4] - r[5], 3),
+            "wh2": r[6], "wh2_name": r[7],
         })
     remaining_total = round(sum(i["remaining"] for i in items), 3)
     from_wh = g(h[3]) if h else ""
@@ -1228,7 +1252,7 @@ async def completion_return_preview(
         # 默认退回仓 = 原发出仓（调拨单 WH2，MAK 2026-10-05 拍板）；料当前所在仓（扣料行 WH2）另列给用户参考
         "default_wh": from_wh,
         # 全部退完才算 returned；部分退料 remaining_total > 0，还能继续退（MAK 2026-10-06 按行退）
-        "returned": bool(items) and remaining_total <= 0,
+        "returned": remaining_total <= 0,
         "partial": any(i["returned_qty"] > 0 for i in items) and remaining_total > 0,
         "remaining_total": remaining_total,
         "items": items,
@@ -1244,14 +1268,15 @@ async def completion_return_material(
 ):
     """
     退料写入：一张 KND=50/51 **调拨类**退料单（生产退料单 / 外发加工退料单），**按行退**（MAK 2026-10-06：「一行一行的退，而不是一退就一张单」）。
-    料从车间/外协仓（扣料行的 WH2）调回退回仓 wh —— 两个仓同步变动。
+    料从车间/外协仓（调拨目的地 = 调拨行的 WH1）调回退回仓 wh —— 两个仓同步变动。
     ⚠ 旧写法是 KND=13「其他入库」，天生单边：只给退回仓加账、来源仓不减 → 同一批料在两个仓各算一次
     （MAK 2026-10-08 发现；库存视图 VW_IO_DETAIL 只看 WH1/WH2、不看 KND，所以关键是补 WH2）。
     payload: {ic_no, wh, items:[{prd_no, qty}]}
       wh    = 退回的仓；
       items = 要退的行（勾中的）。不传 = 该单**还能退的行全退**（兼容旧调用）。
-    每行上限 = 该品号「完工扣料量 − 已退量」；任何一行超上限 → 整单不写、原样报错。
-    护栏：找不到调拨单 / 没有完工扣料记录 / 数量非法 / 超出可退量 / 无行可退 → 一行都不写。
+    每行上限 = 该品号「调拨量 − 已扣料量 − 已退量」（= 还堆在车间/外协厂没被消耗掉的那部分，MAK 2026-10-08 收口）；
+    任何一行超上限 → 整单不写、原样报错。
+    护栏：找不到调拨单 / 没有可退的料 / 品号不在调拨行里 / 数量非法 / 超出可退量 / 无行可退 → 一行都不写。
     """
     ic_no = (payload.get("ic_no") or "").strip()
     wh = (payload.get("wh") or "").strip()
@@ -1274,31 +1299,11 @@ async def completion_return_material(
         h = cur.fetchone()
         if not h:
             return {"error": f"找不到调拨单 {ic_no}"}
-        cur.execute("""
-            SELECT t.PRD_NO, ISNULL(p.NAME, ''), ISNULL(t.UT, ''), SUM(t.QTY),
-                   ISNULL(t.WH2, ''), ISNULL(MAX(t.WH2NAME), '')
-            FROM IC t WITH(NOLOCK)
-            LEFT JOIN PRDT p WITH(NOLOCK) ON p.PRD_NO = t.PRD_NO
-            WHERE t.IC_KND = 23 AND ISNULL(t.删除, 0) = 0
-              AND ISNULL(t.FLD1, '') = %s AND t.REM LIKE N'完工出库%'
-            GROUP BY t.PRD_NO, p.NAME, t.UT, t.WH2
-            ORDER BY t.PRD_NO
-        """, (ic_no,))
-        rows = cur.fetchall()
+        rows = _return_avail(cur, ic_no)     # 可退 = 调拨量 − 已扣料量 − 已退量（与预览同一口径）
         if not rows:
-            return {"error": "该单据没有完工扣料记录，无需退料"}
-        # 已退量（按品号）：可退量 = 扣料 − 已退 —— 一行一行退，判定也按行
-        cur.execute("""
-            SELECT PRD_NO, SUM(QTY) FROM IC WITH(NOLOCK)
-            -- 13 = 旧写法（其他入库，单边：只加退回仓、不减车间仓 → 账上重复，2026-10-08 修）
-            -- 50 = 生产退料单 / 51 = 外发加工退料单（调拨类，WH1=退回仓 WH2=料当前所在仓）
-            WHERE IC_KND IN (13, 50, 51) AND ISNULL(删除, 0) = 0
-              AND ISNULL(FLD1, '') = %s AND REM LIKE N'生产退料%'
-            GROUP BY PRD_NO
-        """, (ic_no,))
-        ret_map = {g(x[0]): float(x[1] or 0) for x in cur.fetchall()}
-        row_by_prd = {g(r[0]): r for r in rows}
-        avail = {p: max(float(r[3] or 0) - ret_map.get(p, 0.0), 0.0) for p, r in row_by_prd.items()}
+            return {"error": "该单据没有可退的料（没有调拨行，或已全部退完）"}
+        row_by_prd = {r[0]: r for r in rows}
+        avail = {r[0]: max(r[3] - r[4] - r[5], 0.0) for r in rows}
 
         if want is not None:
             if not want:
@@ -1307,7 +1312,7 @@ async def completion_return_material(
             for w in want:
                 p = (w.get("prd_no") or "").strip()
                 if p not in row_by_prd:
-                    return {"error": f"{p or '（空品号）'} 不在该单据的完工扣料记录里"}
+                    return {"error": f"{p or '（空品号）'} 不在该单据的调拨行里"}
                 try:
                     q = float(w.get("qty"))
                 except (TypeError, ValueError):
@@ -1330,7 +1335,7 @@ async def completion_return_material(
         # 库存视图 VW_IO_DETAIL 只看 WH1(入)/WH2(出)、**不看 KND** → 关键是补上 WH2；
         # KND 换调拨类的退料码让单据地道（ICKND 字典：50 生产退料单 / 51 外发加工退料单）：
         #   来源仓 ATTRIB=6（外协厂）→ 51；其余（车间仓 5 等）→ 50
-        src_whs = sorted({g(row_by_prd[p][4]) for p, _ in picks if g(row_by_prd[p][4])})
+        src_whs = sorted({g(row_by_prd[p][6]) for p, _ in picks if g(row_by_prd[p][6])})
         knd = 50
         if src_whs:
             attrs = []
@@ -1344,7 +1349,7 @@ async def completion_return_material(
         if str(dry).lower() in ("1", "true", "yes"):
             return {"dry": True, "ok": True, "ic_no": ic_no, "rows": len(picks),
                     "total_qty": total_qty, "knd": knd, "wh": wh, "src_wh": src_whs,
-                    "rows_detail": [{"prd_no": p, "qty": q, "wh1": wh, "wh2": g(row_by_prd[p][4])}
+                    "rows_detail": [{"prd_no": p, "qty": q, "wh1": wh, "wh2": row_by_prd[p][6]}
                                     for p, q in picks]}
 
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -1363,7 +1368,7 @@ async def completion_return_material(
         for p, q in picks:
             itm += 1
             r = row_by_prd[p]
-            src_wh, src_wh_name = g(r[4]), g(r[5])      # 料当前所在仓（扣料行 WH2）
+            src_wh, src_wh_name = r[6], r[7]                 # 料当前所在仓（调拨行 WH1 = 调拨目的地）
             cur.execute("""
                 INSERT INTO IC (IC_NO,IC_DD,IC_KND,PRD_NO,PRD_NAME,QTY,UT,WH1,WH1NAME,WH2,WH2NAME,
                                 USR,USABLE,ITM,REM,FLD1,指令单号,DDJH,客户,单重,净重)
