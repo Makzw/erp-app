@@ -1492,7 +1492,8 @@ async function openCompletionModal(icNo, prdNo) {
   // 成品表（样式对齐批量完工弹窗：宽面板 + 表格式明细）
   let fgRows = '';
   filtered.forEach((d, idx) => {
-    const defWh = (completionData.find(x => x.ic_no === icNo && x.prd_no === matPrd) || {}).wh1 || 'G';   // 默认=该调拨单收货仓
+    const tRecRow = completionData.find(x => x.ic_no === icNo && x.prd_no === matPrd) || {};   // 该调拨单这一行
+    const defQty = tRecRow.total_qty || '';   // 数量预填 = 调拨单数量（total_qty）
     const allOk = d.all_fulfilled;
     fgRows += '<tr style="background:#EFF6FF;border-bottom:2px solid #2563eb;cursor:pointer" data-fg="' + escAttr(d.fg_no) + '" data-qty="fgQty_' + idx + '" data-wh="fgWh_' + idx + '">'
       + '<td colspan="2" style="padding:8px 10px;font-weight:700;font-size:13px;border-right:2px solid #dbeafe">'
@@ -1505,11 +1506,11 @@ async function openCompletionModal(icNo, prdNo) {
       + '</td>'
       + '<td style="padding:4px 8px;border-right:1px solid #e5e7eb">'
       +   '<span style="font-size:11px;color:#888">\u6570\u91cf(\u4ef6)</span><br>'
-      +   '<input type="number" id="fgQty_' + idx + '" value="" min="1" step="1" onclick="event.stopPropagation()" style="width:110px;padding:6px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:13px;text-align:center">'
+      +   '<input type="number" id="fgQty_' + idx + '" value="' + defQty + '" min="1" step="1" onclick="event.stopPropagation()" style="width:110px;padding:6px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:13px;text-align:center">'
       + '</td>'
       + '<td style="padding:4px 8px;border-right:1px solid #e5e7eb">'
       +   '<span style="font-size:11px;color:#888">\u4ed3\u5e93</span><br>'
-      +   '<input type="text" id="fgWh_' + idx + '" list="fg_wh_opts" value="' + escAttr(defWh) + '" onclick="event.stopPropagation()" style="width:110px;padding:6px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:13px">'
+      +   '<input type="text" id="fgWh_' + idx + '" list="fg_wh_opts" value="" onclick="event.stopPropagation()" style="width:110px;padding:6px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:13px">'
       + '</td>'
       + '<td style="padding:4px 8px;text-align:center">'
       +   '<button style="padding:6px 16px;background:' + (allOk ? 'var(--green)' : 'var(--orange)') + ';color:#fff;border:none;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer" onclick="event.stopPropagation();completionAddFgDetail(\'' + escAttr(d.fg_no) + '\',\'' + escAttr(icNo) + '\',\'' + escAttr(matPrd) + '\',\'fgQty_' + idx + '\',\'fgWh_' + idx + '\')">' + (allOk ? '+ \u52a0\u5165' : '+ \u52a0\u5165(\u7f3a\u6599)') + '</button>'
@@ -1572,7 +1573,8 @@ async function completionAddFgDetail(fgNo, icNo, prdNo, qtyInputId, whInputId) {
   const danzhong = tRec.dzhw || 0;
   const jingzhong = tRec.jzhw || 0;
   const _wEl = document.getElementById(whInputId);
-  const fg_wh = ((_wEl && _wEl.value) || '').trim() || tRec.wh1 || 'G';   // 选成品时填的仓优先
+  const fg_wh = ((_wEl && _wEl.value) || '').trim();   // 只认手填的仓，不再兜底收货仓/'G'
+  if (!fg_wh) { toast('\u26a0\ufe0f \u8bf7\u586b\u5199\u4ed3\u5e93'); if (_wEl) _wEl.focus(); return; }
   let bomData;
   try {
     bomData = await api(BASE + '/completion/fg_detail?' + new URLSearchParams({fg_no: fgNo}));
