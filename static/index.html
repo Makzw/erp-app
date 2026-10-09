@@ -1355,8 +1355,11 @@ function renderCompletionList() {
     const done  = t.transfer_qty || 0;
     const remain = t.remaining_qty || (total - done);
     const pct = total > 0 ? Math.round(done / total * 100) : 0;
-    const bg = i % 2 === 0 ? 'background:var(--card)' : 'background:var(--bg)';
-    return `<tr style="cursor:pointer;${bg};border-bottom:1px solid var(--border)" onclick="openCompletionModal('${escJs(t.ic_no)}','${escJs(t.prd_no)}')">
+    // 该材料行已加入暂存的成品数（一张材料行可能被多个成品用）→ 整行高亮，便于分辨哪些已经添加过（MAK 2026-10-09）
+    const added = completionList.filter(x => x.transfer_ic_no === t.ic_no
+      && (!x.transfer_prd || x.transfer_prd === t.prd_no)).length;
+    const bg = added ? 'background:#dcfce7' : (i % 2 === 0 ? 'background:var(--card)' : 'background:var(--bg)');
+    return `<tr title="${added ? '已加入暂存：' + added + ' 个成品' : '点击选择成品加入暂存'}" style="cursor:pointer;${bg};${added ? 'box-shadow:inset 3px 0 0 #16a34a;' : ''}border-bottom:1px solid var(--border)" onclick="openCompletionModal('${escJs(t.ic_no)}','${escJs(t.prd_no)}')">
       <td style="padding:8px 10px;font-size:12px;color:var(--sub)">${i+1}</td>
       <td style="padding:8px 10px;font-size:12px;font-weight:600">${fmt(t.ic_no)}</td>
       <td style="padding:8px 10px;font-size:12px;text-align:center;color:var(--sub)">${fmt(t.ic_dd || '—')}</td>
@@ -1378,6 +1381,7 @@ function renderCompletionList() {
       </td>
       <td style="padding:8px 10px;font-size:12px;text-align:right;color:${remain<=0?'var(--green)':'var(--orange)'};font-weight:600">${remain}</td>
       <td style="padding:8px 10px;text-align:center">
+        ${added ? `<div style="font-size:10px;color:#15803d;font-weight:600;margin-bottom:3px">已加入 ${added}</div>` : ''}
         ${t.returned
           ? `<span style="font-size:11px;color:var(--green);font-weight:600">已退料</span>`
           : `${t.ret_qty > 0 ? `<div style="font-size:10px;color:var(--orange);font-weight:600;margin-bottom:3px">部分退 ${t.ret_qty}</div>` : ''}<button onclick="event.stopPropagation();openReturnModal('${escJs(t.ic_no)}')" style="padding:3px 10px;border:1px solid #bfdbfe;border-radius:12px;background:#fff;font-size:11px;cursor:pointer;color:#1e40af">退料</button>`}
@@ -1586,6 +1590,7 @@ async function completionAddFgDetail(fgNo, icNo, prdNo, qtyInputId, whInputId) {
     fg_qty: fgQty,
     fg_wh,
     transfer_ic_no: icNo,
+    transfer_prd: prdNo,
     ref,
     customer,
     ddjh,
