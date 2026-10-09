@@ -3627,6 +3627,12 @@ function openBatchTransferModal() {
             oninput="btApplyAll('batch-ref', this)"
             style="display:block;width:100%;padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card)">
         </label>
+        <label style="font-size:12px;color:var(--sub)">
+          外发计划号
+          <input type="text" id="bt_ddjh_all" placeholder="填了覆盖下面所有行"
+            oninput="btApplyAll('batch-ddjh', this)"
+            style="display:block;width:100%;padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card)">
+        </label>
       </div>
       <div id="batchScroll" style="flex:1;overflow-y:auto;padding:0;max-height:65vh">
         <div id="batchTableBody"></div>
@@ -3776,7 +3782,7 @@ function calcBatchJZ(el) {
 }
 
 // 批量调拨：顶头「客户代号 / 指令单号」填一次 → 覆盖下面每一行（行内还能单独改）。
-// cls = 'batch-cus' | 'batch-ref'；和批量完工的 cmApplyWh（顶头入库仓）同一套行为。
+// cls = 'batch-cus' | 'batch-ref' | 'batch-ddjh'；和批量完工的 cmApplyWh（顶头入库仓）同一套行为。
 function btApplyAll(cls, el) {
   const v = (el && el.value || '').trim();
   document.querySelectorAll('#bomBatchOverlay .' + cls).forEach(inp => { inp.value = v; });
