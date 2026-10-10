@@ -3588,7 +3588,6 @@ function openBatchTransferModal() {
     {code:'030020224',  name:'木箱'},
     {code:'tietong-1',  name:'铁桶'},
   ];
-  const toolOpts = `<option value=""></option>` + window.__transferTools.map(t => `<option value="${t.code}">${t.code} ${t.name}</option>`).join('');
   const overlay = document.createElement('div');
   overlay.id = 'bomBatchOverlay';
   overlay.style.cssText = 'position:fixed;inset:0;z-index:490;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center';
@@ -3873,14 +3872,13 @@ function renderStockBatchTools() {
     return '<div style="font-size:11px;color:var(--sub);padding:4px 0">暂无运输工具，点击上方 + 添加</div>';
   }
   const tools = window.__transferTools || [];
-  const toolOpts = `<option value=""></option>` + tools.map(t => `<option value="${t.code}">${t.code} ${t.name}</option>`).join('');
   return stockBatchTools.map((t, i) => `
     <div style="display:flex;gap:6px;align-items:center;margin-bottom:5px">
-      <input type="text" class="batch-tool-code" list="btc_${i}" placeholder="工具编号"
-        value="${escAttr(t.code||'')}"
-        style="flex:2;padding:5px 8px;border:1px solid var(--border);border-radius:5px;font-size:12px;font-family:inherit;background:var(--card)"
-        oninput="stockBatchTools[${i}].code=this.value">
-        <datalist id="btc_${i}">${toolOpts}</datalist>
+      <select class="batch-tool-code" onchange="stockBatchTools[${i}].code=this.value"
+        style="flex:2;padding:5px 8px;border:1px solid var(--border);border-radius:5px;font-size:12px;font-family:inherit;background:var(--card)">
+        <option value="">—</option>
+        ${tools.map(x => `<option value="${x.code}"${x.code === t.code ? ' selected' : ''}>${x.name}</option>`).join('')}
+      </select>
       <input type="number" class="batch-tool-qty" min="1" placeholder="数量"
         value="${t.qty||1}"
         style="flex:1;padding:5px 8px;border:1px solid var(--border);border-radius:5px;font-size:12px;font-family:inherit;background:var(--card)"
