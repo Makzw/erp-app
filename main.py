@@ -1579,13 +1579,17 @@ async def smo_bom_stock(fg_no: str = Query(...), db: str = Query(default="c041")
         conn.close()
         return {"fg_no": fg_no, "fg_name": fg_name, "items": [], "tree": [],
                 "node_count": 0, "max_depth": 0, "ready_count": 0, "shortage_count": 0}
-    root_guid = _root[0]
+    root_guid = g(_root[0])   # GUID 也带中文（根行 GUID=品号）→ 必须过 g()
 
     # ⚠️ varchar 列（PRD_NO）读出来是 latin-1 乱码，必须过 g() 还原，
     #    否则下游 8 个 key 全部对不上（品号乱码 + 品名空 + 库存假 0 + 中文根打不开）
     prd_to_root = {fg_no: root_guid}   # prd_no → LEV=0 GUID（逐层补全这棵树用到的）
     # 结构: GUID, PRD_NO, LEV, IDX, QTY, KND, UPGUID, parent_prd
-    # 只在读边界还原 PRD_NO / parent_prd（GUID/UPGUID 是 ASCII 不动），
+    # 只在读边界还原 PRD_NO / parent_prd / GUID / UPGUID：
+    #   ⚠️ GUID/UPGUID 不是纯 ASCII —— 根行 GUID=品号、边 GUID=「父件->子件」，
+    #      品号带中文时（如 B20072-03-02-ZN6(盘圆线)）它们也带中文。不过 g() 就被
+    #      当参数回查下一层 → 查 0 行 → 中文品号那条分支整棵子树截断
+    #      （MAK 2026-10-10 报 0067851020 里 (盘圆线) 底下材料没了）。
     # prd_info / child_map / parent_children / node_map 全部派生于此，随之自动对齐
     edges = []
     _frontier = [(root_guid, fg_no)]     # (用于下钻的 GUID, 品号)
@@ -1607,10 +1611,11 @@ async def smo_bom_stock(fg_no: str = Query(...), db: str = Query(default="c041")
         """, tuple(_guids))
         _kids = []
         for _e in cur.fetchall():
-            _parent_prd = _by_guid.get(_e[6])
+            _guid, _uguid = g(_e[0]), g(_e[6])   # 两者都可能带中文，统一在这里还原
+            _parent_prd = _by_guid.get(_uguid)
             if _parent_prd is None:
                 continue                      # 父件不在本层 → 不挂（老写法同样挂不上）
-            _kids.append((_e[0], g(_e[1]), _e[2], _e[3], _e[4], _e[5], _e[6], _parent_prd))
+            _kids.append((_guid, g(_e[1]), _e[2], _e[3], _e[4], _e[5], _uguid, _parent_prd))
         if not _kids:
             break
         # 子件下一层的 UPGUID 指向「它自己的 LEV=0 根 GUID」（老写法 prd_to_root 同一语义）
@@ -1620,7 +1625,7 @@ async def smo_bom_stock(fg_no: str = Query(...), db: str = Query(default="c041")
             _ph2 = ','.join(['%s'] * len(_new_prds))
             cur.execute(f"SELECT PRD_NO, GUID FROM BOM WITH(NOLOCK) WHERE PRD_NO IN ({_ph2}) AND LEV=0",
                         tuple(_new_prds))
-            _rootmap = {g(r[0]): r[1] for r in cur.fetchall()}
+            _rootmap = {g(r[0]): g(r[1]) for r in cur.fetchall()}   # value=GUID，同样可能带中文
         _next = []
         for _guid, _prd, _lev, _idx, _qty, _knd, _up, _parent_prd in _kids:
             # 只有真有 LEV=0 根行的品号才进 prd_to_root；没有根行的保持「不在字典里」，
