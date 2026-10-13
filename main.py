@@ -2884,6 +2884,155 @@ async def fg_no_issue(db: str = Query(default="c041"),
     }
 
 
+# ── API: 到交期未完成清单（采购看板：EST_DD 逾期 + 未到数量，按供应商分组）──────
+# 口径由 MAK 2026-10-12 拍板（kanban t_5f8ef09b）：
+#   · 未结案采购行 = POS.OS_ID='PO' AND ISNULL(USABLE,1)=1 AND ISNULL(CLS_ID,0)=0
+#   · 已入库合计 = PSS(PS_ID='PS' AND USABLE=1 AND CLS_ID=0) 按 REF_ITM 求和；
+#     关联键 REF_ITM = OS_NO + RIGHT('000' + CAST(ITM AS varchar(10)), 3)
+#     （库里原写 dbo.PadLeft(ITM,'0',3)，只读账号没有它的 EXECUTE 权限 → 必须等价替代）
+#   · 未到数量 = QTY − 已入库合计；只列 > 0 的行（=0 已到齐 / 超收 不进清单）
+#   · 到交期 = EST_DD < 基准日；逾期天数 = 基准日 − 交期（≤0 = 未到期）
+#   · 基准日 as_of 默认今天：**交期与入库同一天为界、都不含当天** —— 当天录的入库单
+#     次日才进账（当天录的常是补录），这样同一天重跑数字不随录单时刻漂移。
+#     卡面基线 176 行 / 未到 307,522 件 = as_of 2026-10-12 的实测结果（±0 复现）。
+# 只读：整段只有 SELECT。
+_AS_OF_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+_LATE_BUCKETS = [
+    ("no_due",    "无交期"),
+    ("not_due",   "未到期"),
+    ("late_1_7",  "逾期1-7天"),
+    ("late_8_30", "逾期8-30天"),
+    ("late_31p",  "逾期30天以上"),
+]
+
+
+def _late_bucket(late_days):
+    """逾期分档：无交期 / 未到期(≤0) / 1-7 / 8-30 / >30。"""
+    if late_days is None:
+        return "no_due"
+    if late_days <= 0:
+        return "not_due"
+    if late_days <= 7:
+        return "late_1_7"
+    if late_days <= 30:
+        return "late_8_30"
+    return "late_31p"
+
+
+@app.get("/api/po-late")
+async def list_po_late(
+    as_of: str = Query(default=""),
+    db: str = Query(default="c041"),
+):
+    """到交期仍未见入库的采购行（一次 SQL 出数，只读，按供应商分组由前端做）。
+
+    返回：逾期汇总（行数 / 未到合计 / 供应商数）、分档桶、以及**全部未到齐行**
+    （含未到期，带 late_days / bucket / 未到数量），前端据此分档、排序、分组。
+    """
+    db_name = "T041" if db.lower() == "t041" else "C041"
+    as_of = (as_of or "").strip()
+    if not as_of:
+        as_of = datetime.now().strftime("%Y-%m-%d")
+    if not _AS_OF_RE.match(as_of):
+        return {"error": "基准日格式不对（应形如 2026-10-12）：%s" % as_of}
+    try:
+        base = datetime.strptime(as_of, "%Y-%m-%d")
+    except ValueError:
+        # 形如 2026-13-01 / 2026-02-30：格式对但日子不存在 —— 明说，不要 500
+        return {"error": "基准日不存在：%s" % as_of}
+
+    conn = get_conn(db=db_name)
+    try:
+        cur = conn.cursor()
+        # 分母：未结案采购行（与下面同一套 WHERE）
+        cur.execute("""
+            SELECT COUNT(*) FROM POS WITH (NOLOCK)
+            WHERE OS_ID = 'PO' AND ISNULL(USABLE, 1) = 1 AND ISNULL(CLS_ID, 0) = 0
+        """)
+        po_lines = int(cur.fetchone()[0] or 0)
+
+        cur.execute("""
+            SELECT p.OS_NO, p.ITM, p.OS_DD, p.EST_DD, p.CUS_NAME, p.PRD_NO, p.PRD_NAME,
+                   p.SPC, p.UT, ISNULL(p.QTY, 0), ISNULL(r.INQTY, 0),
+                   ISNULL(p.QTY, 0) - ISNULL(r.INQTY, 0) AS TODO_QTY,
+                   p.指令单号, p.客户代号
+            FROM POS p WITH (NOLOCK)
+            LEFT JOIN (
+                SELECT REF_ITM, SUM(ISNULL(QTY, 0)) AS INQTY
+                FROM PSS WITH (NOLOCK)
+                WHERE PS_ID = 'PS' AND ISNULL(USABLE, 1) = 1 AND ISNULL(CLS_ID, 0) = 0
+                  AND PS_DD IS NOT NULL AND PS_DD < %s
+                GROUP BY REF_ITM
+            ) r ON r.REF_ITM = p.OS_NO + RIGHT('000' + CAST(p.ITM AS varchar(10)), 3)
+            WHERE p.OS_ID = 'PO' AND ISNULL(p.USABLE, 1) = 1 AND ISNULL(p.CLS_ID, 0) = 0
+              AND ISNULL(p.QTY, 0) - ISNULL(r.INQTY, 0) > 0
+        """, (as_of,))
+        rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    def dd(v):
+        return v.strftime("%Y-%m-%d") if hasattr(v, "strftime") else ""
+
+    def num(v):
+        try:
+            return round(float(v or 0), 3)
+        except (TypeError, ValueError):
+            return 0.0
+
+    items = []
+    for r in rows:
+        est = r[3]
+        try:
+            late_days = (base.date() - est.date()).days if est else None
+        except (AttributeError, TypeError):
+            late_days = None
+        items.append({
+            "os_no":     g(r[0]),
+            "itm":       r[1],
+            "os_dd":     dd(r[2]),
+            "est_dd":    dd(est),
+            "supplier":  g(r[4]),
+            "prd_no":    g(r[5]),
+            "prd_name":  g(r[6]),
+            "spc":       g(r[7]),
+            "ut":        g(r[8]),
+            "qty":       num(r[9]),
+            "in_qty":    num(r[10]),
+            "todo_qty":  num(r[11]),
+            "order_no":  g(r[12]),
+            "customer":  g(r[13]),
+            "late_days": late_days,
+            "bucket":    _late_bucket(late_days),
+        })
+    # 交期最早的在前（最该催的在前）；无交期的排最后
+    items.sort(key=lambda x: (x["est_dd"] == "", x["est_dd"] or "", x["os_no"], x["itm"] or 0))
+
+    bucket_stat = {k: {"key": k, "label": lb, "rows": 0, "qty": 0.0} for k, lb in _LATE_BUCKETS}
+    for it in items:
+        b = bucket_stat[it["bucket"]]
+        b["rows"] += 1
+        b["qty"] = round(b["qty"] + it["todo_qty"], 3)
+
+    late = [it for it in items if it["bucket"].startswith("late_")]
+    return {
+        "as_of": as_of,
+        "caliber": ("未结案采购行(POS.OS_ID='PO'、未作废、未关单)；已入库 = PSS(PS_ID='PS'、"
+                    "USABLE=1、CLS_ID=0、入库日<基准日) 按 REF_ITM 求和；未到 = 订购 − 已入库"
+                    "（只列 >0）；到交期 = 交期<基准日；逾期天数 = 基准日 − 交期。交期与入库"
+                    "都以基准日为界、不含当天，所以当天录的入库次日才进账。"),
+        "po_lines": po_lines,
+        "late": {
+            "rows": len(late),
+            "qty": round(sum(it["todo_qty"] for it in late), 3),
+            "suppliers": len({it["supplier"] for it in late}),
+        },
+        "buckets": [bucket_stat[k] for k, _ in _LATE_BUCKETS],
+        "items": items,
+    }
+
+
 # ── API: 工单列表（已废弃，用 /api/smo）─────────────────────────────────
 @app.get("/api/mom")
 async def list_mom_legacy():

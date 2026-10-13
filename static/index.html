@@ -549,6 +549,30 @@
 .shape-submit{width:100%;padding:12px;border:0;border-radius:12px;background:var(--brand,#2563eb);color:#fff;font-size:15px;cursor:pointer}
 .shape-rem-label{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:13px}
 .shape-rem-label input{flex:1;padding:6px 8px;border:1px solid var(--line,#0002);border-radius:8px}
+    /* ── 采购·到交期未到（看板：按供应商分组）────────────── */
+    .po-late-toolbar{padding:8px 12px 4px}
+    .po-late-sum{font-size:13px;color:var(--text);line-height:1.6}
+    .po-late-sum b{font-size:15px}
+    .po-late-sub{color:var(--sub);font-size:12px}
+    .po-late-caliber{font-size:11px;color:var(--sub);line-height:1.5;margin:2px 0 6px}
+    .po-late-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
+    .po-late-chip{font-size:12px;padding:3px 8px;border:1px solid var(--border);border-radius:12px;background:#fff;color:var(--sub);cursor:pointer;white-space:nowrap}
+    .po-late-chip.on{border-color:var(--accent);color:var(--accent);font-weight:700}
+    .po-late-toolrow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12px;color:var(--sub);margin-bottom:6px}
+    .po-late-toolrow button,.po-late-sortbtns button{font-size:12px;padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--sub);cursor:pointer}
+    .po-late-toolrow button.on{border-color:var(--accent);color:var(--accent);font-weight:700}
+    .po-late-date input{margin-left:4px;padding:3px 6px;border:1px solid var(--border);border-radius:6px;font-size:12px}
+    .po-late-sortbtns{display:inline-flex;gap:4px;align-items:center}
+    .po-late-count{font-size:12px;color:var(--sub);padding:0 12px 6px}
+    .po-late-badge{display:inline-block;padding:1px 6px;border-radius:8px;font-size:11px;color:#fff;background:var(--red);white-space:nowrap}
+    .po-late-badge.b0{background:#9ca3af}
+    .po-late-badge.b1{background:var(--orange)}
+    .po-late-badge.b2{background:#ea580c}
+    .po-late-badge.b3{background:var(--red)}
+    .po-late-grp{margin-bottom:10px}
+    .po-late-grp-head{display:flex;gap:8px;align-items:baseline;padding:7px 10px;margin-bottom:6px;background:#fff;border-left:3px solid var(--accent);border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;box-shadow:var(--shadow)}
+    .po-late-grp-head .pl-stat{font-weight:400;font-size:12px;color:var(--sub)}
+    .po-late-grp-head .pl-caret{color:var(--sub);font-size:10px}
   </style>
 </head>
 <body>
@@ -561,6 +585,7 @@
 <div class="tab-bar">
   <div class="tab-btn active" data-tab="qts">请购单</div>
   <div class="tab-btn" data-tab="pos-unreceived">采购未回</div>
+  <div class="tab-btn" data-tab="po-late">⏰ 到交期未到</div>
   <div class="tab-btn" data-tab="fg-no-issue">入库未领料</div>
   <div class="tab-btn" data-tab="smo">齐料列表</div>
   <div class="tab-btn" data-tab="stock">📦 盘点</div>
@@ -671,6 +696,8 @@ function handleSearch(v) {
   switch (curTab) {
     case 'pos-unreceived':
       loadPosUnreceived(q); break;
+    case 'po-late':
+      poLateQ = q; renderPoLate(); break;
     case 'fg-no-issue':
       fniQ = q; renderFgNoIssue(); break;
     case 'qts':
@@ -771,11 +798,12 @@ function dropTabHold(t) {
   window['__tabScroll_' + t] = { el: 0, win: 0 };
 }
 function dropAllTabHolds() {
-  ['qts', 'pos-unreceived', 'fg-no-issue', 'smo', 'stock', 'transfer', 'completion', 'pmc', 'globalnet'].forEach(dropTabHold);
+  ['qts', 'pos-unreceived', 'po-late', 'fg-no-issue', 'smo', 'stock', 'transfer', 'completion', 'pmc', 'globalnet'].forEach(dropTabHold);
 }
 function tabLoader(t) {          // 各 tab 的加载函数（和原来切换分支一一对应）
   if (t === 'smo') return loadSmo();
   if (t === 'pos-unreceived') return loadPosUnreceived();
+  if (t === 'po-late') return loadPoLate();
   if (t === 'fg-no-issue') return loadFgNoIssue();
   if (t === 'stock') return loadStock();
   if (t === 'transfer') return loadTransfer();
@@ -839,6 +867,7 @@ mainTabBar.addEventListener('click', e => {
       posUnSearch = ''; posUnQ = '';
       posUnCustomer = ''; posUnSupplier = ''; posUnOrderNo = '';
     }
+    if (curTab === 'po-late') { poLateQ = ''; }
     if (curTab === 'fg-no-issue') {
       fniQ = '';
     }
@@ -1146,6 +1175,178 @@ function renderFgNoIssue() {
     '领料 = 40 生产领料 / 41 外发加工领料 / 23 完工扣料；退料 50/51 只作反向附列。' +
     '</div>';
 
+  el.innerHTML = h;
+}
+
+// ── 采购·到交期未到（看板：EST_DD 逾期 + 未到数量，按供应商分组）────────────────
+// 数据源 = /api/po-late（一次 SQL 出数、只读）。口径写在后端一处（含基准日语义）；
+// 前端只做分档 / 排序 / 分组 / 搜索 —— 全量约 330 行，本地算最省事。
+let poLateData = null;        // 最近一次接口返回
+let poLateAsOf = '';          // 基准日（空 = 用后端默认的「今天」）
+let poLateBucket = 'late';    // late(默认：只看到交期未到) / all / not_due / late_1_7 / late_8_30 / late_31p / no_due
+let poLateSort = 'late';      // late = 逾期天数↓（最该催的在前）；qty = 未到数量↓
+let poLateGroupOn = true;     // true = 按供应商分组
+let poLateQ = '';             // 本地搜索词
+let poLateCollapsed = {};     // 供应商 → true（折叠）
+
+async function loadPoLate() {
+  const el = $id('content');
+  el.innerHTML = '<div class="state-msg"><div class="spinner"></div>加载中…</div>';
+  try {
+    const params = new URLSearchParams({});
+    if (poLateAsOf) params.set('as_of', poLateAsOf);
+    const d = await api(BASE + '/po-late?' + params);
+    if (d && d.error) throw new Error(d.error);
+    poLateData = d;
+    renderPoLate();
+  } catch (e) { el.innerHTML = '<div class="error-msg">' + e.message + '</div>'; }
+}
+
+function poLateApplyAsOf() { poLateAsOf = (($id('poLateAsOf') || {}).value || '').trim(); loadPoLate(); }
+function poLateResetAsOf() { poLateAsOf = ''; loadPoLate(); }
+function poLateSetBucket(k) { poLateBucket = k; renderPoLate(); }
+function poLateSetSort(k) { poLateSort = k; renderPoLate(); }
+function poLateToggleGroup() { poLateGroupOn = !poLateGroupOn; renderPoLate(); }
+function poLateToggleSup(elm) {
+  const k = elm.getAttribute('data-sup') || '';
+  poLateCollapsed[k] = !poLateCollapsed[k];
+  renderPoLate();
+}
+
+// 当前分档 + 搜索过滤后的行（默认分档 = 逾期）
+function poLatePick() {
+  const d = poLateData || { items: [] };
+  let rows = d.items || [];
+  if (poLateBucket === 'late') rows = rows.filter(r => (r.bucket || '').indexOf('late_') === 0);
+  else if (poLateBucket !== 'all') rows = rows.filter(r => r.bucket === poLateBucket);
+  const q = (poLateQ || '').trim().toLowerCase();
+  if (q) {
+    rows = rows.filter(r => [r.os_no, r.prd_no, r.prd_name, r.supplier, r.order_no, r.customer, r.spc]
+      .some(v => String(v == null ? '' : v).toLowerCase().indexOf(q) >= 0));
+  }
+  const BIG = 1e9;
+  const lateOf = r => (r.late_days == null ? -BIG : r.late_days);
+  return rows.slice().sort((a, b) => (poLateSort === 'qty')
+    ? ((b.todo_qty - a.todo_qty) || (lateOf(b) - lateOf(a)))
+    : ((lateOf(b) - lateOf(a)) || (b.todo_qty - a.todo_qty)));
+}
+
+// 按供应商分组（组内保留上面的排序）；组间按「最长逾期↓、未到数量↓」
+function poLateGroupRows(rows) {
+  const m = new Map();
+  for (const r of rows) {
+    const k = r.supplier || '(无供应商)';
+    if (!m.has(k)) m.set(k, { supplier: k, rows: [], qty: 0, maxLate: null });
+    const g = m.get(k);
+    g.rows.push(r);
+    g.qty = Math.round((g.qty + (r.todo_qty || 0)) * 1000) / 1000;
+    if (r.late_days != null && (g.maxLate == null || r.late_days > g.maxLate)) g.maxLate = r.late_days;
+  }
+  const arr = Array.from(m.values());
+  arr.sort((a, b) => ((b.maxLate == null ? -1e9 : b.maxLate) - (a.maxLate == null ? -1e9 : a.maxLate))
+    || (b.qty - a.qty) || String(a.supplier).localeCompare(String(b.supplier), 'zh'));
+  return arr;
+}
+
+function poLateBadge(r) {
+  if (r.late_days == null) return '<span class="po-late-badge b0">无交期</span>';
+  if (r.late_days <= 0) return '<span class="po-late-badge b0">未到期' + (r.late_days < 0 ? ' ' + (-r.late_days) + ' 天' : '') + '</span>';
+  const cls = r.late_days > 30 ? 'b3' : (r.late_days > 7 ? 'b2' : 'b1');
+  return '<span class="po-late-badge ' + cls + '">逾期 ' + r.late_days + ' 天</span>';
+}
+
+function poLateRowHtml(r, q) {
+  const unit = r.ut ? ' ' + escHtml(fmt(r.ut)) : '';
+  const itm = String(r.itm == null ? 0 : r.itm);
+  const padded = ('000' + itm).slice(-3);
+  return `<div class="qts-row">
+      <div class="qts-row-head">
+        ${poLateBadge(r)}
+        <span class="qts-no">${highlight(fmt(r.os_no) + '-' + padded, q)}</span>
+        <span class="qts-date">交期 ${highlight(fmt(r.est_dd) || '—', q)}</span>
+        ${(poLateGroupOn || !r.supplier) ? '' : `<span class="qts-cus">${highlight(fmt(r.supplier), q)}</span>`}
+      </div>
+      <div class="qts-row-body">
+        <div class="qts-prd">
+          <span class="qts-pno">${highlight(fmt(r.prd_no), q)}</span>
+          <span class="qts-pname">${highlight(fmt(r.prd_name) || '—', q)}</span>
+        </div>
+        <div class="qts-row-foot">
+          <span>未到: <b>${fmtNum(r.todo_qty)}${unit}</b></span>
+          <span style="color:var(--sub)">订购 ${fmtNum(r.qty)} · 已到 ${fmtNum(r.in_qty)}</span>
+        </div>
+      </div>
+      <div class="qts-row-meta">
+        <span>下单: ${fmt(r.os_dd) || '—'}</span>
+        <span>指令单: ${highlight(fmt(r.order_no) || '—', q)}</span>
+        ${r.customer ? `<span>客户代号: ${highlight(fmt(r.customer), q)}</span>` : ''}
+        ${r.spc ? `<span>规格: ${escHtml(fmt(r.spc))}</span>` : ''}
+      </div>
+    </div>`;
+}
+
+function renderPoLate() {
+  const el = $id('content');
+  const d = poLateData;
+  if (!d) { el.innerHTML = '<div class="state-msg">暂无数据</div>'; return; }
+  const q = poLateQ;
+  const buckets = (d.buckets || []).filter(b => b.rows > 0);   // 空档不占位（无交期 0 行就不显示）
+  // 选中的档位若已不存在（比如换基准日后该档空了）→ 退回默认「逾期」，免得住在一个看不见的档里
+  if (poLateBucket !== 'late' && poLateBucket !== 'all' && !buckets.some(b => b.key === poLateBucket)) {
+    poLateBucket = 'late';
+  }
+  const sum = d.late || { rows: 0, qty: 0, suppliers: 0 };
+  const allRows = d.items || [];
+  const allQty = Math.round(allRows.reduce((s, r) => s + (r.todo_qty || 0), 0) * 1000) / 1000;
+
+  const chip = (key, label, rows, qty) => `<span class="po-late-chip${poLateBucket === key ? ' on' : ''}"
+      onclick="poLateSetBucket('${key}')">${label} <b>${fmtNum(rows)}</b> 行 / ${fmtNum(qty)}</span>`;
+
+  let h = `<div class="po-late-toolbar">
+      <div class="po-late-sum">
+        到交期未到 <b>${fmtNum(sum.rows)}</b> 行 · 未到合计 <b>${fmtNum(sum.qty)}</b> 件 · 涉及 <b>${fmtNum(sum.suppliers)}</b> 家供应商
+        <span class="po-late-sub">（未结案采购行 ${fmtNum(d.po_lines)} 行；未到齐含未到期共 ${fmtNum(allRows.length)} 行 / ${fmtNum(allQty)} 件）</span>
+      </div>
+      <div class="po-late-caliber">基准日 <b>${escHtml(fmt(d.as_of))}</b>｜${escHtml(fmt(d.caliber))}</div>
+      <div class="po-late-chips">
+        ${chip('late', '逾期（到交期未到）', sum.rows, sum.qty)}
+        ${buckets.map(b => chip(b.key, b.label, b.rows, b.qty)).join('')}
+        <span class="po-late-chip${poLateBucket === 'all' ? ' on' : ''}" onclick="poLateSetBucket('all')">全部未到齐 <b>${fmtNum(allRows.length)}</b> 行</span>
+      </div>
+      <div class="po-late-toolrow">
+        <label class="po-late-date">基准日<input type="date" id="poLateAsOf" value="${escAttr(fmt(d.as_of))}" onchange="poLateApplyAsOf()"></label>
+        <button onclick="poLateApplyAsOf()">重算</button>
+        <button class="pos-un-filter-reset" onclick="poLateResetAsOf()">回到今天</button>
+        <span class="po-late-sortbtns">排序：
+          <button class="${poLateSort === 'late' ? 'on' : ''}" onclick="poLateSetSort('late')">逾期天数 ↓</button>
+          <button class="${poLateSort === 'qty' ? 'on' : ''}" onclick="poLateSetSort('qty')">未到数量 ↓</button>
+        </span>
+        <button class="${poLateGroupOn ? 'on' : ''}" onclick="poLateToggleGroup()">${poLateGroupOn ? '按供应商分组' : '平铺显示'}</button>
+      </div>
+    </div>`;
+
+  const rows = poLatePick();
+  const shownQty = Math.round(rows.reduce((s, r) => s + (r.todo_qty || 0), 0) * 1000) / 1000;
+  h += `<div class="po-late-count">列出 ${fmtNum(rows.length)} 行 · 未到 ${fmtNum(shownQty)} 件${q ? '（搜索：' + escHtml(q) + '）' : ''}</div>`;
+  if (!rows.length) { el.innerHTML = h + '<div class="state-msg">这个分档下没有行</div>'; return; }
+
+  h += '<div class="list">';
+  if (poLateGroupOn) {
+    for (const g of poLateGroupRows(rows)) {
+      const folded = !!poLateCollapsed[g.supplier];
+      h += `<div class="po-late-grp">
+        <div class="po-late-grp-head" data-sup="${escAttr(g.supplier)}" onclick="poLateToggleSup(this)">
+          <span class="pl-caret">${folded ? '▶' : '▼'}</span>
+          <span>${highlight(fmt(g.supplier), q)}</span>
+          <span class="pl-stat">${fmtNum(g.rows.length)} 行 · 未到 ${fmtNum(g.qty)}${g.maxLate == null ? '' : ' · 最长逾期 ' + g.maxLate + ' 天'}</span>
+        </div>`;
+      if (!folded) for (const r of g.rows) h += poLateRowHtml(r, q);
+      h += '</div>';
+    }
+  } else {
+    for (const r of rows) h += poLateRowHtml(r, q);
+  }
+  h += '</div>';
   el.innerHTML = h;
 }
 
