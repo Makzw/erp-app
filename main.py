@@ -2720,6 +2720,170 @@ async def close_pos_unreceived(
         conn.close()
 
 
+# ── API: 入库未领料（成品入库单 IC_KND=13 → 哪个订单还没领料）──────────────────
+# 口径由 MAK 2026-10-12 拍板（kanban t_d339165a）：
+#   · 成品入库单 = IC_KND=13；**不在 PSS**（PSS(PS_ID='PS') 是采购入库，906/916 挂采购行）
+#   · 领料算三类 = IC_KND IN (40 生产领料, 41 外发加工领料, 23 完工扣料)
+#   · 退料 = IC_KND IN (50, 51)，只作反向附列显示（不计入领料）
+#   · 指令单号只认「纯数字 + 长度 4-5」；有值但不符 → 「指令单号异常」桶，
+#     列全空 → 「未填指令单号（无法判定）」桶。两桶都不进「没领料」计数。
+#   · 不加 USABLE / 删除 过滤 —— 与 2026-10-12 基线实测同口径（13 侧 6332 行）。
+_FG_NORM = ("LTRIM(RTRIM(ISNULL(指令单号, ''))) <> ''"
+            " AND 指令单号 NOT LIKE '%[^0-9]%'"
+            " AND LEN(LTRIM(RTRIM(指令单号))) BETWEEN 4 AND 5")
+
+
+@app.get("/api/fg-no-issue")
+async def fg_no_issue(db: str = Query(default="c041"),
+                      order_no: str = Query(default="")):
+    """成品入库单（IC_KND=13）里，哪些订单没领过料。
+
+    三个桶（口径见上方注释）：
+      ① 没领料   = 入库的规范指令单号 − 领料(40/41/23)的规范指令单号
+      ② 指令单号异常 = 有值但不是「纯数字 4-5 位」（入库/领料两侧都列）
+      ③ 未填指令单号 = 列全空，无法判定（只报行数，不下钻）
+    每个订单都能下钻：入库行（IC_NO/日期/品号/数量/仓库）+ 找到的领料行（没找到就说「无」）。
+    """
+    db_name = "T041" if db.lower() == "t041" else "C041"
+    conn = get_conn(db=db_name)
+    cur = conn.cursor()
+    try:
+        # ── ① 两侧各桶行数 + 规范单号去重数 ────────────────────────────────
+        cur.execute("""
+            SELECT side,
+                   SUM(CASE WHEN zn = '' THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN zn <> '' AND zn NOT LIKE '%%[^0-9]%%'
+                             AND LEN(zn) BETWEEN 4 AND 5 THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN zn <> '' AND zn LIKE '%%[^0-9]%%' THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN zn <> '' AND zn NOT LIKE '%%[^0-9]%%'
+                             AND LEN(zn) NOT BETWEEN 4 AND 5 THEN 1 ELSE 0 END),
+                   COUNT(DISTINCT CASE WHEN zn <> '' AND zn NOT LIKE '%%[^0-9]%%'
+                                        AND LEN(zn) BETWEEN 4 AND 5 THEN zn END)
+            FROM (SELECT CASE WHEN IC_KND = 13 THEN 'in' ELSE 'issue' END AS side,
+                         LTRIM(RTRIM(ISNULL(指令单号, ''))) AS zn
+                  FROM IC WITH(NOLOCK)
+                  WHERE IC_KND IN (13, 40, 41, 23)) t
+            GROUP BY side
+        """)
+        base = {"in": {}, "issue": {}}
+        for r in cur.fetchall():
+            base[r[0]] = {"blank": int(r[1] or 0), "norm": int(r[2] or 0),
+                          "nondigit": int(r[3] or 0), "badlen": int(r[4] or 0),
+                          "orders": int(r[5] or 0)}
+
+        # ── ② 入库明细 / 领料明细 / 退料明细（都按 指令单号 归组）───────────
+        def rows_of(knds, cond):
+            cur.execute("""
+                SELECT LTRIM(RTRIM(指令单号)) AS o, IC_KND, IC_NO,
+                       CONVERT(varchar(10), IC_DD, 23), PRD_NO, PRD_NAME, ISNULL(SPC, ''),
+                       QTY, ISNULL(UT, ''), ISNULL(WH1, ''), ISNULL(WH1NAME, ''),
+                       ISNULL(WH2, ''), ISNULL(WH2NAME, ''), ISNULL(USR, ''), ISNULL(USRNAME, ''), ITM
+                FROM IC WITH(NOLOCK)
+                WHERE IC_KND IN ({k}) AND ({c})
+                ORDER BY o, IC_NO, ITM
+            """.format(k=",".join(str(x) for x in knds), c=cond))
+            out = {}
+            for r in cur.fetchall():
+                out.setdefault(r[0], []).append({
+                    "ic_knd":   r[1],
+                    "ic_no":    g(r[2]),
+                    "ic_dd":    g(r[3]),
+                    "prd_no":   g(r[4]),
+                    "prd_name": g(r[5]),
+                    "spc":      g(r[6]),
+                    "qty":      float(r[7]) if r[7] is not None else 0.0,
+                    "ut":       g(r[8]),
+                    "wh1":      g(r[9]),
+                    "wh1name":  g(r[10]),
+                    "wh2":      g(r[11]),
+                    "wh2name":  g(r[12]),
+                    "usr":      g(r[13]),
+                    "usrname":  g(r[14]),
+                    "itm":      int(r[15]) if r[15] is not None else 0,
+                })
+            return out
+
+        fg_rows = rows_of((13,), _FG_NORM)
+        issue_rows = rows_of((40, 41, 23), _FG_NORM)
+        ret_rows = rows_of((50, 51), _FG_NORM)
+
+        # ── ③ 指令单号异常（两侧，按值归组）────────────────────────────────
+        cur.execute("""
+            SELECT CASE WHEN IC_KND = 13 THEN 'in' ELSE 'issue' END AS side,
+                   LTRIM(RTRIM(指令单号)) AS zn, COUNT(*)
+            FROM IC WITH(NOLOCK)
+            WHERE IC_KND IN (13, 40, 41, 23)
+              AND LTRIM(RTRIM(ISNULL(指令单号, ''))) <> ''
+              AND (指令单号 LIKE '%%[^0-9]%%'
+                   OR LEN(LTRIM(RTRIM(指令单号))) NOT BETWEEN 4 AND 5)
+            GROUP BY CASE WHEN IC_KND = 13 THEN 'in' ELSE 'issue' END,
+                     LTRIM(RTRIM(指令单号))
+            ORDER BY 3 DESC, 2
+        """)
+        abnormal = []
+        for r in cur.fetchall():
+            abnormal.append({"side": r[0], "order_no": g(r[1]), "rows": int(r[2])})
+    finally:
+        conn.close()
+
+    def num(v):
+        try:
+            return round(float(v), 3)
+        except (TypeError, ValueError):
+            return 0
+
+    def pack(order_no_key, fg, issue, ret):
+        return {
+            "order_no": order_no_key,
+            "fg": fg,
+            "fg_rows": len(fg),
+            "fg_qty": num(sum(x["qty"] for x in fg)),
+            "issue": issue,
+            "issue_rows": len(issue),
+            "issue_qty": num(sum(x["qty"] for x in issue)),
+            "ret": ret,
+            "ret_rows": len(ret),
+        }
+
+    fg_orders = sorted(fg_rows.keys())
+    issue_orders = set(issue_rows.keys())
+    no_issue, done = [], []
+    for o in fg_orders:
+        item = pack(o, fg_rows[o], issue_rows.get(o, []), ret_rows.get(o, []))
+        (done if o in issue_orders else no_issue).append(item)
+
+    # 只在领料侧出现的订单（有领料、无成品入库）—— 只报数，不当「没领料」看
+    only_issue = sorted(o for o in issue_orders if o not in set(fg_orders))
+    if order_no:
+        key = order_no.strip()
+        no_issue = [x for x in no_issue if x["order_no"] == key]
+        done = [x for x in done if x["order_no"] == key]
+
+    inb, isb = base.get("in", {}), base.get("issue", {})
+    return {
+        "counts": {
+            "in_orders": inb.get("orders", 0),
+            "in_rows": inb.get("norm", 0),
+            "issue_orders": isb.get("orders", 0),
+            "issue_rows": isb.get("norm", 0),
+            "no_issue_orders": len(no_issue),
+            "done_orders": len(done),
+            "abnormal_rows": inb.get("nondigit", 0) + inb.get("badlen", 0)
+                             + isb.get("nondigit", 0) + isb.get("badlen", 0),
+            "abnormal_in_rows": inb.get("nondigit", 0) + inb.get("badlen", 0),
+            "abnormal_issue_rows": isb.get("nondigit", 0) + isb.get("badlen", 0),
+            "blank_in_rows": inb.get("blank", 0),
+            "blank_issue_rows": isb.get("blank", 0),
+            "only_issue_orders": len(only_issue),
+            "ret_orders": len(ret_rows),
+        },
+        "no_issue": no_issue,
+        "done": done,
+        "abnormal": abnormal,
+        "only_issue": only_issue,
+    }
+
+
 # ── API: 工单列表（已废弃，用 /api/smo）─────────────────────────────────
 @app.get("/api/mom")
 async def list_mom_legacy():

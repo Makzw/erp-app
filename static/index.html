@@ -337,6 +337,45 @@
     .pager button:disabled { background: #ccc; border-color: #ccc; cursor: not-allowed; }
     .pager span { font-size: 13px; color: var(--sub); }
 
+    /* ── 入库未领料（成品入库 IC_KND=13 → 哪个订单没领料）─────────────── */
+    .fni-summary { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 4px 2px; }
+    .fni-chip { font-size: 12px; padding: 3px 8px; border-radius: 999px;
+                background: #fff; border: 1px solid var(--border); color: var(--sub); }
+    .fni-chip b { font-size: 13px; color: var(--text); }
+    .fni-chip.red { border-color: var(--red); color: var(--red); }
+    .fni-chip.red b { color: var(--red); }
+    .fni-chip.warn { border-color: #d97706; color: #b45309; }
+    .fni-chip.warn b { color: #b45309; }
+    .fni-sec-head { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+                    padding: 8px 12px; margin: 12px 0 0; font-weight: 700; font-size: 14px;
+                    background: #fff; border-radius: 8px; border-bottom: 2px solid var(--accent); }
+    .fni-sec-head.red { border-bottom-color: var(--red); color: var(--red); }
+    .fni-sec-head small { font-weight: 400; font-size: 12px; color: var(--sub); }
+    .fni-order { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow);
+                 margin-bottom: 8px; padding: 8px 12px; }
+    .fni-order > summary { cursor: pointer; font-size: 13px; display: flex; gap: 8px;
+                           align-items: center; flex-wrap: wrap; list-style: none; }
+    .fni-order > summary::-webkit-details-marker { display: none; }
+    .fni-order > summary::before { content: '▸'; color: var(--sub); font-size: 11px; }
+    .fni-order[open] > summary::before { content: '▾'; }
+    .fni-order-no { font-weight: 700; font-size: 15px; color: var(--text); }
+    .fni-tag { font-size: 11px; padding: 1px 6px; border-radius: 6px;
+               border: 1px solid var(--border); color: var(--sub); }
+    .fni-tag.red { border-color: var(--red); color: var(--red); }
+    .fni-tag.green { border-color: var(--green); color: var(--green); }
+    .fni-drill { margin: 8px 0 2px 12px; border-left: 2px solid var(--border); padding-left: 10px; }
+    .fni-drill-title { font-size: 12px; color: var(--sub); margin: 6px 0 2px; }
+    .fni-line { font-size: 12px; color: var(--text); line-height: 1.7; word-break: break-all; }
+    .fni-line .fni-knd { color: var(--sub); }
+    .fni-none { font-size: 12px; color: var(--red); }
+    .fni-abn { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px;
+               background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow);
+               padding: 6px 12px; margin-bottom: 4px; word-break: break-all; }
+    .fni-abn .fni-side { color: var(--sub); flex: 0 0 auto; }
+    .fni-abn .fni-cnt { flex: 0 0 auto; color: var(--text); font-weight: 600; }
+    .fni-note { font-size: 12px; color: var(--sub); padding: 8px 12px; background: #fff;
+                border-radius: 8px; margin-top: 10px; line-height: 1.7; }
+
     /* ── 待升单列表：FAB + 侧边栏 ─────────────── */
     .stock-batch-fab {
       position: fixed; right: 16px; bottom: 24px; z-index: 500;
@@ -522,6 +561,7 @@
 <div class="tab-bar">
   <div class="tab-btn active" data-tab="qts">请购单</div>
   <div class="tab-btn" data-tab="pos-unreceived">采购未回</div>
+  <div class="tab-btn" data-tab="fg-no-issue">入库未领料</div>
   <div class="tab-btn" data-tab="smo">齐料列表</div>
   <div class="tab-btn" data-tab="stock">📦 盘点</div>
   <div class="tab-btn" data-tab="transfer">🔄 调拨</div>
@@ -631,6 +671,8 @@ function handleSearch(v) {
   switch (curTab) {
     case 'pos-unreceived':
       loadPosUnreceived(q); break;
+    case 'fg-no-issue':
+      fniQ = q; renderFgNoIssue(); break;
     case 'qts':
       if (!q) { renderQts(rawData, ''); break; }
       renderQts(rawData.filter(r => JSON.stringify(r).toLowerCase().includes(q.toLowerCase())), q); break;
@@ -729,11 +771,12 @@ function dropTabHold(t) {
   window['__tabScroll_' + t] = { el: 0, win: 0 };
 }
 function dropAllTabHolds() {
-  ['qts', 'pos-unreceived', 'smo', 'stock', 'transfer', 'completion', 'pmc', 'globalnet'].forEach(dropTabHold);
+  ['qts', 'pos-unreceived', 'fg-no-issue', 'smo', 'stock', 'transfer', 'completion', 'pmc', 'globalnet'].forEach(dropTabHold);
 }
 function tabLoader(t) {          // 各 tab 的加载函数（和原来切换分支一一对应）
   if (t === 'smo') return loadSmo();
   if (t === 'pos-unreceived') return loadPosUnreceived();
+  if (t === 'fg-no-issue') return loadFgNoIssue();
   if (t === 'stock') return loadStock();
   if (t === 'transfer') return loadTransfer();
   if (t === 'shape') return loadShape();
@@ -795,6 +838,9 @@ mainTabBar.addEventListener('click', e => {
     if (curTab === 'pos-unreceived') {
       posUnSearch = ''; posUnQ = '';
       posUnCustomer = ''; posUnSupplier = ''; posUnOrderNo = '';
+    }
+    if (curTab === 'fg-no-issue') {
+      fniQ = '';
     }
     // 有暂存就恢复（保留现场），没有才真加载
     if (!restoreTab(curTab)) tabLoader(curTab);
@@ -997,6 +1043,110 @@ async function closePosUnRow(btn) {
     btn.textContent = old;
     toast('❌ 关闭失败: ' + e.message);
   }
+}
+
+// ── 入库未领料（成品入库 IC_KND=13 → 哪个订单没领料）────────────────────────
+// 口径（MAK 2026-10-12 拍板，后端同口径见 main.py /api/fg-no-issue）：
+//   成品入库单 = IC_KND 13（不在 PSS）；领料 = 40 生产领料 / 41 外发加工领料 / 23 完工扣料；
+//   退料 50/51 只作反向附列；指令单号只认「纯数字 + 长度 4-5」。
+// 两个**不参与计数**的桶在页面下半部分单独列出：指令单号异常 / 未填指令单号（无法判定）。
+const FNI_KND = {23: '完工扣料', 40: '生产领料', 41: '外发加工领料', 50: '生产退料', 51: '外发退料'};
+let fniData = null;
+let fniQ = '';
+
+async function loadFgNoIssue() {
+  const el = $id('content');
+  el.innerHTML = '<div class="state-msg"><div class="spinner"></div>加载中…</div>';
+  try {
+    const data = await api(BASE + '/fg-no-issue');
+    fniData = data;
+    renderFgNoIssue();
+  } catch(e) { el.innerHTML = '<div class="error-msg">'+e.message+'</div>'; }
+}
+
+function fniMatch(o, q) {
+  if (!q) return true;
+  const s = [o.order_no].concat(
+    (o.fg || []).map(x => [x.ic_no, x.prd_no, x.prd_name, x.wh1name].join(' ')),
+    (o.issue || []).map(x => [x.ic_no, x.prd_no, x.prd_name].join(' '))
+  ).join(' ').toLowerCase();
+  return s.indexOf(q.toLowerCase()) >= 0;
+}
+
+function fniLines(list, noneText) {
+  if (!list || !list.length) return '<div class="fni-none">' + noneText + '</div>';
+  return list.map(x => '<div class="fni-line">' +
+    (x.ic_knd && FNI_KND[x.ic_knd] ? '<span class="fni-knd">[' + x.ic_knd + ' ' + FNI_KND[x.ic_knd] + ']</span> ' : '') +
+    escHtml(x.ic_no) + (x.itm ? ' 行' + x.itm : '') + ' · ' + escHtml(x.ic_dd) + ' · ' + escHtml(x.prd_no) +
+    (x.prd_name ? ' · ' + escHtml(x.prd_name) : '') +
+    ' · <b>' + fmtNum(x.qty) + ' ' + escHtml(x.ut || '') + '</b>' +
+    (x.wh1 ? ' · 入库仓 ' + escHtml(x.wh1) + (x.wh1name ? '（' + escHtml(x.wh1name) + '）' : '') : '') +
+    (x.usr ? ' · ' + escHtml(x.usr) : '') + '</div>').join('');
+}
+
+function fniOrderBlock(o, isNoIssue) {
+  return '<details class="fni-order"><summary>' +
+    '<span class="fni-order-no">' + highlight(o.order_no, fniQ) + '</span>' +
+    '<span class="fni-tag">入库 ' + o.fg_rows + ' 行 · ' + fmtNum(o.fg_qty) + '</span>' +
+    (isNoIssue ? '<span class="fni-tag red">领料：无</span>'
+               : '<span class="fni-tag green">领料 ' + o.issue_rows + ' 行 · ' + fmtNum(o.issue_qty) + '</span>') +
+    (o.ret_rows ? '<span class="fni-tag">退料 ' + o.ret_rows + ' 行</span>' : '') +
+    '</summary><div class="fni-drill">' +
+    '<div class="fni-drill-title">成品入库单（IC_KND=13）</div>' +
+    fniLines(o.fg, '无') +
+    '<div class="fni-drill-title">领料记录（IC_KND 40/41/23）</div>' +
+    fniLines(o.issue, '无（40/41/23 里一条都没找到）') +
+    (o.ret_rows ? '<div class="fni-drill-title">退料记录（50/51，反向附列）</div>' + fniLines(o.ret, '无') : '') +
+    '</div></details>';
+}
+
+function renderFgNoIssue() {
+  const el = $id('content');
+  if (!fniData) { el.innerHTML = '<div class="state-msg">暂无数据</div>'; return; }
+  const c = fniData.counts || {};
+  const q = fniQ;
+  const noIssue = (fniData.no_issue || []).filter(o => fniMatch(o, q));
+  const done = (fniData.done || []).filter(o => fniMatch(o, q));
+  const abn = (fniData.abnormal || []).filter(a => !q || a.order_no.toLowerCase().indexOf(q.toLowerCase()) >= 0);
+
+  let h = '<div class="fni-summary">' +
+    '<span class="fni-chip red">没领料 <b>' + noIssue.length + '</b> 个订单</span>' +
+    '<span class="fni-chip">已领料 <b>' + done.length + '</b> 个订单</span>' +
+    '<span class="fni-chip">成品入库单 <b>' + c.in_orders + '</b> 个 / ' + c.in_rows + ' 行</span>' +
+    '<span class="fni-chip">领料覆盖 <b>' + c.issue_orders + '</b> 个 / ' + c.issue_rows + ' 行</span>' +
+    '<span class="fni-chip warn">指令单号异常 <b>' + c.abnormal_rows + '</b> 行</span>' +
+    '<span class="fni-chip">未填指令单号 <b>' + c.blank_in_rows + '</b> 行（无法判定）</span>' +
+    (q ? '<span class="fni-chip">筛选：<b>' + escHtml(q) + '</b></span>' : '') +
+    '</div>';
+
+  h += '<div class="fni-sec-head red">没领料' + (q ? '（筛选后）' : '') +
+       '<small>成品入库单有规范指令单号，40/41/23 里一条都没有</small></div>';
+  h += noIssue.length ? noIssue.map(o => fniOrderBlock(o, true)).join('')
+                      : '<div class="state-msg">没有匹配的订单</div>';
+
+  h += '<div class="fni-sec-head">已领料（对照）<small>点订单展开看入库行 + 领料行</small></div>';
+  h += done.length ? done.map(o => fniOrderBlock(o, false)).join('')
+                   : '<div class="state-msg">没有匹配的订单</div>';
+
+  h += '<div class="fni-sec-head">指令单号异常<small>有值但不符合「纯数字 4-5 位」 —— 不计入「没领料」</small></div>';
+  h += abn.length ? abn.map(a => '<div class="fni-abn">' +
+      '<span class="fni-side">' + (a.side === 'in' ? '入库 13' : '领料 40/41/23') + '</span>' +
+      '<span>' + escHtml(a.order_no) + '</span>' +
+      '<span class="fni-cnt">' + a.rows + ' 行</span></div>').join('')
+    : '<div class="state-msg">没有匹配的异常单号</div>';
+
+  h += '<div class="fni-note">' +
+    '· <b>未填指令单号</b>：成品入库侧 <b>' + c.blank_in_rows + '</b> 行（列全空，历史上就没填）' +
+    (c.blank_issue_rows ? '；领料侧 ' + c.blank_issue_rows + ' 行' : '') +
+    ' → 判不了有没有领料，<b>不进「没领料」计数</b>。<br>' +
+    '· <b>只在领料侧出现的订单</b>：<b>' + c.only_issue_orders + '</b> 个' +
+    (fniData.only_issue && fniData.only_issue.length ? '（' + escHtml(fniData.only_issue.join('、')) + '）' : '') +
+    ' —— 有领料、没有成品入库，不是本表要看的对象。<br>' +
+    '· <b>口径</b>：成品入库单 = IC.IC_KND=13（⚠️ 不在 PSS —— PSS(PS_ID=\'PS\') 是采购入库）；' +
+    '领料 = 40 生产领料 / 41 外发加工领料 / 23 完工扣料；退料 50/51 只作反向附列。' +
+    '</div>';
+
+  el.innerHTML = h;
 }
 
 // ── 派工单 SMO ─────────────────────────────────────────────────────────────
