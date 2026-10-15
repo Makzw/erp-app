@@ -2062,7 +2062,8 @@ function cmMatTableHtml(item) {   // 该成品的材料明细（每张卡片里�
       return '<tr style="border-bottom:1px solid #f3f4f6">'
         + '<td style="padding:5px 8px;font-size:12px;border-right:1px solid #e5e7eb">' + fmt(m.prd_no)
         + (m.prd_name ? '<span style="color:var(--name);font-size:11px;margin-left:6px">' + fmt(m.prd_name) + '</span>' : '') + '</td>'
-        + '<td style="padding:5px 8px;font-size:12px;text-align:right;border-right:1px solid #e5e7eb">' + ratio + '</td>'
+        // 配比显示：最多 5 位小数、去掉尾随 0（除底数后会出现 0.6666666666666666 这种一长串）
+        + '<td style="padding:5px 8px;font-size:12px;text-align:right;border-right:1px solid #e5e7eb">' + String(Number(Number(ratio || 0).toFixed(5))) + '</td>'
         + '<td style="padding:5px 8px;font-size:12px;text-align:right;font-weight:700;color:#2563eb;border-right:1px solid #e5e7eb">' + (fgQty > 0 ? need : '—') + '</td>'
         + '<td style="padding:5px 8px;font-size:12px;text-align:right;border-right:1px solid #e5e7eb">' + avail + '</td>'
         + '<td style="padding:5px 8px;font-size:12px;text-align:center;font-weight:700;color:' + st[1] + ';border-right:1px solid #e5e7eb">' + st[0] + '</td>'
