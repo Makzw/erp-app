@@ -2720,6 +2720,64 @@ async def close_pos_unreceived(
         conn.close()
 
 
+# ── API: PS 采购入库单明细（PSS 表 PS_ID='PS'）────────────────────────────────
+# 只读。一行 = 一个品号（明细铺平，不按单分组）。
+#   · days=7 默认 → 最近 7 天（含今天）；days=30；days=0 → 全部日期。
+#   · 作废行（USABLE=0）与已删除行不显示 —— 与 app 内其他列表口径一致。
+#   · q = 品号 / 品名 / 供应商 / PS 单号 / 采购行号(REF_ITM) 模糊。
+#   · 关联键：REF_ITM = POS.OS_NO + RIGHT('000'+ITM,3)（采购行）；指令单号只有部分行填。
+_PS_IN_MATCH = ("(PRD_NO LIKE %s OR PRD_NAME LIKE %s OR CUS_NAME LIKE %s"
+                " OR PS_NO LIKE %s OR REF_ITM LIKE %s)")
+
+
+@app.get("/api/ps-in")
+async def ps_in(db: str = Query(default="c041"),
+                q: str = Query(default=""),
+                days: int = Query(default=7, ge=0, le=3650)):
+    """PS 采购入库单明细（PSS.PS_ID='PS'）。days=0 → 全部。"""
+    db_name = "T041" if db.lower() == "t041" else "C041"
+    conn = get_conn(db=db_name)
+    try:
+        cur = conn.cursor()
+        where, params = [], []
+        if days:
+            where.append("PS_DD >= DATEADD(day, -%d, CAST(CAST(GETDATE() AS date) AS datetime))" % (days - 1))
+        if q:
+            where.append(_PS_IN_MATCH)
+            params += ["%" + q + "%"] * 5
+        w = (" AND " + " AND ".join(where)) if where else ""
+        base = ("FROM PSS WITH (NOLOCK) WHERE PS_ID='PS'"
+                " AND ISNULL(USABLE,1)=1 AND ISNULL([删除],0)=0" + w)
+        cur.execute("SELECT COUNT(*) " + base, tuple(params))
+        total = int(cur.fetchone()[0] or 0)
+        cur.execute("""SELECT TOP 1000 PS_NO, PS_DD, CUS_NO, CUS_NAME, PRD_NO, PRD_NAME,
+                              SPC, UT, QTY, WH, REF_ITM, [指令单号]
+                       """ + base + " ORDER BY PS_DD DESC, PS_NO DESC, ITM", tuple(params))
+        rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    def dd(v):
+        return v.strftime("%Y-%m-%d") if hasattr(v, "strftime") else ""
+
+    def num(v):
+        try:
+            return round(float(v or 0), 3)
+        except (TypeError, ValueError):
+            return 0.0
+
+    items = []
+    for r in rows:
+        items.append({
+            "ps_no": g(r[0]), "ps_dd": dd(r[1]), "cus_no": g(r[2]), "supplier": g(r[3]),
+            "prd_no": g(r[4]), "prd_name": g(r[5]), "spc": g(r[6]), "ut": g(r[7]),
+            "qty": num(r[8]), "wh": g(r[9]), "ref_itm": g(r[10]), "order_no": g(r[11]),
+        })
+    return {"items": items, "total": total, "days": days, "q": q,
+            "caliber": "PSS(PS_ID='PS') 采购入库明细；作废(USABLE=0)/已删除行不显示；"
+                       + ("最近 %d 天（含今天）" % days if days else "全部日期")}
+
+
 # ── API: 入库未领料（成品入库单 IC_KND=13 → 哪个订单还没领料）──────────────────
 # 口径由 MAK 2026-10-12 拍板（kanban t_d339165a）：
 #   · 成品入库单 = IC_KND=13；**不在 PSS**（PSS(PS_ID='PS') 是采购入库，906/916 挂采购行）

@@ -585,6 +585,7 @@
 <div class="tab-bar">
   <div class="tab-btn active" data-tab="qts">请购单</div>
   <div class="tab-btn" data-tab="pos-unreceived">采购未回</div>
+  <div class="tab-btn" data-tab="ps-in">📥 PS入库</div>
   <div class="tab-btn" data-tab="smo">齐料列表</div>
   <div class="tab-btn" data-tab="stock">📦 盘点</div>
   <div class="tab-btn" data-tab="transfer">🔄 调拨</div>
@@ -694,6 +695,8 @@ function handleSearch(v) {
   switch (curTab) {
     case 'pos-unreceived':
       loadPosUnreceived(q); break;
+    case 'ps-in':
+      psInQ = q; loadPsIn(); break;
     case 'po-late':
       poLateQ = q; renderPoLate(); break;
     case 'fg-no-issue':
@@ -796,11 +799,12 @@ function dropTabHold(t) {
   window['__tabScroll_' + t] = { el: 0, win: 0 };
 }
 function dropAllTabHolds() {
-  ['qts', 'pos-unreceived', 'po-late', 'fg-no-issue', 'smo', 'stock', 'transfer', 'completion', 'pmc', 'globalnet'].forEach(dropTabHold);
+  ['qts', 'pos-unreceived', 'ps-in', 'po-late', 'fg-no-issue', 'smo', 'stock', 'transfer', 'completion', 'pmc', 'globalnet'].forEach(dropTabHold);
 }
 function tabLoader(t) {          // 各 tab 的加载函数（和原来切换分支一一对应）
   if (t === 'smo') return loadSmo();
   if (t === 'pos-unreceived') return loadPosUnreceived();
+  if (t === 'ps-in') return loadPsIn();
   if (t === 'po-late') return loadPoLate();
   if (t === 'fg-no-issue') return loadFgNoIssue();
   if (t === 'stock') return loadStock();
@@ -866,6 +870,7 @@ mainTabBar.addEventListener('click', e => {
       posUnCustomer = ''; posUnSupplier = ''; posUnOrderNo = '';
     }
     if (curTab === 'po-late') { poLateQ = ''; }
+    if (curTab === 'ps-in') { psInQ = ''; }
     if (curTab === 'fg-no-issue') {
       fniQ = '';
     }
@@ -1070,6 +1075,69 @@ async function closePosUnRow(btn) {
     btn.textContent = old;
     toast('❌ 关闭失败: ' + e.message);
   }
+}
+
+// ── PS 采购入库单明细（PSS PS_ID='PS'，后端 main.py /api/ps-in）───────────────
+// 一行 = 一个品号（明细铺平）。默认最近 7 天（含今天），可切 30 天 / 全部。
+// 作废行（USABLE=0）后端不返回。搜索走顶栏搜索框（品号/品名/供应商/单号/采购行）。
+let psInQ = '', psInDays = 7, psInTotal = 0;
+
+async function loadPsIn() {
+  const el = $id('content');
+  el.innerHTML = '<div class="state-msg"><div class="spinner"></div>加载中…</div>';
+  try {
+    const params = new URLSearchParams({ days: String(psInDays) });
+    if (psInQ) params.set('q', psInQ);
+    const data = await api(BASE + '/ps-in?' + params);
+    psInTotal = data.total || 0;
+    renderPsIn(data.items || []);
+  } catch(e) { el.innerHTML = '<div class="error-msg">'+e.message+'</div>'; }
+}
+
+function setPsInDays(d) { psInDays = d; loadPsIn(); }
+
+function renderPsIn(items) {
+  const el = $id('content');
+  const q = psInQ;
+  const rng = [[7, '最近 7 天'], [30, '最近 30 天'], [0, '全部']].map(([d, t]) =>
+    `<button class="pos-un-filter-reset" style="${psInDays === d ? 'font-weight:700;color:#1d4ed8;background:rgba(29,78,216,.1);border-radius:10px' : ''}"
+             onclick="setPsInDays(${d})">${t}</button>`).join('');
+
+  let h = `
+    <div class="pos-un-toolbar">
+      <span class="pos-un-filter-row">${rng}</span>
+      <span class="pos-un-info">${psInTotal} 行</span>
+    </div>`;
+
+  if (!items.length) { el.innerHTML = h + '<div class="state-msg">暂无 PS 入库单</div>'; return; }
+
+  h += '<div class="list">';
+  for (const r of items) {
+    h += `<div class="qts-row">
+      <div class="qts-row-head">
+        <span class="qts-status open">入库</span>
+        <span class="qts-no">${highlight(fmt(r.ps_no), q)}</span>
+        <span class="qts-date">${fmt(r.ps_dd)}</span>
+        ${r.supplier ? `<span class="qts-cus">${highlight(r.supplier, q)}</span>` : ''}
+      </div>
+      <div class="qts-row-body">
+        <div class="qts-prd">
+          <span class="qts-pno">${highlight(fmt(r.prd_no), q)}</span>
+          <span class="qts-pname">${highlight(fmt(r.prd_name) || '—', q)}</span>
+        </div>
+        <div class="qts-row-foot">
+          <span>数量: <b>${fmtNum(r.qty)} ${fmt(r.ut)}</b></span>
+          <span style="color:var(--sub)">库位: ${fmt(r.wh) || '—'}</span>
+        </div>
+      </div>
+      <div class="qts-row-meta">
+        <span>采购行: ${highlight(fmt(r.ref_itm) || '—', q)}</span>
+        <span>指令单: ${highlight(fmt(r.order_no) || '—', q)}</span>
+      </div>
+    </div>`;
+  }
+  h += '</div>';
+  el.innerHTML = h;
 }
 
 // ── 入库未领料（成品入库 IC_KND=13 → 哪个订单没领料）────────────────────────
