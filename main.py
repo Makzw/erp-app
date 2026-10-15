@@ -615,7 +615,7 @@ async def get_smo(smo_no: str):
     # BOM LEV=1
     fg, qty = header["fg_no"], header["fg_qty"] or 0
     cur.execute("""
-        SELECT b.PRD_NO, b.NAME, b.QTY, b.UT
+        SELECT b.PRD_NO, b.NAME, ISNULL(b.QTY / NULLIF(b.QTY_BAS, 0), b.QTY), b.UT
         FROM BOM b WITH (NOLOCK)
         WHERE b.UPGUID = (SELECT GUID FROM BOM WITH (NOLOCK) WHERE PRD_NO = %s AND LEV = 0)
           AND b.LEV = 1
@@ -1394,7 +1394,7 @@ async def completion_bom_match(prd_no: str = Query(...), db: str = Query(default
     conn = get_conn(db=db_name)
     cur = conn.cursor()
     cur.execute("""
-        SELECT DISTINCT h.PRD_NO, p.NAME, c.QTY
+        SELECT DISTINCT h.PRD_NO, p.NAME, ISNULL(c.QTY / NULLIF(c.QTY_BAS, 0), c.QTY)
         FROM BOM c WITH(NOLOCK)
         JOIN BOM h WITH(NOLOCK) ON c.UPGUID = h.GUID AND h.LEV = 0
         JOIN PRDT p WITH(NOLOCK) ON p.PRD_NO = h.PRD_NO
@@ -1430,8 +1430,11 @@ async def completion_fg_detail(fg_no: str = Query(...), db: str = Query(default=
     fg_name = g(prd_row[0]) if prd_row else ''
 
     # 查 BOM LEV=1 材料
+    # ⚠ 用量必须 **除母件底数** QTY_BAS：BOM 的 QTY 是「每 QTY_BAS 个母件」的用量，
+    #    不除的话 QTY_BAS>1 的材料（LEV=1 共 1,708 行 / 636 个成品）会被当成每件用量 → 放大 QTY_BAS 倍。
+    #    NULL/0 底数照旧用原 QTY（老行为不变）。
     cur.execute("""
-        SELECT c.PRD_NO, p.NAME, c.QTY
+        SELECT c.PRD_NO, p.NAME, ISNULL(c.QTY / NULLIF(c.QTY_BAS, 0), c.QTY)
         FROM BOM c WITH(NOLOCK)
         JOIN BOM h WITH(NOLOCK) ON c.UPGUID = h.GUID AND h.LEV=0
         JOIN PRDT p WITH(NOLOCK) ON p.PRD_NO = c.PRD_NO
@@ -1605,7 +1608,10 @@ async def smo_bom_stock(fg_no: str = Query(...), db: str = Query(default="c041")
             _by_guid.setdefault(_g, _p)
         _ph = ','.join(['%s'] * len(_guids))
         cur.execute(f"""
-            SELECT GUID, PRD_NO, LEV, IDX, QTY, KND, UPGUID
+            SELECT GUID, PRD_NO, LEV, IDX, QTY, KND, UPGUID,
+                   -- 每件用量必须除母件底数 QTY_BAS（QTY 是「每 QTY_BAS 个母件」的量）：
+                   -- 不除的话 QTY_BAS>1 的边会被放大 QTY_BAS 倍 → 树上虚报缺料
+                   ISNULL(QTY / NULLIF(QTY_BAS, 0), QTY) AS QTY_PER
             FROM BOM WITH(NOLOCK)
             WHERE UPGUID IN ({_ph}) AND ISNULL(删除,0)=0
         """, tuple(_guids))
@@ -1615,7 +1621,8 @@ async def smo_bom_stock(fg_no: str = Query(...), db: str = Query(default="c041")
             _parent_prd = _by_guid.get(_uguid)
             if _parent_prd is None:
                 continue                      # 父件不在本层 → 不挂（老写法同样挂不上）
-            _kids.append((_guid, g(_e[1]), _e[2], _e[3], _e[4], _e[5], _uguid, _parent_prd))
+            # 第 5 槽位存的是 **每件用量**（已除 QTY_BAS），下游 child_map / walk 直接累乘，不要再除
+            _kids.append((_guid, g(_e[1]), _e[2], _e[3], _e[7], _e[5], _uguid, _parent_prd))
         if not _kids:
             break
         # 子件下一层的 UPGUID 指向「它自己的 LEV=0 根 GUID」（老写法 prd_to_root 同一语义）
@@ -3161,13 +3168,15 @@ async def get_mom(mo_no: str):
             b.NAME,
             b.SPC,
             b.UT,
-            b.QTY       AS bom_qty,
-            CAST(b.QTY * %s AS DECIMAL(15,3)) AS need_qty,
+            -- 每件用量 = QTY / QTY_BAS（母件底数），NULL/0 底数照旧用原 QTY
+            per.UP       AS bom_qty,
+            CAST(per.UP * %s AS DECIMAL(15,3)) AS need_qty,
             ic.QTY      AS ic_qty,
-            CASE WHEN (ic.QTY >= CAST(b.QTY * %s AS DECIMAL(15,3))
-                      OR CAST(b.QTY * %s AS DECIMAL(15,3)) <= 0)
+            CASE WHEN (ic.QTY >= CAST(per.UP * %s AS DECIMAL(15,3))
+                      OR CAST(per.UP * %s AS DECIMAL(15,3)) <= 0)
                  THEN 1 ELSE 0 END AS is_ready
         FROM BOM b WITH (NOLOCK)
+        CROSS APPLY (SELECT ISNULL(b.QTY / NULLIF(b.QTY_BAS, 0), b.QTY) AS UP) per
         OUTER APPLY (
             SELECT TOP 1 QTY
             FROM IC WITH (NOLOCK)
