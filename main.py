@@ -6180,7 +6180,7 @@ async def pmc_make_qd(
             it = dict(it); it["qty"] = q
             items.append(it)
     if not items:
-        return {"error": "没有勾选请购的原材料（数量要大于 0）"}
+        return {"error": "没有勾选请购的品号（原材料/半成品，且数量要大于 0）"}
     est_dd = (body.get("est_dd") or "").strip()
     if not est_dd:
         return {"error": "请填写交期"}

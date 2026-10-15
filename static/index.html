@@ -3303,8 +3303,10 @@ function renderPMCTree(items, title) {
     } else {
       gapHtml = gnNetHtml(r.prd_no || '');
     }
-    // 请购列：只有采购件/原材料（knd=4）能请购，自制件（knd=3）走派工单
-    var canQd = !isFg && String(r.knd || '') === '4';
+    // 请购列：原材料（knd=4）与半成品（knd=3）都能请购（MAK 2026-10-15：半成品也要能请购 → 外购半成品）
+    // 成品行（树根）仍不可请购；其它品号（无 knd / knd=2 等）不放开
+    var _knd = String(r.knd || '');
+    var canQd = !isFg && (_knd === '4' || _knd === '3');
     // 数量留空，由用户手填（MAK 2026-09-30：不再拿本单缺口当默认值，避免误填成全厂量）
     var qdDefTxt = '';
     var qdcHtml = canQd
@@ -3312,7 +3314,7 @@ function renderPMCTree(items, title) {
         '<input type="checkbox" id="qdSel_' + i + '" onchange="pmcQdSync()" style="width:16px;height:16px;cursor:pointer" title="勾选后填数量">' +
         '<input type="number" id="qdQty_' + i + '" data-def="' + qdDefTxt + '" value="' + qdDefTxt + '" oninput="pmcQdSync()" placeholder="0" style="width:92px;padding:4px 6px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;text-align:right;font-variant-numeric:tabular-nums">' +
         '</div>'
-      : '<span style="color:var(--sub)" title="' + (isFg ? '成品行不可请购' : '自制件：走派工单，不请购') + '">—</span>';
+      : '<span style="color:var(--sub)" title="' + (isFg ? '成品行不可请购' : '这个品号不可请购（只支持原材料/半成品）') + '">—</span>';
 
     // 销未出 / 在途 / 在单
     // 池子是「全厂」的：挂本单的那部分才算本单供给。一点都没挂本单的，灰色 + 别单角标，
@@ -3373,7 +3375,7 @@ function renderPMCTree(items, title) {
   html += '<span>在途/在单请购=<span style="color:#8b5cf6;font-weight:600">本单可用</span>（小字是全厂池；0 就是本单可用 0）</span>';
   html += '<span>合计=<span style="font-weight:600">在途+在单请购</span></span>';
   html += '<span>全厂净需求=<span style="color:#b45309;font-weight:600">所有成品的未出展开 − 材料仓 − 生产仓 − 在途 − 请购</span>（料行；hover 看明细）｜ 成品行「全厂要做」=<span style="color:#1d4ed8;font-weight:600">全厂未出（所有订单）</span>｜ 同品号只在第一处显示</span>';
-  html += '<span>请购=<span style="color:#16a34a;font-weight:600">勾选原材料（自制件不请购）</span> + 数量，生成一张 QD 请购单</span>';
+  html += '<span>请购=<span style="color:#16a34a;font-weight:600">勾选原材料或半成品</span> + 数量，生成一张 QD 请购单</span>';
   html += '<span>全厂净需求=<span style="color:#b45309;font-weight:600">所有成品的未出展开 − 材料仓 − 生产仓 − 在途 − 请购</span>（全厂口径，hover 看明细；同品号只在第一处显示，跟左边的「缺口」不是一回事）</span>';
   html += '</div>';
 
@@ -3386,7 +3388,7 @@ function renderPMCTree(items, title) {
       '<button onclick="pmcQdAll()" style="padding:6px 12px;border-radius:16px;border:1px solid var(--border);background:#fff;font-size:12px;cursor:pointer">全选可请购</button>' +
       '<button onclick="pmcQdNone()" style="padding:6px 12px;border-radius:16px;border:1px solid var(--border);background:#fff;font-size:12px;cursor:pointer">清空</button>' +
       '<button id="qdGoBtn" onclick="pmcMakeQd()" style="background:#16a34a;color:#fff;border:none;border-radius:8px;padding:9px 20px;font-size:13px;font-weight:600;cursor:pointer;opacity:.5">生成请购单 (0)</button>' +
-      '<span style="font-size:12px;color:var(--sub)">勾选「请购」列的原材料 → 数量默认净缺口、可改 → 交期手填</span>' +
+      '<span style="font-size:12px;color:var(--sub)">勾选「请购」列的原材料/半成品 → 填数量 → 交期手填</span>' +
       '</div>';
   }
 
@@ -3450,7 +3452,7 @@ function pmcQdClose() { var o = $id('qdConfirmOv'); if (o && o.parentNode) o.par
 async function pmcMakeQd() {
   if ($id('qdConfirmOv')) return;   // 确认框已开着，别叠第二个
   var rows = pmcQdCollect();
-  if (!rows.length) { toast('请先勾选要请购的原材料并填数量'); return; }
+  if (!rows.length) { toast('请先勾选要请购的品号（原材料/半成品）并填数量'); return; }
   var dd = $id('qdEstDd');
   var est = dd ? (dd.value || '') : '';
   if (!est) { toast('请先填交期（手填）'); return; }
