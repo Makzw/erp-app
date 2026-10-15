@@ -3309,8 +3309,13 @@ function renderPMCTree(items, title) {
     var canQd = !isFg && (_knd === '4' || _knd === '3');
     // 数量留空，由用户手填（MAK 2026-09-30：不再拿本单缺口当默认值，避免误填成全厂量）
     var qdDefTxt = '';
+    // 半成品小标记（MAK 2026-10-15）：半成品（knd=3）行在请购列前加紫色「半」，扫长树时一眼分得清
+    // 半成品 / 原材料（原材料不加标记 = 默认那种）
+    var kndBadge = (_knd === '3')
+      ? '<span style="font-size:10px;font-weight:700;color:#7c3aed;background:#ede9fe;border-radius:8px;padding:1px 5px;white-space:nowrap" title="半成品（自制件）">半</span>'
+      : '';
     var qdcHtml = canQd
-      ? '<div style="display:flex;align-items:center;gap:6px;justify-content:flex-end">' +
+      ? '<div style="display:flex;align-items:center;gap:6px;justify-content:flex-end">' + kndBadge +
         '<input type="checkbox" id="qdSel_' + i + '" onchange="pmcQdSync()" style="width:16px;height:16px;cursor:pointer" title="勾选后填数量">' +
         '<input type="number" id="qdQty_' + i + '" data-def="' + qdDefTxt + '" value="' + qdDefTxt + '" oninput="pmcQdSync()" placeholder="0" style="width:92px;padding:4px 6px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;text-align:right;font-variant-numeric:tabular-nums">' +
         '</div>'
