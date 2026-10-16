@@ -4877,10 +4877,17 @@ async function shapeStockOf(inp) {
   if (item.dataset.stkSeq !== seq) return;
   if (!d || !d.found) { box.innerHTML = '<span class="neg">⚠️ 系统里没有这个品号</span>'; return; }
   var whs = d.warehouses || [];
-  var sel = ((item.querySelector('.shape-wh') || {}).value || '').trim();
+  var whInp = item.querySelector('.shape-wh');
+  var sel = ((whInp || {}).value || '').trim();
   var pos = whs.filter(function (w) { return (w.qty || 0) > 0; });
   var neg = whs.filter(function (w) { return (w.qty || 0) < 0; });
   var zero = whs.filter(function (w) { return !(w.qty || 0); });
+  // 源料行：只有 1 个仓有货 → 直接把仓库填上（省一步 + 防填错仓）
+  // 只填「空着」的框，用户自己填过的一律不动；目标料行不填（入库仓由人定）
+  if (item.dataset.side === 'sources' && !sel && whInp && pos.length === 1) {
+    whInp.value = String(pos[0].wh);
+    sel = whInp.value.trim();
+  }
   if (!pos.length && !neg.length) {
     box.innerHTML = '<span class="zero">库存 0（' + whs.length + ' 个仓库都没货）</span>';
     return;
