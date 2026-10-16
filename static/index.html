@@ -549,6 +549,11 @@
 .shape-submit{width:100%;padding:12px;border:0;border-radius:12px;background:var(--brand,#2563eb);color:#fff;font-size:15px;cursor:pointer}
 .shape-rem-label{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:13px}
 .shape-rem-label input{flex:1;padding:6px 8px;border:1px solid var(--line,#0002);border-radius:8px}
+/* 选完品号后贴在该行下面的库存行（2026-10-16） */
+.shape-stock{font-size:12px;color:#555;margin:-2px 0 8px 8px;line-height:1.55;min-height:0}
+.shape-stock .neg{color:#c00}
+.shape-stock .zero{color:#999}
+.shape-stock .hit{color:var(--brand,#2563eb);font-weight:600}
     /* ── 采购·到交期未到（看板：按供应商分组）────────────── */
     .po-late-toolbar{padding:8px 12px 4px}
     .po-late-sum{font-size:13px;color:var(--text);line-height:1.6}
@@ -4809,11 +4814,15 @@ function renderGlobalNet() {
 // ── 形态转换（一转一 / 多合一）：N 行源料出库(KND=23)一张单 + M 行目标料入库(KND=13)另一张单 ──
 function shapeRow(side) {
   var id = (side === 'sources' ? 'shs_' : 'sht_') + Date.now() + Math.random().toString(36).slice(2, 6);
-  return '<div class="shape-row" data-side="' + side + '">'
-    + '<input id="' + id + '" class="shape-prd" list="shapePrdList" placeholder="品号（打字搜）" oninput="shapeSearchPrd(this.value)">'
-    + '<input class="shape-wh" list="shapeWhList" placeholder="仓库" style="width:96px">'
+  // 外层多一层 .shape-item：库存行要贴在这一行下面（MAK 2026-10-16：选完料号要看到库存）
+  return '<div class="shape-item" data-side="' + side + '">'
+    + '<div class="shape-row">'
+    + '<input id="' + id + '" class="shape-prd" list="shapePrdList" placeholder="品号（打字搜）" oninput="shapeSearchPrd(this.value)" onchange="shapeStockOf(this)">'
+    + '<input class="shape-wh" list="shapeWhList" placeholder="仓库" style="width:96px" onchange="shapeStockOf(this.closest(\'.shape-item\').querySelector(\'.shape-prd\'))">'
     + '<input class="shape-qty" type="number" min="0" step="any" placeholder="数量" style="width:92px" oninput="shapeSum()">'
-    + '<button class="shape-del" title="删掉这行" onclick="this.parentNode.remove();shapeSum()">✕</button>'
+    + '<button class="shape-del" title="删掉这行" onclick="this.closest(\'.shape-item\').remove();shapeSum()">✕</button>'
+    + '</div>'
+    + '<div class="shape-stock" data-stock></div>'
     + '</div>';
 }
 function shapeAddRow(side) {
@@ -4849,6 +4858,42 @@ async function shapeSearchPrd(q) {
       return '<option value="' + escAttr(p.prd_no) + '">' + escAttr(String(p.name || '').slice(0, 40)) + '</option>';
     }).join('');
   } catch (e) { /* 打字过程失败不刷屏；提交时会把问题说出来 */ }
+}
+// 选完品号 → 拉该品号在各仓的库存，贴在这一行下面（MAK 2026-10-16）
+// 复用盘点/调拨的同一个接口 /api/stock；口径：正数仓列出 · 负数仓红字 · 零库存仓只报个数
+async function shapeStockOf(inp) {
+  var item = (inp && inp.closest) ? inp.closest('.shape-item') : null;
+  if (!item) return;
+  var box = item.querySelector('[data-stock]');
+  if (!box) return;
+  var prd = (inp.value || '').trim();
+  if (!prd) { box.innerHTML = ''; return; }
+  var seq = String((parseInt(item.dataset.stkSeq, 10) || 0) + 1);   // 打字竞态：只认最后一次
+  item.dataset.stkSeq = seq;
+  box.textContent = '查库存…';
+  var d;
+  try { d = await api(BASE + '/stock?' + new URLSearchParams({ prd_no: prd })); }
+  catch (e) { if (item.dataset.stkSeq === seq) box.innerHTML = '<span class="neg">库存查询失败：' + escAttr(e.message) + '</span>'; return; }
+  if (item.dataset.stkSeq !== seq) return;
+  if (!d || !d.found) { box.innerHTML = '<span class="neg">⚠️ 系统里没有这个品号</span>'; return; }
+  var whs = d.warehouses || [];
+  var sel = ((item.querySelector('.shape-wh') || {}).value || '').trim();
+  var pos = whs.filter(function (w) { return (w.qty || 0) > 0; });
+  var neg = whs.filter(function (w) { return (w.qty || 0) < 0; });
+  var zero = whs.filter(function (w) { return !(w.qty || 0); });
+  if (!pos.length && !neg.length) {
+    box.innerHTML = '<span class="zero">库存 0（' + whs.length + ' 个仓库都没货）</span>';
+    return;
+  }
+  var one = function (w) {                                  // 行里已填的仓库 → ▶ 加粗，看得见「就取这个仓」
+    var hit = sel && String(w.wh) === sel;
+    return '<span class="' + (hit ? 'hit' : '') + '">' + (hit ? '▶ ' : '') + fmt(w.wh) + ' ' + gnQty(w.qty) + '</span>';
+  };
+  var html = '库存 ' + pos.map(one).join(' ｜ ');
+  if (neg.length) html += ' ｜ <span class="neg">负 ' + neg.map(function (w) { return fmt(w.wh) + ' ' + gnQty(w.qty); }).join(' ') + '</span>';
+  if (zero.length) html += ' ｜ <span class="zero">' + zero.length + ' 仓 0</span>';
+  html += ' <span class="zero">（合计 ' + gnQty(d.total) + '）</span>';
+  box.innerHTML = html;
 }
 function shapeReadRows(boxId) {
   var box = $id(boxId);
