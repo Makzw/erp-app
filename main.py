@@ -1,5 +1,5 @@
 """
-安而固 ERP — 请购单手机端
+信乐生产管控系统 — 请购单手机端
 FastAPI 后端 + 响应式 SPA
 """
 import os
@@ -129,7 +129,7 @@ def from_hex_wh_name(v):
     except: return b.decode('utf-8', errors='replace')
 
 # ── FastAPI ───────────────────────────────────────────────────────────────────
-app = FastAPI(title="安而固 ERP — 请购单", version="1.0")
+app = FastAPI(title="信乐生产管控系统", version="1.0")
 
 app.add_middleware(
     CORSMiddleware,
