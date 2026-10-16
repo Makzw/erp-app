@@ -697,6 +697,10 @@ function handleSearch(v) {
       loadPosUnreceived(q); break;
     case 'ps-in':
       psInQ = q; loadPsIn(); break;
+    case 'transfer':
+      // 调拨 tab 用同一个搜索框做品号补全（原来靠贴在框上的 oninput，2026-10-16 收进这里）
+      if (q.length >= 2) loadStockSuggestions(q); else dismissSuggestions();
+      break;
     case 'po-late':
       poLateQ = q; renderPoLate(); break;
     case 'fg-no-issue':
@@ -714,8 +718,10 @@ function handleSearch(v) {
       loadStockSuggestions(q); break;
     case 'completion':
       if (!q) { loadCompletion(); break; }
-      if (!completionData.length) { loadCompletion(); break; }
-      renderCompletionListFiltered(completionData.filter(r => JSON.stringify(r).toLowerCase().includes(q.toLowerCase()))); break;
+      // ⚠ 从**全量** allCompletionData 里筛（不是从 completionData —— 后者会被 renderCompletionListFiltered
+      //   改写成「上一次的结果」，于是退格删字永远回不来行）
+      if (!allCompletionData.length) { loadCompletion(); break; }
+      renderCompletionListFiltered(allCompletionData.filter(r => JSON.stringify(r).toLowerCase().includes(q.toLowerCase()))); break;
     case 'pmc':
       (async () => {
         try {
@@ -865,6 +871,7 @@ mainTabBar.addEventListener('click', e => {
     $id('searchInput').value = '';
     $id('searchClear').classList.remove('show');
     curSearch = '';
+    wireSearchInput(curTab);   // ⚠️ 必须在这里装：搜索框是共用的，上一条 tab 的补全/回车行为不能留在框上
     if (curTab === 'pos-unreceived') {
       posUnSearch = ''; posUnQ = '';
       posUnCustomer = ''; posUnSupplier = ''; posUnOrderNo = '';
@@ -1431,23 +1438,7 @@ async function loadSmo() {
   if (inp) inp.value = '';
   $id('searchClear')?.classList.remove('show');
   curSearch = '';
-  // 只接管回车键（点击建议/按回车 → 调 BOM 接口）
-  if (inp) {
-    inp.onkeydown = function(e) {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        const val = inp.value.trim();
-        if (stockSuggestions.length > 0) {
-          const first = stockSuggestions[0];
-          inp.value = first.prd_no;
-          dismissSuggestions();
-          smoSearchByPRD(first.prd_no);
-        } else if (val) {
-          smoSearchByPRD(val);
-        }
-      }
-    };
-  }
+  // 回车行为统一由 wireSearchInput('smo') 在切 tab 时装（别再往搜索框上贴处理函数）
 }
 
 async function smoSearchByPRD(prdNo) {
@@ -1617,24 +1608,7 @@ async function loadStock() {
     </div>`;
   stockData = null;
   stockSuggestions = [];
-  // 只接管回车键，input 时调用 handleSearch → loadStockSuggestions
-  const inp = $id('searchInput');
-  if (inp) {
-    inp.onkeydown = function(e) {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        const val = inp.value.trim();
-        if (stockSuggestions.length > 0) {
-          const first = stockSuggestions[0];
-          inp.value = first.prd_no;
-          dismissSuggestions();
-          stockSearchByPRD(first.prd_no);
-        } else if (val) {
-          stockSearchByPRD(val);
-        }
-      }
-    };
-  }
+  // 输入时的补全走 handleSearch → loadStockSuggestions；回车行为由 wireSearchInput('stock') 装
 }
 
 
@@ -2474,31 +2448,7 @@ async function loadTransfer() {
       toast('⚠️ 仓库列表加载失败: ' + e.message);
     }
   })();
-  const inp = $id('searchInput');
-  if (inp) {
-    inp.onkeydown = function(e) {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        const val = inp.value.trim();
-        if (stockSuggestions.length > 0) {
-          const first = stockSuggestions[0];
-          inp.value = first.prd_no;
-          dismissSuggestions();
-          stockSearchByPRD(first.prd_no);
-        } else if (val) {
-          stockSearchByPRD(val);
-        }
-      }
-    };
-    inp.oninput = function() {
-      const val = inp.value.trim();
-      if (val.length >= 2) {
-        loadStockSuggestions(val);
-      } else {
-        dismissSuggestions();
-      }
-    };
-  }
+  // 搜索框行为（补全 + 回车）统一由 wireSearchInput('transfer') 在切 tab 时装
 }
 
 async function loadStockSuggestions(q) {
@@ -2562,6 +2512,33 @@ function dismissSuggestions() {
   if (old) old.remove();
   stockSuggestions = [];
   _suggestQ = '';
+}
+
+// ── 搜索框处理函数：按 tab 统一在这里装（2026-10-16，MAK 报「完工 tab 搜索框变成调拨/盘点那个弹产品的作用」）──
+// 根因：盘点 / 调拨 / 齐料 三个 tab 各自把 oninput / onkeydown **贴在同一个搜索框**上，
+//       切走以后没人还原 → 在别的 tab（例：完工）打字会走成上一条 tab 的产品补全下拉、
+//       按回车会跳去盘点/齐料的产品搜索页。**只认「当前 tab」**就没这问题：每次切 tab 先还原默认。
+// 规矩：以后要改搜索框行为，加在这里（按 tab 分派），**别再往搜索框上贴处理函数**。
+function wireSearchInput(t) {
+  const inp = $id('searchInput');
+  if (!inp) return;
+  inp.oninput = function () { handleSearch(this.value); };   // 默认：交给 handleSearch 按 tab 分派
+  inp.onkeydown = null;
+  const enterSearch = (fn) => function (e) {                 // 盘点/调拨/齐料：回车 = 直接用品号查
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const val = inp.value.trim();
+    if (stockSuggestions.length > 0) {                       // 有补全 → 选第一条（防手打错品号）
+      const first = stockSuggestions[0];
+      inp.value = first.prd_no;
+      dismissSuggestions();
+      fn(first.prd_no);
+    } else if (val) {
+      fn(val);
+    }
+  };
+  if (t === 'smo') inp.onkeydown = enterSearch(smoSearchByPRD);
+  else if (t === 'stock' || t === 'transfer') inp.onkeydown = enterSearch(stockSearchByPRD);
 }
 
 async function stockSearchByPRD(prdNo) {
