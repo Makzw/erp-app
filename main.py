@@ -273,7 +273,7 @@ async def get_qts(qt_no: str):
                USR, CHK_MAN, REM, ACCESSORY, USABLE, CLS_ID, 删除,
                PRD_NO, PRD_NAME, SPC, UT, QTY, UP, AMT,
                EST_DD, FLD1, FLD2, FLD3, REF_ITM, SO_NO_ITM,
-               指令单号, 成品编号, 紧急程度, 订单数量, ITM
+               指令单号, 成品编号, 紧急程度, 订单数量, ITM, REM1
         FROM QTS WITH (NOLOCK)
         WHERE QT_NO = %s
         ORDER BY ITM
@@ -329,8 +329,65 @@ async def get_qts(qt_no: str):
             "product_no": g(r[COL["成品编号"]]),
             "urgency":    g(r[COL["紧急程度"]]),
             "order_qty":  f(r[COL["订单数量"]]),
+            "rem1":       g(r[COL["REM1"]]),
         })
 
+    return {**header, "items": items}
+
+
+# ── API: 单张 IC 单据明细（网页端打印调拨单/出入库单用）────────────────────
+@app.get("/api/ic/{ic_no}")
+async def get_ic_doc(ic_no: str):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT IC_NO, IC_DD, IC_KND, ITM, PRD_NO, PRD_NAME, QTY, UT,
+               WH1, WH1NAME, WH2, WH2NAME, USR, ISNULL(REM, '') AS REM,
+               客户, 指令单号, CUSNAME, DDJH, 单重, 净重
+        FROM IC WITH (NOLOCK)
+        WHERE RTRIM(IC_NO) = RTRIM(%s)
+        ORDER BY ITM
+    """, (ic_no,))
+    rows = cur.fetchall()
+    COL = {c[0]: i for i, c in enumerate(cur.description)}
+    conn.close()
+
+    if not rows:
+        return {"error": "单据不存在"}, 404
+
+    header = {
+        "ic_no":     g(rows[0][COL["IC_NO"]]),
+        "ic_dd":     g(rows[0][COL["IC_DD"]]),
+        "ic_knd":    rows[0][COL["IC_KND"]],
+        "wh1":       g(rows[0][COL["WH1"]]),
+        "wh1_name":  g(rows[0][COL["WH1NAME"]]),
+        "wh2":       g(rows[0][COL["WH2"]]),
+        "wh2_name":  g(rows[0][COL["WH2NAME"]]),
+        "usr":       g(rows[0][COL["USR"]]),
+        "rem":       g(rows[0][COL["REM"]]),
+        "cus":       g(rows[0][COL["客户"]]),
+        "cus_name":  g(rows[0][COL["CUSNAME"]]),
+        "order_no":  g(rows[0][COL["指令单号"]]),
+        "ddjh":      g(rows[0][COL["DDJH"]]),
+    }
+    items = []
+    for r in rows:
+        items.append({
+            "itm":      r[COL["ITM"]],
+            "knd":      r[COL["IC_KND"]],
+            "prd_no":   g(r[COL["PRD_NO"]]),
+            "prd_name": g(r[COL["PRD_NAME"]]),
+            "ut":       g(r[COL["UT"]]),
+            "qty":      f(r[COL["QTY"]]),
+            "dz":       f(r[COL["单重"]]),
+            "jz":       f(r[COL["净重"]]),
+            # 2026-10-19：原版单据（[PRINT] IC/13、IC/30）是逐行打 客户/指令单号/外发处理/备注，
+            # 这些值在 IC 行上（运输工具行自带 REM），不能只取单头，否则打出来和模板对不上。
+            "rem":      g(r[COL["REM"]]),
+            "order_no": g(r[COL["指令单号"]]),
+            "cus":      g(r[COL["客户"]]),
+            "ddjh":     g(r[COL["DDJH"]]),
+        })
     return {**header, "items": items}
 
 
@@ -1043,6 +1100,23 @@ async def stock_transfer(
     conn.close()
     return {"ok": True, "ic_no": ic_no, "count": len(results), "items": results}
 
+def _comp_close_ensure(cur):
+    """完工结案表：手工结案（发出 1000 只回来 980 这类，差额当损耗，不写库存流水）。"""
+    cur.execute("""
+        IF OBJECT_ID('COMP_CLOSE', 'U') IS NULL
+        CREATE TABLE COMP_CLOSE (
+            IC_NO     varchar(30)  NOT NULL,
+            PRD_NO    varchar(60)  NOT NULL,
+            TOTAL_QTY numeric(18,3) NULL,
+            DONE_QTY  numeric(18,3) NULL,
+            USR       varchar(30)  NULL,
+            REM       varchar(200) NULL,
+            DD        datetime     NOT NULL CONSTRAINT DF_COMP_CLOSE_DD DEFAULT GETDATE(),
+            CONSTRAINT PK_COMP_CLOSE PRIMARY KEY (IC_NO, PRD_NO)
+        )
+    """)
+
+
 @app.get("/api/completion/transfer")
 async def completion_transfer_list(
     db: str = Query(default="c041"),
@@ -1062,8 +1136,12 @@ async def completion_transfer_list(
     db_name = "T041" if db.lower() == "t041" else "C041"
     conn = get_conn(db=db_name)
     cur = conn.cursor()
+    _comp_close_ensure(cur)
 
-    where = "WHERE t.IC_KND = 30 AND t.USABLE = 1 AND ISNULL(t.删除, 0) = 0 AND LEFT(t.PRD_NO, 5) NOT IN ('03002','03000')"
+    # 转仓子单（REM 以「转仓」开头、FLD1 指向原调拨单）不是独立的待完工单，排除
+    where = ("WHERE t.IC_KND = 30 AND t.USABLE = 1 AND ISNULL(t.删除, 0) = 0 "
+             "AND LEFT(t.PRD_NO, 5) NOT IN ('03002','03000') "
+             "AND NOT (ISNULL(t.FLD1,'') <> '' AND ISNULL(t.REM,'') LIKE N'转仓%')")
     args = []
     if prd_no:
         where += " AND t.PRD_NO LIKE %s"
@@ -1090,11 +1168,11 @@ async def completion_transfer_list(
             w.NAME,
             SUM(t.QTY) AS total_qty,
             ISNULL(x.done_qty, 0) AS transfer_qty,
-            ISNULL(t.指令单号, '') AS ref,
-            ISNULL(t.客户, '') AS cus,
-            ISNULL(t.DDJH, '') AS ddjh,
-            ISNULL(t.单重, 0) AS dzhw,
-            ISNULL(t.净重, 0) AS jzhw,
+            MAX(ISNULL(t.指令单号, '')) AS ref,
+            MAX(ISNULL(t.客户, '')) AS cus,
+            MAX(ISNULL(t.DDJH, '')) AS ddjh,
+            MAX(ISNULL(t.单重, 0)) AS dzhw,
+            MAX(ISNULL(t.净重, 0)) AS jzhw,
             -- 退料量 / 扣料量：按行退料后，只有「退料量 ≥ 扣料量 且 扣料量 > 0」才算退完（MAK 2026-10-06）
             ISNULL((SELECT SUM(r.QTY) FROM IC r WITH(NOLOCK)
                     -- 退料单据类型：13=旧写法(单边入，已废) / 50=生产退料单 / 51=外发加工退料单
@@ -1104,7 +1182,23 @@ async def completion_transfer_list(
                       AND r.PRD_NO = t.PRD_NO), 0) AS ret_qty,
             ISNULL((SELECT SUM(c.QTY) FROM IC c WITH(NOLOCK)
                     WHERE c.IC_KND = 23 AND ISNULL(c.删除, 0) = 0
-                      AND ISNULL(c.FLD1, '') = t.IC_NO AND c.REM LIKE N'完工出库%'), 0) AS cut_qty
+                      AND ISNULL(c.FLD1, '') = t.IC_NO AND c.REM LIKE N'完工出库%'), 0) AS cut_qty,
+            -- 2026-10-19：已完工行要打「入仓单」→ 两跳找 KND=13 完工入库单：
+            -- 调拨单 ← KND=23 完工出库(FLD1=调拨单号) ← KND=13 完工入库(FLD1=出库单号)
+            (SELECT TOP 1 CONVERT(VARCHAR(20), i13.IC_NO)
+               FROM IC i23 WITH(NOLOCK)
+               JOIN IC i13 WITH(NOLOCK)
+                 ON i13.IC_KND = 13 AND ISNULL(i13.删除,0) = 0
+                AND RTRIM(ISNULL(i13.FLD1,'')) = RTRIM(i23.IC_NO)
+              WHERE i23.IC_KND = 23 AND ISNULL(i23.删除,0) = 0
+                AND RTRIM(ISNULL(i23.FLD1,'')) = RTRIM(t.IC_NO)
+              ORDER BY i13.IC_DD DESC) AS in_ic_no,
+            cc.DD AS close_dd,
+            -- 改派后的当前仓：该调拨单下最新一张「转仓」子单的目的仓
+            (SELECT TOP 1 r.WH1 FROM IC r WITH(NOLOCK)
+              WHERE r.IC_KND = 30 AND ISNULL(r.删除,0) = 0 AND ISNULL(r.FLD1,'') = t.IC_NO
+                AND r.PRD_NO = t.PRD_NO AND ISNULL(r.REM,'') LIKE N'转仓%'
+              ORDER BY r.IC_DD DESC, r.IC_NO DESC) AS cur_wh
         FROM IC t WITH(NOLOCK)
         JOIN PRDT p WITH(NOLOCK) ON p.PRD_NO = t.PRD_NO
         LEFT JOIN MY_WH w WITH(NOLOCK) ON w.WH = t.WH1
@@ -1115,12 +1209,21 @@ async def completion_transfer_list(
             WHERE IC_KND = 23 AND ISNULL(FLD1, '') <> ''
             GROUP BY FLD1, PRD_NO
         ) x ON x.FLD1 = t.IC_NO AND x.PRD_NO = t.PRD_NO
+        LEFT JOIN COMP_CLOSE cc WITH(NOLOCK)
+               ON cc.IC_NO = t.IC_NO AND cc.PRD_NO = t.PRD_NO
         {where}
         GROUP BY t.IC_NO, t.PRD_NO, p.NAME, t.WH1, w.NAME, x.done_qty,
-                 t.指令单号, t.客户, t.DDJH, t.单重, t.净重
+                 cc.DD
         ORDER BY t.IC_NO DESC
     """, args if args else None)
     rows = cur.fetchall()
+    # 改派后的仓名要在关连接前一次查完（原来在循环里查 → Connection is closed）
+    _cw = sorted({g(r[17]) for r in rows if len(r) > 17 and r[17]})
+    _whname = {}
+    if _cw:
+        cur.execute("SELECT WH, NAME FROM MY_WH WITH(NOLOCK) WHERE WH IN (%s)" % ",".join(["%s"] * len(_cw)),
+                    tuple(_cw))
+        _whname = {a: b for a, b in cur.fetchall()}
     conn.close()
 
     items = []
@@ -1129,29 +1232,48 @@ async def completion_transfer_list(
         done = float(r[7] or 0)
         remaining = total - done
         ret = float(r[13] or 0)       # 退料量（按品号）
-        # 剩余料已全部退料（退料 ≥ 剩余）→ 该批没有可完工的料了，不再进完工列表（MAK 2026-10-08）
-        if remaining > 0 and remaining - ret > 1e-6:
-            items.append({
-                "ic_no":         g(r[0]),
-                "ic_dd":         g(r[1]) or '',
-                "prd_no":        g(r[2]),
-                "prd_name":      g(r[3]),
-                "wh1":           g(r[4]),
-                "wh1_name":      g(r[5]),
-                "total_qty":     total,
-                "transfer_qty":  done,
-                "remaining_qty": remaining,
-                "ref":   g(r[8]),
-                "cus":   g(r[9]),
-                "ddjh":  g(r[10]),
-                "dzhw":  r[11] or 0,
-                "jzhw":  r[12] or 0,
-                # 按行退料：全退完才置 returned（部分退料仍可继续退剩下的）
-                # 索引提醒：IC_NO 后插过 ic_dd，整体后移过一位 → ret_qty=13 / cut_qty=14
-                "returned": float(r[13] or 0) > 0 and float(r[13] or 0) >= float(r[14] or 0) - 1e-6,
-                "ret_qty":  round(float(r[13] or 0), 3),
-                "cut_qty":  round(float(r[14] or 0), 3),
-            })
+        # 2026-10-19（MAK）：已完工 / 部分完工已退料的单不再从列表里消失 —— 带上 status 一起返回，
+        # 前端把它们排在最底下、绿色显示（原来 2026-10-08 是直接过滤掉）。
+        closed_dd = r[16] if len(r) > 16 else None
+        if closed_dd:
+            status = "closed"                                 # 手工结案（差额当损耗）
+        elif remaining <= 0:
+            status = "done"                                   # 已完工
+        elif remaining - ret <= 1e-6:
+            status = "returned" if done > 0 else "returned_only"   # 部分完工已退料 / 未完工已退料
+        else:
+            status = "open"                                   # 待完工
+        cur_wh = g(r[17]) or ""
+        eff_wh = cur_wh or g(r[4])
+        eff_wh_name = _whname.get(cur_wh, cur_wh) if cur_wh else g(r[5])
+        items.append({
+            "ic_no":         g(r[0]),
+            "ic_dd":         g(r[1]) or '',
+            "prd_no":        g(r[2]),
+            "prd_name":      g(r[3]),
+            "wh1":           eff_wh,
+            "wh1_name":      eff_wh_name,
+            "orig_wh1":      g(r[4]),
+            "orig_wh1_name": g(r[5]),
+            "moved":         bool(cur_wh and cur_wh != g(r[4])),
+            "total_qty":     total,
+            "transfer_qty":  done,
+            "remaining_qty": remaining,
+            "ref":   g(r[8]),
+            "cus":   g(r[9]),
+            "ddjh":  g(r[10]),
+            "dzhw":  r[11] or 0,
+            "jzhw":  r[12] or 0,
+            "status": status,
+            # 按行退料：全退完才置 returned（部分退料仍可继续退剩下的）
+            # 索引提醒：IC_NO 后插过 ic_dd，整体后移过一位 → ret_qty=13 / cut_qty=14
+            "returned": float(r[13] or 0) > 0 and float(r[13] or 0) >= float(r[14] or 0) - 1e-6,
+            "ret_qty":  round(float(r[13] or 0), 3),
+            "cut_qty":  round(float(r[14] or 0), 3),
+            "in_ic_no": g(r[15]) or '',
+            "closed": bool(closed_dd),
+            "close_dd": str(closed_dd)[:10] if closed_dd else "",
+        })
     return {"items": items}
 
 
@@ -1191,14 +1313,192 @@ def _return_avail(cur, ic_no):
         GROUP BY PRD_NO
     """, (ic_no,))
     ret_map = {g(x[0]): float(x[1] or 0) for x in cur.fetchall()}
+    # 改派过的单：料当前所在仓 = 最新一张「转仓」子单的目的仓（否则退料会退到空仓）
+    cur.execute("""
+        SELECT r.PRD_NO, r.WH1, ISNULL(w.NAME, r.WH1)
+        FROM IC r WITH(NOLOCK)
+        LEFT JOIN MY_WH w WITH(NOLOCK) ON w.WH = r.WH1
+        WHERE r.IC_KND = 30 AND ISNULL(r.删除, 0) = 0 AND ISNULL(r.FLD1, '') = %s
+          AND ISNULL(r.REM, '') LIKE N'转仓%'
+        ORDER BY r.IC_DD, r.IC_NO
+    """, (ic_no,))
+    moved = {g(x[0]): (g(x[1]), g(x[2])) for x in cur.fetchall()}
     out = []
     for r in trans:
         _p = g(r[0])
         _total, _cut, _ret = float(r[3] or 0), cut_map.get(_p, 0.0), ret_map.get(_p, 0.0)
         if _total - _cut - _ret <= 0:
             continue
-        out.append((_p, g(r[1]), g(r[2]), _total, _cut, _ret, g(r[4]), g(r[5])))
+        _wh, _whname = moved.get(_p, (g(r[4]), g(r[5])))
+        out.append((_p, g(r[1]), g(r[2]), _total, _cut, _ret, _wh, _whname))
     return out
+
+
+@app.post("/api/stock/reroute")
+async def stock_reroute(payload: dict = Body(...), db: str = Query(default="c041")):
+    """改派（同一条调拨单转给另一个供应商/仓）：
+    写一张 KND=30 的「转仓子单」— WH1=新仓, WH2=料当前所在仓, FLD1=原调拨单号。
+    原调拨单号、数量、完工进度都不变；完工列表仍只有一行，只是「仓」显示成新仓。
+    """
+    from datetime import datetime as _dt
+    ic_no = str(payload.get("ic_no") or "").strip()
+    prd_no = str(payload.get("prd_no") or "").strip()
+    to_wh = str(payload.get("to_wh") or "").strip()
+    mode = str(payload.get("mode") or "doc").strip()   # doc=直接改原单收货仓（默认）；sub=转仓子单
+    try:
+        qty = float(payload.get("qty") or 0)
+    except (TypeError, ValueError):
+        qty = 0.0
+    if not (ic_no and prd_no and to_wh):
+        return {"ok": False, "error": "缺少 调拨单/品号/新仓库"}
+    if mode != "doc" and qty <= 0:
+        return {"ok": False, "error": "数量必须大于 0"}
+    db_name = "T041" if db.lower() == "t041" else "C041"
+    conn = get_conn(db=db_name)
+    try:
+        cur = conn.cursor()
+        cur.execute("""SELECT ISNULL(WH1,''), ISNULL(REM,'') FROM IC WITH(NOLOCK)
+                       WHERE IC_KND = 30 AND ISNULL(删除,0) = 0 AND RTRIM(IC_NO) = %s AND PRD_NO = %s""",
+                    (ic_no, prd_no.encode("gbk")))
+        rows = cur.fetchall()
+        if not rows:
+            return {"ok": False, "error": "调拨单里没有这个品号"}
+        # 当前所在仓 = 最新转仓子单的目的仓，没有就是原单 WH1
+        cur.execute("""SELECT TOP 1 WH1 FROM IC WITH(NOLOCK)
+                       WHERE IC_KND = 30 AND ISNULL(删除,0) = 0 AND ISNULL(FLD1,'') = %s AND PRD_NO = %s
+                         AND ISNULL(REM,'') LIKE N'转仓%'
+                       ORDER BY IC_DD DESC, IC_NO DESC""", (ic_no, prd_no.encode("gbk")))
+        r = cur.fetchone()
+        from_wh = (r[0] if r else rows[0][0])
+        if from_wh == to_wh:
+            return {"ok": False, "error": "新仓库和当前仓库相同"}
+        # 剩余可做量 = 调拨量 − 已完工出库
+        cur.execute("""SELECT ISNULL(SUM(QTY),0) FROM IC WITH(NOLOCK)
+                       WHERE IC_KND = 30 AND ISNULL(删除,0) = 0 AND RTRIM(IC_NO) = %s AND PRD_NO = %s""",
+                    (ic_no, prd_no.encode("gbk")))
+        total = float(cur.fetchone()[0] or 0)
+        cur.execute("""SELECT ISNULL(SUM(QTY),0) FROM IC WITH(NOLOCK)
+                       WHERE IC_KND = 23 AND ISNULL(删除,0) = 0 AND ISNULL(FLD1,'') = %s
+                         AND PRD_NO = %s AND REM LIKE N'完工出库%'""", (ic_no, prd_no.encode("gbk")))
+        done = float(cur.fetchone()[0] or 0)
+        remain = total - done
+        if qty > remain + 1e-6:
+            return {"ok": False, "error": f"转仓数量 {qty:g} 超过剩余 {remain:g}"}
+        # 转出仓要有实物
+        cur.execute("""SELECT ISNULL(SUM(QTY_WH),0) FROM VW_STOCK_DETAIL2 WITH(NOLOCK)
+                       WHERE WH = %s AND PRD_NO = %s""", (from_wh, prd_no.encode("gbk")))
+        onhand = float(cur.fetchone()[0] or 0)
+        if mode == "doc":
+            # 直接改原单收货仓：只有「一行都没做过」的单才能改，否则会把已消耗的量也搬走
+            if done > 1e-6:
+                return {"ok": False, "error": f"这张单已经完工 {done:g}，不能再改收货仓（会改到已消耗的部分），请用「转仓子单」"}
+            cur.execute("""SELECT ISNULL(SUM(QTY),0) FROM IC WITH(NOLOCK)
+                           WHERE IC_KND IN (13,50,51) AND ISNULL(删除,0)=0
+                             AND ISNULL(FLD1,'') = %s AND PRD_NO = %s AND REM LIKE N'生产退料%'""",
+                        (ic_no, prd_no.encode("gbk")))
+            if float(cur.fetchone()[0] or 0) > 1e-6:
+                return {"ok": False, "error": "这张单已经退过料，不能再改收货仓，请用「转仓子单」"}
+            cur.execute("SELECT NAME FROM MY_WH WITH(NOLOCK) WHERE WH=%s", (to_wh,))
+            _r = cur.fetchone(); _to_name = _r[0] if _r else to_wh
+            # REM 追加「改仓 A->B」，改单没有流水行，留个痕迹
+            cur.execute("""UPDATE IC SET WH1 = %s, WH1NAME = %s,
+                                  REM = LEFT(ISNULL(REM,'') + N' 改仓 ' + %s + N'->' + %s, 200)
+                           WHERE IC_KND = 30 AND ISNULL(删除,0) = 0 AND RTRIM(IC_NO) = %s AND PRD_NO = %s""",
+                        (to_wh, _to_name, from_wh, to_wh, ic_no, prd_no.encode("gbk")))
+            n = cur.rowcount
+            conn.commit()
+            return {"ok": True, "mode": "doc", "ic_no": ic_no, "prd_no": prd_no,
+                    "from_wh": from_wh, "to_wh": to_wh, "qty": total, "rows": n}
+
+        if qty > onhand + 1e-6:
+            return {"ok": False, "error": f"{from_wh} 库存只有 {onhand:g}，不够转 {qty:g}"}
+
+        today = _dt.now().strftime("%y%m")
+        cur.execute("""SELECT ISNULL(MAX(TRY_CAST(SUBSTRING(IC_NO,7,4) AS INT)),0)
+                       FROM IC WITH(NOLOCK) WHERE IC_NO LIKE %s AND LEN(IC_NO)=10""",
+                    (f"IC{today}%",))
+        seq = int(cur.fetchone()[0] or 0) + 1
+        new_no = f"IC{today}{seq:04d}"
+        cur.execute("SELECT NAME, UT FROM PRDT WITH(NOLOCK) WHERE PRD_NO=%s", (prd_no.encode("gbk"),))
+        pr = cur.fetchone()
+        pname, ut = (pr[0], pr[1]) if pr else ("", "")
+        cur.execute("SELECT NAME FROM MY_WH WITH(NOLOCK) WHERE WH=%s", (to_wh,))
+        r1 = cur.fetchone(); to_name = r1[0] if r1 else ""
+        cur.execute("SELECT NAME FROM MY_WH WITH(NOLOCK) WHERE WH=%s", (from_wh,))
+        r2 = cur.fetchone(); from_name = r2[0] if r2 else ""
+        cur.execute("""INSERT INTO IC (IC_NO, IC_DD, IC_KND, PRD_NO, PRD_NAME, QTY, UT, WH1, WH2,
+                                       WH1NAME, WH2NAME, USR, USABLE, ITM, REM, FLD1)
+                       VALUES (%s, %s, 30, %s, %s, %s, %s, %s, %s, %s, %s, %s, 1, 1, %s, %s)""",
+                    (new_no, _dt.now().strftime("%Y-%m-%d %H:%M:%S"), prd_no.encode("gbk"), pname, qty, ut,
+                     to_wh, from_wh, to_name, from_name, str(payload.get("usr") or "")[:30],
+                     f"转仓 {from_wh}->{to_wh}（原单 {ic_no}）", ic_no))
+        conn.commit()
+        return {"ok": True, "mode": "sub", "ic_no": new_no, "orig_ic_no": ic_no, "prd_no": prd_no,
+                "from_wh": from_wh, "to_wh": to_wh, "qty": qty, "remain_after": round(remain, 3)}
+    finally:
+        conn.close()
+
+
+@app.post("/api/completion/close")
+async def completion_close(payload: dict = Body(...), db: str = Query(default="c041")):
+    """手工结案：发出 1000、实际回来 980（或 1020）→ 剩余不再挂在待完工里。
+    差额只记在 COMP_CLOSE，不写 IC 库存流水（避免凭空造库存）。"""
+    ic_no = str(payload.get("ic_no") or "").strip()
+    prd_no = str(payload.get("prd_no") or "").strip()
+    if not ic_no or not prd_no:
+        return {"ok": False, "error": "缺少调拨单号或品号"}
+    db_name = "T041" if db.lower() == "t041" else "C041"
+    conn = get_conn(db=db_name)
+    try:
+        cur = conn.cursor()
+        _comp_close_ensure(cur)
+        cur.execute("""
+            SELECT SUM(QTY) FROM IC WITH(NOLOCK)
+            WHERE IC_KND = 30 AND USABLE = 1 AND ISNULL(删除,0) = 0
+              AND RTRIM(IC_NO) = %s AND PRD_NO = %s
+        """, (ic_no, prd_no.encode("gbk")))
+        row = cur.fetchone()
+        total = float((row and row[0]) or 0)
+        if total <= 0:
+            return {"ok": False, "error": "调拨单里没有这个品号"}
+        cur.execute("""
+            SELECT ISNULL(SUM(QTY), 0) FROM IC WITH(NOLOCK)
+            WHERE IC_KND = 23 AND ISNULL(删除,0) = 0
+              AND ISNULL(FLD1,'') = %s AND PRD_NO = %s AND REM LIKE N'完工出库%'
+        """, (ic_no, prd_no.encode("gbk")))
+        done = float(cur.fetchone()[0] or 0)
+        cur.execute("""
+            IF EXISTS (SELECT 1 FROM COMP_CLOSE WHERE IC_NO = %s AND PRD_NO = %s)
+                UPDATE COMP_CLOSE SET USR = %s, DD = GETDATE(), TOTAL_QTY = %s, DONE_QTY = %s
+                WHERE IC_NO = %s AND PRD_NO = %s
+            ELSE
+                INSERT INTO COMP_CLOSE (IC_NO, PRD_NO, TOTAL_QTY, DONE_QTY, USR, REM)
+                VALUES (%s, %s, %s, %s, %s, N'手工结案')
+        """, (ic_no, prd_no.encode("gbk"), str(payload.get("usr") or "")[:30], total, done,
+              ic_no, prd_no.encode("gbk"),
+              ic_no, prd_no.encode("gbk"), total, done, str(payload.get("usr") or "")[:30]))
+        conn.commit()
+        return {"ok": True, "ic_no": ic_no, "prd_no": prd_no,
+                "total_qty": total, "done_qty": done, "diff": round(done - total, 3)}
+    finally:
+        conn.close()
+
+
+@app.delete("/api/completion/close")
+async def completion_close_undo(ic_no: str = Query(...), prd_no: str = Query(...),
+                               db: str = Query(default="c041")):
+    """撤销结案（点错了用）。"""
+    db_name = "T041" if db.lower() == "t041" else "C041"
+    conn = get_conn(db=db_name)
+    try:
+        cur = conn.cursor()
+        _comp_close_ensure(cur)
+        cur.execute("DELETE FROM COMP_CLOSE WHERE IC_NO = %s AND PRD_NO = %s",
+                    (ic_no, prd_no.encode("gbk")))
+        conn.commit()
+        return {"ok": True, "deleted": cur.rowcount}
+    finally:
+        conn.close()
 
 
 @app.get("/api/completion/return_preview")
@@ -1385,6 +1685,46 @@ async def completion_return_material(
         conn.close()
 
 
+def _finish_family(cur, prd_no: str):
+    """同款不同表面处理（发出去换处理回来变另一个品号）。
+    例：SC0025-ZN1（滚镀蓝锌）↔ SC0025-BL（达克罗黑）——BOM 里没有边，靠基码+名称主体识别。
+    判据：基码相同(第一个 '-' 之前) + 品号只有一段后缀 + 名称前 8 字相同 + 单位相同。"""
+    base = prd_no.split('-')[0]
+    if not base or base == prd_no:
+        return []
+    cur.execute("""
+        SELECT CONVERT(varbinary(60), PRD_NO), CONVERT(varbinary(400), NAME), CONVERT(varbinary(20), UT)
+        FROM PRDT WITH(NOLOCK)
+        WHERE USABLE = 1 AND CONVERT(varchar(60), PRD_NO) LIKE %s
+    """, (base.encode("gbk") + b"-%",))
+    cur.execute("""SELECT CONVERT(varbinary(400), NAME), CONVERT(varbinary(20), UT)
+                   FROM PRDT WITH(NOLOCK) WHERE CONVERT(varbinary(60),PRD_NO)=CONVERT(varbinary(60),%s)""",
+                (prd_no.encode("gbk"),))
+    _me = cur.fetchone()
+    my_head = (g(_me[0]) if _me else "")[:8]
+    my_ut = g(_me[1]) if _me else ""
+    cur.execute("""
+        SELECT CONVERT(varbinary(60), PRD_NO), CONVERT(varbinary(400), NAME), CONVERT(varbinary(20), UT)
+        FROM PRDT WITH(NOLOCK)
+        WHERE USABLE = 1 AND CONVERT(varchar(60), PRD_NO) LIKE %s
+    """, (base.encode("gbk") + b"-%",))
+    out = []
+    for pb, nb, ub in cur.fetchall():
+        pp = g(pb)
+        if not pp or pp == prd_no:
+            continue
+        if len(pp.split("-")) != 2:          # 排除 SC0025-ZN1-BAG7 这类再加工号
+            continue
+        nn, uu = g(nb), g(ub)
+        if my_head and nn[:8] != my_head:
+            continue
+        if my_ut and uu and uu != my_ut:
+            continue
+        out.append({"prd_no": pp, "prd_name": nn})
+    out.sort(key=lambda x: x["prd_no"])
+    return out
+
+
 @app.get("/api/completion/bom_match")
 async def completion_bom_match(prd_no: str = Query(...), db: str = Query(default="c041")):
     """
@@ -1402,18 +1742,24 @@ async def completion_bom_match(prd_no: str = Query(...), db: str = Query(default
         ORDER BY p.NAME
     """, (prd_no,))
     rows = cur.fetchall()
+    items = [{
+        "prd_no": g(r[0]),
+        "prd_name": g(r[1]) if r[1] else '',
+        "qty_per_unit": float(r[2] or 1),
+    } for r in rows]
+    seen = {x["prd_no"] for x in items}
+    for f in _finish_family(cur, prd_no):          # 同款不同表面处理（发出去换处理）
+        if f["prd_no"] not in seen:
+            items.append({"prd_no": f["prd_no"], "prd_name": f["prd_name"],
+                          "qty_per_unit": 1, "same_family": True})
+            seen.add(f["prd_no"])
     conn.close()
-    return {
-        "items": [{
-            "prd_no": g(r[0]),
-            "prd_name": g(r[1]) if r[1] else '',
-            "qty_per_unit": float(r[2] or 1),
-        } for r in rows]
-    }
+    return {"items": items}
 
 
 @app.get("/api/completion/fg_detail")
-async def completion_fg_detail(fg_no: str = Query(...), db: str = Query(default="c041")):
+async def completion_fg_detail(fg_no: str = Query(...), mat_no: str = Query(default=""),
+                               db: str = Query(default="c041")):
     """
     返回成品 fg_no 的 BOM 材料详情：
     - BOM LEV=1 所有材料
@@ -1522,6 +1868,25 @@ async def completion_fg_detail(fg_no: str = Query(...), db: str = Query(default=
             "fulfilled": fulfilled,
             "transfers": transfers,
         })
+
+    # 同款换表面处理：成品是外购件（KND=4，没有 BOM），材料就是发出去的那个品号，1:1 回货
+    if mat_no and not any(m["prd_no"] == mat_no for m in materials):
+        cur.execute("""SELECT CONVERT(varbinary(400), NAME) FROM PRDT WITH(NOLOCK)
+                       WHERE CONVERT(varbinary(60),PRD_NO)=CONVERT(varbinary(60),%s)""",
+                    (mat_no.encode("gbk"),))
+        _mn = cur.fetchone()
+        _tr = transfer_by_prd.get(mat_no, [])
+        _avail = sum(t["available"] for t in _tr)
+        materials.append({
+            "prd_no": mat_no,
+            "prd_name": g(_mn[0]) if _mn else "",
+            "ratio": 1,
+            "total_available": _avail,
+            "fulfilled": _avail >= 1,
+            "synthetic": True,
+            "transfers": _tr,
+        })
+        all_fulfilled = all_fulfilled and (_avail >= 1)
 
     conn.close()
     return {
@@ -2758,7 +3123,7 @@ async def ps_in(db: str = Query(default="c041"),
         cur.execute("SELECT COUNT(*) " + base, tuple(params))
         total = int(cur.fetchone()[0] or 0)
         cur.execute("""SELECT TOP 1000 PS_NO, PS_DD, CUS_NO, CUS_NAME, PRD_NO, PRD_NAME,
-                              SPC, UT, QTY, WH, REF_ITM, [指令单号]
+                              SPC, UT, QTY, WH, REF_ITM, [指令单号], 单重, 净重, REM1
                        """ + base + " ORDER BY PS_DD DESC, PS_NO DESC, ITM", tuple(params))
         rows = cur.fetchall()
     finally:
@@ -2779,10 +3144,53 @@ async def ps_in(db: str = Query(default="c041"),
             "ps_no": g(r[0]), "ps_dd": dd(r[1]), "cus_no": g(r[2]), "supplier": g(r[3]),
             "prd_no": g(r[4]), "prd_name": g(r[5]), "spc": g(r[6]), "ut": g(r[7]),
             "qty": num(r[8]), "wh": g(r[9]), "ref_itm": g(r[10]), "order_no": g(r[11]),
+            "dz": num(r[12]), "jz": num(r[13]), "rem1": g(r[14]),
         })
     return {"items": items, "total": total, "days": days, "q": q,
             "caliber": "PSS(PS_ID='PS') 采购入库明细；作废(USABLE=0)/已删除行不显示；"
                        + ("最近 %d 天（含今天）" % days if days else "全部日期")}
+
+
+# ── API: 已完工入库（IC_KND=13 + REM LIKE '完工入库%'）────────────────────────
+@app.get("/api/fg-in")
+async def fg_in(days: int = Query(default=30, ge=0, le=3650),
+                q: str = Query(default=""),
+                db: str = Query(default="c041")):
+    """已完工入库的成品单，按 IC 单号汇总（数据源 = 完工/批量完工写入的 KND=13 行）。"""
+    db_name = "T041" if db.lower() == "t041" else "C041"
+    conn = get_conn(db=db_name)
+    try:
+        cur = conn.cursor()
+        where = ["IC_KND=13", "REM LIKE N'完工入库%'", "ISNULL(删除,0)=0", "ISNULL(USABLE,1)=1"]
+        params = []
+        if days:
+            where.append("IC_DD >= DATEADD(day, -%d, CAST(CAST(GETDATE() AS date) AS datetime))" % (days - 1))
+        if q:
+            where.append("(RTRIM(IC_NO) LIKE %s OR EXISTS (SELECT 1 FROM IC x WITH (NOLOCK) "
+                         "WHERE RTRIM(x.IC_NO)=RTRIM(IC.IC_NO) AND x.PRD_NO LIKE %s))")
+            params += ["%" + q + "%", "%" + q + "%"]
+        sql = ("""SELECT TOP 500 RTRIM(IC_NO) ic_no,
+                         CONVERT(VARCHAR(10), MIN(IC_DD), 120) ic_dd,
+                         COUNT(*) fg_rows, SUM(QTY) fg_qty,
+                         MAX(WH1) wh1, MAX(WH1NAME) wh1name,
+                         MAX(USR) usr, MAX(REM) rem
+                  FROM IC WITH (NOLOCK) WHERE """ + " AND ".join(where) +
+               """ GROUP BY RTRIM(IC_NO) ORDER BY MIN(IC_DD) DESC, ic_no DESC""")
+        cur.execute(sql, tuple(params))
+        rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    items, total_qty = [], 0.0
+    for r in rows:
+        qty = float(r[3] or 0)
+        total_qty += qty
+        items.append({
+            "ic_no": g(r[0]), "ic_dd": r[1] or "", "rows": int(r[2] or 0), "qty": round(qty, 3),
+            "wh": g(r[4]), "wh_name": g(r[5]), "usr": g(r[6]), "rem": g(r[7]),
+        })
+    return {"items": items, "total": len(items), "qty_total": round(total_qty, 3), "days": days, "q": q,
+            "caliber": "IC_KND=13 且 REM 以「完工入库」开头（完工/批量完工写入的成品入库行），按单号汇总"}
 
 
 # ── API: 入库未领料（成品入库单 IC_KND=13 → 哪个订单还没领料）──────────────────
@@ -4113,11 +4521,13 @@ def _v2_stock_detail(prd_nos, db_conn):
 # ⚠ 单号门槛已取消（MAK 2026-10-07：不限制单号，7721 之前的单也要显示并计算）。
 #   老单若被误关/误废，先重开（USABLE=1 + CLS_ID=0）并系统审核（APP_ID=1）才会出现在本列表。
 #   空/非数字的指令单号（含 TEST01）仍然排除（ISNUMERIC 把关）。
+# 运输工具/包装（03002xxx 木箱、03000xxx 垫板等）不是生产成品，PMC 全流程都不该出现
 _PMC_POS_FILTER = """
     MP=0 AND USABLE=1 AND OS_NO LIKE 'SO%'
       AND ISNULL(APP_ID,0) = 1
       AND ISNULL(QTY,0) - ISNULL(SAQTY,0) > 0
       AND ISNUMERIC(指令单号) = 1
+      AND PRD_NO NOT LIKE '030%'   -- 运输工具/木箱/托盘/胶框，不是生产成品
 """
 
 
@@ -4772,6 +5182,7 @@ def _calc_global_net(db_name="C041", refresh=0):
         FROM VW_POS WITH(NOLOCK)
         WHERE USABLE = 1 AND CLS_ID = 0 AND OS_ID = 'SO' AND ISNULL(WJ,0) <> 1
           AND QTY > ISNULL(SAQTY,0) AND APP_ID = 1
+          AND PRD_NO NOT LIKE '030%'   -- 运输工具/木箱/托盘/胶框不算成品
         GROUP BY CONVERT(varbinary(60), PRD_NO)
     """):
         fg[g(prd_b)] = float(qty or 0)
@@ -4902,6 +5313,8 @@ def _calc_global_net(db_name="C041", refresh=0):
         seen.add(prd)
         out = {}
         for cprd, cq, cbas, cknd in kids.get(guid, []):
+            if str(cprd).startswith('030'):      # 运输工具不进 PMC 需求
+                continue
             ratio = cq / cbas if cbas else cq
             need = qty * ratio
             out[cprd] = out.get(cprd, 0.0) + need
@@ -5107,6 +5520,8 @@ def _calc_global_net(db_name="C041", refresh=0):
         keys |= set(d)
     items = []
     for p in keys:
+        if str(p).startswith('030'):     # 运输工具/木箱/托盘/胶框，PMC 不显示
+            continue
         gq = gross.get(p, 0.0)
         ms = mat_stock.get(p, 0.0)
         dirty = (p == _GNET_DIRTY_PRD and ms > 0)
@@ -5344,6 +5759,8 @@ async def pmc_flat_src(prd_no: str = Query(...), refresh: int = Query(default=0)
 
     rows, tot = [], 0.0
     for p, k in contrib.items():
+        if str(p).startswith('030'):
+            continue
         # ⚠ 与后端种子完全一致：dem = 成品未出(fg) + 无 BOM 直采件(no_bom_direct)。
         #   两者都可能命中同一个品号（如 SC0081：既是外购件又有销售未出）→ 后端是相加，
         #   这里也必须相加，否则 diff 不为 0。（那个「重复计入」本身另议，见下。）
@@ -6309,6 +6726,452 @@ async def pmc_make_qd(
             "so_no_itm": head["so_no_itm"], "指令单号": head["指令单号"], "客户代号": head["客户代号"],
             "成品编号": fg_no if len(uniq_so) == 1 else "", "订单数量": head["订单数量"], "est_dd": est_dd,
             "lines": lines, "回读": back, "挂靠": [_one(si) for si in uniq_so]}
+
+
+
+# ── 工卡（GC）：一张卡 = 一个成品 + 一个工序 ─────────────────────────────────
+# 工序按 BOM 链自动识别：成品(KND=2)=组装、名称含「黑坯」(KND=3)=黑坯、其余(KND=3)=电镀/外协
+# 工卡号：GC-<工序码>-<yymmdd>-<3位流水>，流水取当天同工序 MAX+1（写 GC_HEAD，可追溯/报工）
+_GC_CACHE = {"ts": 0.0, "kids": None, "name": {}, "knd": {}, "ut": {}, "spc": {}}
+_GC_TTL = 600
+_GC_PROC = {"AZ": "组装", "HB": "黑坯", "DD": "电镀/外协", "QT": "其他"}
+
+
+def _gc_proc_code(prd: str, name: str, knd: str) -> str:
+    if str(knd) == "2":
+        return "AZ"
+    if "黑坯" in (name or ""):
+        return "HB"
+    return "DD" if str(knd) == "3" else "QT"
+
+
+def _gc_load(conn):
+    """一次性读 PRDT + BOM 到内存（全部走 varbinary 解码，中文品号才比得准）。10 分钟缓存"""
+    if _GC_CACHE["kids"] is not None and (time.time() - _GC_CACHE["ts"]) < _GC_TTL:
+        return _GC_CACHE
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT CONVERT(varbinary(60), PRD_NO), CONVERT(varbinary(400), NAME),
+               ISNULL(CONVERT(varchar(10), KND), ''), CONVERT(varbinary(20), UT),
+               CONVERT(varbinary(200), SPC)
+        FROM PRDT WITH(NOLOCK)
+    """)
+    name, knd, ut, spc = {}, {}, {}, {}
+    for b, n, k, u, s in cur.fetchall():
+        p = g(b)
+        if not p:
+            continue
+        name[p] = g(n)
+        knd[p] = str(k or "").strip()
+        ut[p] = g(u)
+        spc[p] = g(s)
+    cur.execute("""
+        SELECT CONVERT(varbinary(60), UPGUID), CONVERT(varbinary(60), PRD_NO),
+               ISNULL(QTY, 0), ISNULL(QTY_BAS, 0)
+        FROM BOM WITH(NOLOCK)
+        WHERE ISNULL(删除, 0) = 0
+        ORDER BY ISNULL(IDX, 0)
+    """)
+    kids = {}
+    for up, ch, q, bas in cur.fetchall():
+        u_, c_ = g(up), g(ch)
+        if not u_ or not c_:
+            continue
+        kids.setdefault(u_, []).append((c_, float(q or 0), float(bas or 0)))
+    _GC_CACHE.update(ts=time.time(), kids=kids, name=name, knd=knd, ut=ut, spc=spc)
+    return _GC_CACHE
+
+
+def _gc_stages(conn, fg_no: str, base_qty: float, custom: Optional[list] = None, net_map=None):
+    """从成品往下走 BOM，每个自制件(KND 2/3)算一道工序；返回每道工序的投入料与够不够。
+    custom=[{prd, proc_code, proc_name, qty}] 可手动加 BOM 里没有的工序。"""
+    c = _gc_load(conn)
+    kids, name, knd, ut, spc = c["kids"], c["name"], c["knd"], c["ut"], c["spc"]
+    stages, seen = [], set()
+
+    def walk(p, factor, depth):
+        if p in seen or depth > 5:
+            return
+        seen.add(p)
+        k, n = knd.get(p, ""), name.get(p, "")
+        if k in ("2", "3"):
+            # 本工序数量默认取「该工序品号自己的全厂净需求」（已扣现有库存），
+            # 否则按 成品数量 × 链上累计系数（工序品号在全局需求里查不到时）
+            own = float((net_map or {}).get(p, 0) or 0)
+            sq = own if (own > 0 and p != fg_no) else factor * base_qty
+            inputs = []
+            for ch, q, bas in kids.get(p, []):
+                per = (q / bas) if bas else q
+                inputs.append({"prd": ch, "name": name.get(ch, ""), "ut": ut.get(ch, ""),
+                               "per": per, "need": sq * per})
+            stages.append({"prd": p, "name": n, "spc": spc.get(p, ""), "knd": k, "ut": ut.get(p, ""),
+                           "proc": _gc_proc_code(p, n, k), "qty": round(sq, 3),
+                           "inputs": inputs, "depth": depth})
+        for ch, q, bas in kids.get(p, []):
+            walk(ch, factor * ((q / bas) if bas else q), depth + 1)
+
+    walk(fg_no, 1.0, 0)
+
+    if custom:
+        for x in custom:
+            p = str(x.get("prd") or "").strip()
+            if not p:
+                continue
+            inputs = []
+            for ch, q, bas in kids.get(p, []):
+                per = (q / bas) if bas else q
+                inputs.append({"prd": ch, "name": name.get(ch, ""), "ut": ut.get(ch, ""),
+                               "per": per, "need": float(x.get("qty") or 0) * per})
+            stages.append({"prd": p, "name": name.get(p, p), "spc": spc.get(p, ""),
+                           "knd": knd.get(p, ""), "ut": ut.get(p, ""),
+                           "proc": str(x.get("proc_code") or "QT"),
+                           "proc_name": str(x.get("proc_name") or ""),
+                           "qty": float(x.get("qty") or 0), "inputs": inputs, "depth": 99})
+
+    allp = sorted({i["prd"] for s in stages for i in s["inputs"]})
+    stock = _v2_stock(allp, conn) if allp else {}
+    for s in stages:
+        cap = None
+        for i in s["inputs"]:
+            st = stock.get(i["prd"], {})
+            i["stock"] = round(float(st.get("total_qty", 0.0)), 3)
+            i["stock_mat"] = round(float(st.get("mat_qty", 0.0)), 3)
+            i["stock_prod"] = round(float(st.get("prod_qty", 0.0)), 3)
+            i["gap"] = round(max(0.0, i["need"] - i["stock"]), 3)
+            i["can"] = int(i["stock"] / i["per"]) if i["per"] > 0 else 0
+            cap = i["can"] if cap is None else min(cap, i["can"])
+        s["can"] = cap if cap is not None else 0
+        s["ok"] = (s["can"] >= s["qty"] - 1e-6) if s["inputs"] else False
+        s["proc_name"] = s.get("proc_name") or _GC_PROC.get(s["proc"], s["proc"])
+    return stages
+
+
+def _gc_ensure_table(cur):
+    cur.execute("""
+        IF OBJECT_ID('GC_HEAD', 'U') IS NULL
+        CREATE TABLE GC_HEAD (
+            GC_NO      varchar(30)  NOT NULL PRIMARY KEY,
+            GC_DD      date         NOT NULL,
+            PRD_NO     varchar(60)  NOT NULL,
+            STAGE_PRD  varchar(60)  NULL,
+            PROC_CODE  varchar(8)   NOT NULL,
+            PROC_NAME  nvarchar(50) NULL,
+            QTY        decimal(18,3) NOT NULL,
+            CUS_NO     varchar(20)  NULL,
+            ORDER_NO   varchar(80)  NULL,
+            USR        varchar(30)  NULL,
+            REM        nvarchar(200) NULL,
+            STATUS     tinyint      NOT NULL DEFAULT 0,
+            USABLE     tinyint      NOT NULL DEFAULT 1,
+            CRT_DT     datetime     NOT NULL DEFAULT GETDATE()
+        )
+    """)
+
+
+def _gnet_items():
+    """取全局净需求 items（没有就算一次，走 _GNET 缓存）"""
+    if _GNET["data"] is None or (time.time() - _GNET["ts"]) > _GNET_TTL:
+        with _GNET_LOCK:
+            if _GNET["data"] is None:
+                _GNET["data"] = _calc_global_net("C041", refresh=0)
+                _GNET["ts"] = _GNET["data"].get("ts", time.time())
+    return (_GNET["data"] or {}).get("items") or []
+
+
+@app.get("/api/gc/candidates")
+async def gc_candidates(kw: str = Query(default=""), db: str = Query(default="c041")):
+    """工卡候选：有净需求的成品（KND=2）。只读。"""
+    items = _gnet_items()
+    out = []
+    k = (kw or "").strip().lower()
+    for it in items:
+        if str(it.get("knd")) != "2":
+            continue
+        net = float(it.get("net") or 0)
+        if net <= 0:
+            continue
+        out.append({"prd": it.get("prd"), "name": it.get("name"), "ut": it.get("ut"),
+                    "net": net, "gross": float(it.get("gross") or 0),
+                    "mat_stock": float(it.get("mat_stock") or 0),
+                    "prod_stock": float(it.get("prod_stock") or 0),
+                    "fg_count": it.get("fg_count")})
+    out.sort(key=lambda x: -x["net"])
+    # 每个成品挂上未出完的指令单号（可能有多个）→ 列表按指令单分类
+    if out:
+        conn = get_conn("C041" if db.lower() != "t041" else "T041")
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+            SELECT DISTINCT CONVERT(varbinary(120), PRD_NO),
+                            CONVERT(varbinary(90), ISNULL(指令单号, '')),
+                            CONVERT(varbinary(30), ISNULL(CUS_NO, ''))
+            FROM VW_POS WITH(NOLOCK)
+            WHERE ISNULL(APP_ID, 0) = 1 AND ISNULL(WJ, 0) <> 1
+              AND ISNULL(QTY, 0) - ISNULL(SAQTY, 0) > 0
+        """)
+            m = {}
+            for pb, ob, cb in cur.fetchall():
+                pp = g(pb)
+                if not pp:
+                    continue
+                e = m.setdefault(pp, {"orders": [], "cus": []})
+                oo, cc = g(ob), g(cb)
+                if oo and oo not in e["orders"]:
+                    e["orders"].append(oo)
+                if cc and cc not in e["cus"]:
+                    e["cus"].append(cc)
+        finally:
+            conn.close()
+        for it in out:
+            e = m.get(it["prd"], {})
+            it["orders"] = e.get("orders", [])
+            it["cus"] = e.get("cus", [])
+    # 搜索：品号 / 品名 / 指令单号 / 客户代号 都能直接匹配（先过滤再截 300，别把小的单截掉）
+    if k:
+        out = [x for x in out if k in str(x.get("prd", "")).lower()
+               or k in str(x.get("name", "")).lower()
+               or any(k in str(o).lower() for o in x.get("orders", []))
+               or any(k in str(c).lower() for c in x.get("cus", []))]
+    out = out[:300]
+    return {"ok": True, "count": len(out), "items": out}
+
+
+@app.get("/api/gc/chain")
+async def gc_chain(prd_no: str = Query(...), qty: float = Query(default=0),
+                   db: str = Query(default="c041")):
+    """某成品的工序链（黑坯/电镀/组装）+ 每道工序的投入料与库存。只读。"""
+    conn = get_conn("C041" if db.lower() != "t041" else "T041")
+    try:
+        items = _gnet_items()
+        if qty <= 0:
+            qty = next((float(x.get("net") or 0) for x in items if x.get("prd") == prd_no), 0.0)
+        net_map = {x.get("prd"): float(x.get("net") or 0) for x in items}
+        stages = _gc_stages(conn, prd_no, qty or 0, net_map=net_map)
+        # 该成品还没出完的销售单 → 客户代号 / 指令单号（可能多个，工卡上合并显示）
+        cur = conn.cursor()
+        # 客户取 CUST：CUS_NO 是内部编号(10003)，NAME 是代号(KH003)，客户名称/简称 才是人认的
+        cur.execute("""
+            SELECT DISTINCT CONVERT(varbinary(30), ISNULL(p.CUS_NO, '')),
+                            CONVERT(varbinary(90), ISNULL(p.指令单号, '')),
+                            CONVERT(varbinary(40),  ISNULL(c.NAME, '')),
+                            CONVERT(varbinary(300), ISNULL(c.简称, '')),
+                            CONVERT(varbinary(300), ISNULL(c.客户名称, ''))
+            FROM VW_POS p WITH(NOLOCK)
+            LEFT JOIN CUST c WITH(NOLOCK) ON c.CUS_NO = p.CUS_NO
+            WHERE p.PRD_NO = %s AND ISNULL(p.APP_ID, 0) = 1 AND ISNULL(p.WJ, 0) <> 1
+              AND ISNULL(p.QTY, 0) - ISNULL(p.SAQTY, 0) > 0
+        """, (prd_no.encode("gbk"),))
+        cus, cus_no, orders = [], [], []
+        for a, b, code, short, full in cur.fetchall():
+            x, y, cd, jc, qc = g(a), g(b), g(code), g(short), g(full)
+            nm = qc  # 注意：CUST.简称 这一列数据错位（10001 挂到别家简称），不用它
+            disp = cd or nm or x
+            if disp and disp not in cus:
+                cus.append(disp)
+            if x and x not in cus_no:
+                cus_no.append(x)
+            if y and y not in orders:
+                orders.append(y)
+        return {"ok": True, "prd_no": prd_no, "qty": qty, "stages": stages,
+                "cus": "/".join(cus[:6]), "cus_no": "/".join(cus_no[:6]), "order_no": "/".join(orders[:6])}
+    finally:
+        conn.close()
+
+
+@app.post("/api/gc/create")
+async def gc_create(payload: dict = Body(...)):
+    """开一张工卡：写 GC_HEAD，返回工卡号。"""
+    prd_no = str(payload.get("prd_no") or "").strip()
+    proc = str(payload.get("proc") or "QT").strip().upper()[:4]
+    qty = float(payload.get("qty") or 0)
+    if not prd_no or qty <= 0:
+        return {"ok": False, "error": "缺少成品品号或数量"}
+    stage_prd = str(payload.get("stage_prd") or "").strip()
+    proc_name = str(payload.get("proc_name") or _GC_PROC.get(proc, proc))[:50]
+    cus_no = str(payload.get("cus_no") or "")[:20]
+    order_no = str(payload.get("order_no") or "")[:80]
+    rem = str(payload.get("rem") or "")[:200]
+    usr = str(payload.get("usr") or "")[:30]
+    conn = get_conn("C041")
+    try:
+        cur = conn.cursor()
+        _gc_ensure_table(cur)
+        dd = datetime.now()
+        prefix = f"GC-{proc}-{dd:%y%m%d}-"
+        cur.execute("""SELECT ISNULL(MAX(TRY_CONVERT(int, RIGHT(RTRIM(GC_NO), 3))), 0)
+                       FROM GC_HEAD WITH (UPDLOCK, HOLDLOCK)
+                       WHERE GC_NO LIKE %s""", (prefix + "%",))
+        seq = int(cur.fetchone()[0] or 0) + 1
+        gc_no = f"{prefix}{seq:03d}"
+        cur.execute("""
+            INSERT INTO GC_HEAD (GC_NO, GC_DD, PRD_NO, STAGE_PRD, PROC_CODE, PROC_NAME,
+                                 QTY, CUS_NO, ORDER_NO, USR, REM)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (gc_no, dd.date(),
+              prd_no.encode("gbk"), (stage_prd or prd_no).encode("gbk"),
+              proc, proc_name, qty, cus_no.encode("gbk"),
+              order_no.encode("gbk"), usr, rem))
+        conn.commit()
+        return {"ok": True, "gc_no": gc_no}
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+    finally:
+        conn.close()
+
+
+@app.post("/api/gc/status")
+async def gc_status(payload: dict = Body(...)):
+    """工卡状态：0 待开工 / 1 已开工 / 2 完工 / 9 作废。"""
+    gc_no = str(payload.get("gc_no") or "").strip()
+    try:
+        st = int(payload.get("status"))
+    except (TypeError, ValueError):
+        return {"ok": False, "error": "状态值不合法"}
+    if st not in (0, 1, 2, 9):
+        return {"ok": False, "error": "状态值只能是 0/1/2/9"}
+    if not gc_no:
+        return {"ok": False, "error": "缺少工卡号"}
+    conn = get_conn("C041")
+    try:
+        cur = conn.cursor()
+        _gc_ensure_table(cur)
+        cur.execute("UPDATE GC_HEAD SET STATUS = %s WHERE GC_NO = %s", (st, gc_no))
+        if cur.rowcount <= 0:
+            conn.rollback()
+            return {"ok": False, "error": "工卡不存在"}
+        conn.commit()
+        return {"ok": True, "gc_no": gc_no, "status": st}
+    finally:
+        conn.close()
+
+
+@app.get("/api/gc/existing")
+async def gc_existing(prd_no: str = Query(...), stage_prd: str = Query(default=""),
+                      proc: str = Query(default="")):
+    """同一成品+同一工序是否已经开过卡（作废的不算）→ 给前端做「重打还是新开」提示。"""
+    conn = get_conn("C041")
+    try:
+        cur = conn.cursor()
+        _gc_ensure_table(cur)
+        cur.execute("""
+            SELECT TOP 1 GC_NO, CONVERT(varchar(10), GC_DD, 120), ISNULL(STATUS, 0), QTY
+            FROM GC_HEAD WITH(NOLOCK)
+            WHERE USABLE = 1 AND PRD_NO = %s
+              AND (%s = '' OR STAGE_PRD = %s)
+              AND (%s = '' OR PROC_CODE = %s)
+              AND ISNULL(STATUS, 0) <> 9
+            ORDER BY GC_NO DESC
+        """, (prd_no.encode("gbk"), stage_prd, stage_prd.encode("gbk"), proc, proc))
+        r = cur.fetchone()
+        if not r:
+            return {"ok": True, "found": False}
+        return {"ok": True, "found": True, "gc_no": r[0], "gc_dd": r[1],
+                "status": int(r[2] or 0), "qty": float(r[3] or 0)}
+    finally:
+        conn.close()
+
+
+@app.get("/api/gc/inputs")
+async def gc_inputs(prd_no: str = Query(...), qty: float = Query(...), proc_name: str = Query(default=""),
+                    db: str = Query(default="c041")):
+    """手动添加工序时用：算某个品号（BOM 里可能没有工序号）的投入料与库存。只读。"""
+    conn = get_conn("C041" if db.lower() != "t041" else "T041")
+    try:
+        stages = _gc_stages(conn, prd_no, qty, custom=[{"prd": prd_no, "qty": qty,
+                                                       "proc_code": "QT", "proc_name": proc_name}])
+        return {"ok": True, "stage": stages[-1] if stages else None}
+    finally:
+        conn.close()
+
+
+@app.get("/api/gc/list")
+async def gc_list(kw: str = Query(default=""), limit: int = Query(default=200)):
+    """已开工卡列表（新→旧），kw 直接子串匹配 工卡号/成品/工序品号/客户/指令单。只读。"""
+    conn = get_conn("C041")
+    try:
+        cur = conn.cursor()
+        _gc_ensure_table(cur)
+        k = (kw or "").strip().upper()
+        cur.execute("""
+            SELECT GC_NO, CONVERT(varchar(10), GC_DD, 120), CONVERT(varbinary(60), PRD_NO),
+                   CONVERT(varbinary(60), STAGE_PRD), PROC_CODE, PROC_NAME, QTY,
+                   CONVERT(varbinary(30), CUS_NO), CONVERT(varbinary(90), ORDER_NO),
+                   USR, CONVERT(varchar(19), CRT_DT, 120), ISNULL(STATUS, 0)
+            FROM GC_HEAD WITH(NOLOCK)
+            WHERE USABLE = 1
+              AND (%s = '' OR UPPER(GC_NO) LIKE %s OR UPPER(CONVERT(varchar(120), PRD_NO)) LIKE %s
+                   OR UPPER(CONVERT(varchar(120), STAGE_PRD)) LIKE %s
+                   OR UPPER(CONVERT(varchar(60), CUS_NO)) LIKE %s
+                   OR UPPER(CONVERT(varchar(120), ORDER_NO)) LIKE %s)
+            ORDER BY GC_NO DESC
+            OFFSET 0 ROWS FETCH NEXT %s ROWS ONLY
+        """, (k, f"%{k}%", f"%{k}%", f"%{k}%", f"%{k}%", f"%{k}%", max(1, min(limit, 500))))
+        rows = cur.fetchall()
+        c = _gc_load(conn)
+        out = []
+        for r in rows:
+            p_, st_ = g(r[2]), g(r[3])
+            out.append({"gc_no": r[0], "gc_dd": r[1], "prd_no": p_, "prd_name": c["name"].get(p_, ""),
+                        "stage_prd": st_, "stage_name": c["name"].get(st_, ""),
+                        "proc": r[4], "proc_name": r[5], "qty": float(r[6] or 0),
+                        "cus_no": g(r[7]), "order_no": g(r[8]), "usr": r[9], "crt_dt": r[10],
+                        "status": int(r[11] or 0)})
+        return {"ok": True, "count": len(out), "items": out}
+    finally:
+        conn.close()
+
+
+@app.get("/api/gc/{gc_no}")
+async def gc_get(gc_no: str):
+    """读一张工卡（卡头 + 实时投入料）。"""
+    conn = get_conn("C041")
+    try:
+        cur = conn.cursor()
+        _gc_ensure_table(cur)
+        cur.execute("""
+            SELECT GC_NO, CONVERT(varchar(10), GC_DD, 120), CONVERT(varbinary(60), PRD_NO),
+                   CONVERT(varbinary(60), STAGE_PRD), PROC_CODE, PROC_NAME, QTY,
+                   CONVERT(varbinary(30), CUS_NO), CONVERT(varbinary(90), ORDER_NO),
+                   USR, REM, STATUS
+            FROM GC_HEAD WITH(NOLOCK) WHERE GC_NO = %s
+        """, (gc_no,))
+        r = cur.fetchone()
+        if not r:
+            return {"ok": False, "error": "工卡不存在"}
+        hdr = {"gc_no": r[0], "gc_dd": r[1], "prd_no": g(r[2]), "stage_prd": g(r[3]),
+               "proc": r[4], "proc_name": r[5], "qty": float(r[6] or 0),
+               "cus_no": g(r[7]), "order_no": g(r[8]), "usr": r[9], "rem": r[10], "status": int(r[11] or 0)}
+        c = _gc_load(conn)
+        # 卡头存的是内部客户编号(10003)，打印时换成人认的「简称(代号)」
+        if hdr["cus_no"]:
+            disp = []
+            for pn in [x for x in hdr["cus_no"].split("/") if x][:6]:
+                cur.execute("""SELECT CONVERT(varbinary(40),ISNULL(NAME,'')),
+                                      CONVERT(varbinary(300),ISNULL(简称,'')),
+                                      CONVERT(varbinary(300),ISNULL(客户名称,''))
+                               FROM CUST WITH(NOLOCK) WHERE CUS_NO=%s""", (pn.encode("gbk"),))
+                row = cur.fetchone()
+                if row:
+                    cd, jc, qc = g(row[0]), g(row[1]), g(row[2])
+                    nm = qc
+                    disp.append(cd or nm or pn)
+                else:
+                    disp.append(pn)
+            hdr["cus_disp"] = "/".join(disp)
+        hdr["prd_name"] = c["name"].get(hdr["prd_no"], "")
+        hdr["stage_name"] = c["name"].get(hdr["stage_prd"], "")
+        hdr["stage_ut"] = c["ut"].get(hdr["stage_prd"], "")
+        hdr["stage_spc"] = c["spc"].get(hdr["stage_prd"], "")
+        net_map = {x.get("prd"): float(x.get("net") or 0) for x in _gnet_items()}
+        stages = _gc_stages(conn, hdr["prd_no"], hdr["qty"], net_map=net_map)
+        hdr["stage"] = next((s for s in stages if s["prd"] == hdr["stage_prd"]), None)
+        return {"ok": True, "head": hdr}
+    finally:
+        conn.close()
 
 
 if __name__ == "__main__":

@@ -578,6 +578,154 @@
     .po-late-grp-head{display:flex;gap:8px;align-items:baseline;padding:7px 10px;margin-bottom:6px;background:#fff;border-left:3px solid var(--accent);border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;box-shadow:var(--shadow)}
     .po-late-grp-head .pl-stat{font-weight:400;font-size:12px;color:var(--sub)}
     .po-late-grp-head .pl-caret{color:var(--sub);font-size:10px}
+
+    /* ── 打印（2026-10-17 v3）：统一版式，表格占满纸宽，字号按打印可读性定 ── */
+    .pr-btn{background:none;border:1px solid var(--border);border-radius:10px;color:var(--sub);
+            font-size:11px;padding:2px 8px;cursor:pointer;line-height:1.6;flex-shrink:0;margin-left:auto}
+    .pr-btn:active{background:var(--bg)}
+    #printArea{display:none}
+    @media print{
+      html,body{background:#fff !important;margin:0 !important;padding:0 !important;height:auto !important}
+      body > *:not(#printArea){display:none !important}
+      #printArea{display:block !important;position:static !important;width:auto !important;color:#000}
+    }
+    #printArea .pr-doc{font-family:"Times New Roman","宋体",serif;color:#000;font-size:10pt;line-height:1.28}
+    #printArea .pr-co{font-size:15pt;font-weight:700;text-align:center;letter-spacing:2px}
+    #printArea .pr-tel{font-size:8.5pt;text-align:center;margin-top:0.4mm}
+    #printArea .pr-addr{font-size:8.5pt;text-align:center;margin-bottom:2.6mm}
+    #printArea .pr-title{font-size:16pt;font-weight:700;text-align:center;letter-spacing:8px;margin:1.5mm 0 2.6mm}
+    #printArea .pr-meta{display:grid;grid-template-columns:1fr 1fr;gap:1.1mm 10mm;font-size:9.5pt;margin-bottom:2.4mm}
+    #printArea .pr-m{display:flex;gap:1.5mm;align-items:baseline}
+    #printArea .pr-m span{color:#222;white-space:nowrap;width:24mm;flex:none}
+    #printArea .pr-m b{font-weight:400;flex:1;padding:0 0 0 1.5mm;min-width:10mm}
+    #printArea table.pr-tb{width:100%;border-collapse:collapse;table-layout:fixed}
+    #printArea table.pr-tb tr{page-break-inside:avoid}
+    #printArea table.pr-tb th,#printArea table.pr-tb td{border:0.6pt solid #000;padding:1.4mm 1.2mm;
+            font-size:9.5pt;vertical-align:middle;word-wrap:break-word}
+    #printArea table.pr-tb th{background:#f0f0f0;text-align:center;font-weight:700;font-size:9.5pt}
+    #printArea table.pr-tb td.c{text-align:center}
+    #printArea table.pr-tb td.l{text-align:left}
+    #printArea table.pr-tb td.r{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+    #printArea table.pr-tb td.code{font-size:8.6pt;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    #printArea table.pr-tb td.big{font-size:11pt;font-weight:600}
+    #printArea table.pr-tb tr.pr-total td{font-weight:700;background:#f7f7f7}
+    /* 9.5×5.5in 进出仓单：纸张比 A5 宽 12%，字号/行距同步放大，避免内容缩在左上角 */
+    /* 页头/表尾压紧，与表格行距同一节奏（2026-10-19 v5） */
+    #printArea .pr-doc.pr-lg{font-size:11pt;line-height:1.25}
+    #printArea .pr-doc.pr-lg .pr-co{font-size:14pt}
+    #printArea .pr-doc.pr-lg .pr-tel{font-size:8.5pt}
+    #printArea .pr-doc.pr-lg .pr-addr{font-size:8.5pt;margin-bottom:1.8mm}
+    #printArea .pr-doc.pr-lg .pr-title{font-size:16pt;letter-spacing:7px;margin:1mm 0 1.6mm}
+    #printArea .pr-doc.pr-lg .pr-meta{font-size:10pt;gap:0.8mm 10mm;margin-bottom:1.6mm}
+    #printArea .pr-doc.pr-lg .pr-m span{width:25mm}
+    /* 数据行固定两行高：名称/指令单号可折两行，其余单行，行高统一 */
+    #printArea .pr-doc.pr-lg table.pr-tb th,
+    #printArea .pr-doc.pr-lg table.pr-tb td{padding:1mm 1.4mm;font-size:11pt;line-height:1.22;
+            white-space:normal;overflow:hidden;vertical-align:middle}
+    #printArea .pr-doc.pr-lg table.pr-tb td{height:9.6mm}
+    #printArea .pr-doc.pr-lg table.pr-tb td .cl{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
+            overflow:hidden;white-space:normal;line-height:1.22;max-height:2.5em}
+    #printArea .pr-doc.pr-lg table.pr-tb td.r .cl,#printArea .pr-doc.pr-lg table.pr-tb td.c .cl,
+    #printArea .pr-doc.pr-lg table.pr-tb td.code .cl{white-space:nowrap}
+    #printArea .pr-doc.pr-lg table.pr-tb td.wrap .cl{white-space:normal}
+    #printArea .pr-doc.pr-lg table.pr-tb td.rem .cl{font-size:9pt;line-height:1.2}
+    #printArea .pr-doc.pr-lg table.pr-tb td.nm .cl{font-size:9pt;line-height:1.3}
+    #printArea .pr-doc.pr-lg table.pr-tb td.sm .cl{font-size:9pt;line-height:1.22;white-space:normal}
+    /* 出仓单：照 MAK 原单样张（出仓单打印.png）复刻 */
+    #printArea .pr-oc{font-family:"SimSun","宋体",serif;color:#000;font-size:10pt;line-height:1.2}
+    #printArea .pr-oc .oc-co{text-align:center;font-size:14pt;font-weight:700;letter-spacing:1px;line-height:1.1}
+    #printArea .pr-oc .oc-line{text-align:center;font-size:9pt}
+    #printArea .pr-oc .oc-title{text-align:center;font-size:14pt;font-weight:700;margin:0.8mm 0 1mm;letter-spacing:2px}
+    #printArea .pr-oc .oc-head{display:flex;justify-content:space-between;align-items:flex-start;font-size:10pt;margin-bottom:1mm}
+    #printArea .pr-oc .oc-head b{font-weight:400;padding-left:1mm}
+    #printArea .pr-oc table.oc-tb{width:100%;border-collapse:collapse;table-layout:fixed}
+    #printArea .pr-oc table.oc-tb th,#printArea .pr-oc table.oc-tb td{border:0.5pt solid #000;
+            padding:0.6mm 0.5mm;font-size:9.5pt;line-height:1.18;text-align:center;vertical-align:middle;
+            white-space:nowrap;overflow:hidden}
+    #printArea .pr-oc table.oc-tb th{font-weight:400;font-size:8.5pt;white-space:normal;line-height:1.15;padding:0.6mm 0.4mm}
+    #printArea .pr-oc table.oc-tb td.wr{white-space:normal;line-height:1.2}
+    #printArea .pr-oc table.oc-tb td:nth-child(5){white-space:normal;padding:0.6mm}
+    #printArea .pr-oc .ocn{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;
+            overflow:hidden;white-space:normal;line-height:1.16;font-size:9pt}
+    #printArea .pr-oc table.oc-tb td.ocb{color:#1a1aff}
+    #printArea .pr-oc table.oc-tb td.l{text-align:left}
+    #printArea .pr-oc .oc-sign{display:flex;justify-content:space-between;margin-top:1.8mm;font-size:9.5pt}
+    /* 工卡 145×210mm 竖版（MAK 2026-10-20 改纸型，无图标） */
+    #printArea .pr-gc{font-family:"SimSun","宋体",serif;color:#000;font-size:10pt;line-height:1.32}
+    #printArea .pr-gc .gc-co{text-align:center;font-size:12pt;font-weight:700}
+    #printArea .pr-gc .gc-title{text-align:center;font-size:17pt;font-weight:700;letter-spacing:6px;margin:0.6mm 0 1.6mm}
+    #printArea .pr-gc .gc-hd{display:flex;justify-content:space-between;flex-wrap:wrap;gap:0.8mm 4mm;font-size:9.4pt;margin-bottom:1mm}
+    #printArea .pr-gc .gc-hd span{white-space:nowrap}
+    #printArea .pr-gc table.gc-info{width:100%;border-collapse:collapse;margin-bottom:2mm;table-layout:fixed}
+    #printArea .pr-gc table.gc-info th{width:24mm;background:#f4f4f4;border:0.5pt solid #000;font-weight:400;
+            font-size:9.2pt;padding:0.8mm}
+    #printArea .pr-gc table.gc-info td{border:0.5pt solid #000;padding:0.6mm 1.1mm;font-size:9.4pt}
+    #printArea .pr-gc .gc-sub{font-size:10pt;font-weight:700;margin:1.4mm 0 0.9mm}
+    #printArea .pr-gc table.gc-tb{width:100%;border-collapse:collapse;table-layout:fixed}
+    #printArea .pr-gc table.gc-tb th,#printArea .pr-gc table.gc-tb td{border:0.5pt solid #000;padding:0.45mm 0.6mm;
+            font-size:8.6pt;line-height:1.12;word-break:break-all}
+    #printArea .pr-gc table.gc-tb th{background:#f4f4f4;font-weight:400;font-size:8.4pt}
+    #printArea .pr-gc table.gc-tb td.c{text-align:center}
+    #printArea .pr-gc table.gc-tb td.r{text-align:right}
+    #printArea .pr-gc .gc-verdict{margin-top:1.4mm;font-size:10.5pt;font-weight:700}
+    #printArea .pr-gc table.gc-fill{width:100%;border-collapse:collapse;margin-top:2mm}
+    #printArea .pr-gc table.gc-fill th{width:22mm;background:#f4f4f4;border:0.5pt solid #000;font-weight:400;
+            font-size:9.2pt;padding:1.3mm 1mm;text-align:left}
+    #printArea .pr-gc table.gc-fill td{border:0.5pt solid #000;padding:1.3mm 1mm}
+    /* 材料少（1~2 行）时手填栏再放开一点，卡片不至于上密下空 */
+    #printArea .pr-gc.gc-roomy table.gc-fill th,#printArea .pr-gc.gc-roomy table.gc-fill td{padding:8mm 1mm}
+    /* 材料特别多时才压缩（纸高了，常规 8 行内都用原尺寸） */
+    #printArea .pr-gc.gc-t1{font-size:8.4pt}
+    #printArea .pr-gc.gc-t1 table.gc-info td{font-size:8.2pt;padding:0.8mm 1mm}
+    #printArea .pr-gc.gc-t1 table.gc-info th{font-size:7.8pt;padding:0.8mm}
+    #printArea .pr-gc.gc-t1 table.gc-tb td,#printArea .pr-gc.gc-t1 table.gc-tb th{font-size:7.8pt;padding:0.3mm 0.5mm;line-height:1.06}
+    #printArea .pr-gc.gc-t1 table.gc-fill th,#printArea .pr-gc.gc-t1 table.gc-fill td{padding:0.85mm 0.8mm;font-size:8.4pt}
+    #printArea .pr-gc.gc-t1 .gc-info td{padding:0.6mm 1mm;font-size:9pt}
+    #printArea .pr-gc.gc-t1 .gc-title{font-size:15pt;margin:0.6mm 0 1.6mm}
+    #printArea .pr-gc.gc-t1 .gc-verdict{font-size:8.8pt;margin-top:1mm}
+    #printArea .pr-gc.gc-t1 .gc-sign{margin-top:1.4mm;font-size:8.4pt}
+    #printArea .pr-gc.gc-t2{font-size:7.8pt}
+    #printArea .pr-gc.gc-t2 table.gc-info td{font-size:7.6pt;padding:0.7mm 0.9mm}
+    #printArea .pr-gc.gc-t2 table.gc-info th{font-size:7.4pt;padding:0.7mm}
+    #printArea .pr-gc.gc-t2 table.gc-tb td,#printArea .pr-gc.gc-t2 table.gc-tb th{font-size:6.8pt;padding:0.5mm 0.5mm;line-height:1.14}
+    #printArea .pr-gc.gc-t2 table.gc-fill th,#printArea .pr-gc.gc-t2 table.gc-fill td{padding:1mm 0.8mm;font-size:7.6pt}
+    #printArea .pr-gc.gc-t2 .gc-verdict{font-size:8.2pt;margin-top:0.8mm}
+    #printArea .pr-gc.gc-t2 .gc-sign{margin-top:1.2mm;font-size:8pt}
+    #printArea .pr-gc.gc-t3{font-size:7.2pt}
+    #printArea .pr-gc.gc-t3 table.gc-info td{font-size:7.2pt;padding:0.6mm 0.8mm}
+    #printArea .pr-gc.gc-t3 table.gc-info th{font-size:7pt;padding:0.6mm}
+    #printArea .pr-gc.gc-t3 table.gc-tb td,#printArea .pr-gc.gc-t3 table.gc-tb th{font-size:6.2pt;padding:0.4mm 0.4mm;line-height:1.1}
+    #printArea .pr-gc.gc-t3 table.gc-fill th,#printArea .pr-gc.gc-t3 table.gc-fill td{padding:0.8mm 0.7mm;font-size:7.2pt}
+    #printArea .pr-gc.gc-t3 .gc-verdict{font-size:7.8pt;margin-top:0.7mm}
+    #printArea .pr-gc.gc-t3 .gc-sign{margin-top:1mm;font-size:7.6pt}
+    #printArea .pr-oc.oc-compact .ocn{-webkit-line-clamp:2}
+    #printArea .pr-doc.pr-lg table.pr-tb th{height:auto;font-size:8.5pt;text-align:center;white-space:nowrap;padding:1.6mm 0.8mm}
+    #printArea .pr-doc.pr-lg table.pr-tb td.r{white-space:nowrap}
+    #printArea .pr-doc.pr-lg table.pr-tb td.code{font-size:10pt;white-space:nowrap}
+    #printArea .pr-doc.pr-lg table.pr-tb td.big{font-size:12pt}
+    /* 签字栏压到纸底（纸高 139.7mm，上下边距 6/5mm），少行单据也不会上密下空 */
+    #printArea .pr-doc.pr-lg .pr-foot{font-size:9.5pt;margin-top:2.5mm}
+    #printArea .pr-doc.pr-lg .pr-signs{display:flex;justify-content:space-between;width:100%}
+    #printArea .pr-doc.pr-lg .pr-signs .pr-sg{flex:1}
+    #printArea .pr-doc.pr-lg .pr-rem{font-size:9pt;margin-top:1.2mm}
+    #printArea .pr-foot{display:flex;justify-content:space-between;align-items:flex-end;margin-top:5mm;gap:8mm;font-size:9.5pt}
+    #printArea .pr-signs{display:flex;gap:8mm;flex-wrap:wrap}
+    #printArea .pr-sg b{font-weight:400;display:inline-block;min-width:18mm}
+    #printArea .pr-tots{text-align:right;white-space:nowrap}
+    #printArea .pr-tots div{display:flex;gap:2mm;justify-content:flex-end}
+    #printArea .pr-rem{margin-top:2mm;font-size:9pt;color:#222}
+    /* 三联纸（21×14.5cm 横）专用：略小但保持可读 */
+    #printArea .pr-tight{font-size:8.4pt;line-height:1.16}
+    #printArea .pr-tight .pr-co{font-size:11.5pt}
+    #printArea .pr-tight .pr-title{font-size:12.5pt;letter-spacing:5px;margin:0.6mm 0 1.2mm}
+    #printArea .pr-tight .pr-addr,#printArea .pr-tight .pr-tel{font-size:7.5pt}
+    #printArea .pr-tight .pr-meta{font-size:8pt;gap:0.5mm 8mm;margin-bottom:1.2mm}
+    #printArea .pr-tight .pr-m span{width:19mm}
+    #printArea .pr-tight table.pr-tb th,#printArea .pr-tight table.pr-tb td{padding:0.45mm 0.7mm;font-size:8.4pt}
+    #printArea .pr-tight table.pr-tb td.code{font-size:7.8pt}
+    #printArea .pr-tight table.pr-tb td.big{font-size:10pt}
+    #printArea .pr-tight .pr-foot{margin-top:2mm;font-size:8pt}
+    #printArea .pr-tight .pr-sg b{min-width:14mm}
   </style>
 </head>
 <body>
@@ -598,6 +746,7 @@
   <div class="tab-btn" data-tab="completion">🏭 完工</div>
   <div class="tab-btn" data-tab="pmc">📊 PMC</div>
   <div class="tab-btn" data-tab="globalnet">🌐 全局净需求</div>
+  <div class="tab-btn" data-tab="gc">🧾 工卡</div>
 </div>
 
 <div class="search-bar" id="searchBar" style="display:none">
@@ -715,6 +864,8 @@ function handleSearch(v) {
       renderQts(rawData.filter(r => JSON.stringify(r).toLowerCase().includes(q.toLowerCase())), q); break;
     case 'globalnet':
       gnQ = q; gnRenderRows(); break;
+    case 'gc':
+      gcQ = q; loadGC(); break;
     case 'smo':
       if (!q) { loadSmo(); break; }
       loadStockSuggestions(q); break;
@@ -722,11 +873,9 @@ function handleSearch(v) {
       if (!q) { loadStock(); break; }
       loadStockSuggestions(q); break;
     case 'completion':
-      if (!q) { loadCompletion(); break; }
-      // ⚠ 从**全量** allCompletionData 里筛（不是从 completionData —— 后者会被 renderCompletionListFiltered
-      //   改写成「上一次的结果」，于是退格删字永远回不来行）
+      compQ = q;
       if (!allCompletionData.length) { loadCompletion(); break; }
-      renderCompletionListFiltered(allCompletionData.filter(r => JSON.stringify(r).toLowerCase().includes(q.toLowerCase()))); break;
+      compRebuild(); break;
     case 'pmc':
       (async () => {
         try {
@@ -824,6 +973,7 @@ function tabLoader(t) {          // 各 tab 的加载函数（和原来切换分
   if (t === 'completion') return loadCompletion();
   if (t === 'pmc') return loadPMC();
   if (t === 'globalnet') return loadGlobalNet();
+  if (t === 'gc') return loadGC();
   return loadQts();
 }
 function reloadTab(t) {          // 双击刷新：丢掉暂存、重新拉数据
@@ -876,6 +1026,7 @@ mainTabBar.addEventListener('click', e => {
     $id('searchInput').value = '';
     $id('searchClear').classList.remove('show');
     curSearch = '';
+    compQ = '';                        // 切 tab 清掉完工搜索词（否则回到完工还是旧筛选、框里却空着）
     wireSearchInput(curTab);   // ⚠️ 必须在这里装：搜索框是共用的，上一条 tab 的补全/回车行为不能留在框上
     if (curTab === 'pos-unreceived') {
       posUnSearch = ''; posUnQ = '';
@@ -947,6 +1098,7 @@ function renderQts(items, q) {
         <span class="qts-status ${closed?'closed':'open'}">${closed?'已结':'未结'}</span>
         <span class="qts-no">${highlight(r.qt_no, q)}</span>
         <span class="qts-date">${highlight(r.qt_dd, q)}</span>
+        <button class="pr-btn" onclick="printQts('${escJs(fmt(r.qt_no))}')" title="打印请购单">🖨 打印</button>
       </div>
       <div class="qts-row-body">
         <div class="qts-prd">
@@ -993,6 +1145,7 @@ async function loadPosUnreceived(q) {
 function renderPosUnreceived(items) {
   const el = $id('content');
   const q = posUnQ;
+  window.__posUnItems = items;   // 打印采购订单时按单号取本单所有行
   const qC = posUnCustomer;
   const qS = posUnSupplier;
   const qO = posUnOrderNo;
@@ -1023,6 +1176,7 @@ function renderPosUnreceived(items) {
         <span class="qts-no">${highlight(fmt(r.os_no), q)}</span>
         <span class="qts-date">${fmt(r.os_dd)}</span>
         ${r.customer ? `<span class="qts-cus">${highlight(r.customer, qC || q)}</span>` : ''}
+        <button class="pr-btn" onclick="printPos('${escJs(fmt(r.os_no))}')" title="打印采购订单">🖨 打印</button>
       </div>
       <div class="qts-row-body">
         <div class="qts-prd">
@@ -1111,6 +1265,7 @@ function setPsInDays(d) { psInDays = d; loadPsIn(); }
 function renderPsIn(items) {
   const el = $id('content');
   const q = psInQ;
+  window.__psInItems = items;   // 打印采购入库单时按单号取本单所有行
   const rng = [[7, '最近 7 天'], [30, '最近 30 天'], [0, '全部']].map(([d, t]) =>
     `<button class="pos-un-filter-reset" style="${psInDays === d ? 'font-weight:700;color:#1d4ed8;background:rgba(29,78,216,.1);border-radius:10px' : ''}"
              onclick="setPsInDays(${d})">${t}</button>`).join('');
@@ -1131,6 +1286,7 @@ function renderPsIn(items) {
         <span class="qts-no">${highlight(fmt(r.ps_no), q)}</span>
         <span class="qts-date">${fmt(r.ps_dd)}</span>
         ${r.supplier ? `<span class="qts-cus">${highlight(r.supplier, q)}</span>` : ''}
+        <button class="pr-btn" onclick="printPs('${escJs(fmt(r.ps_no))}')" title="打印采购入库单">🖨 打印</button>
       </div>
       <div class="qts-row-body">
         <div class="qts-prd">
@@ -1622,7 +1778,7 @@ async function loadStock() {
 let completionData = [];        // KND=30 调拨单列表（已过滤）
 let allCompletionData = [];     // 完工列表全量数据（后端已过滤：做完的、剩余料已全退的）
 let completionList = [];         // 已选待完工成品 [{transfer_ic_no, transfer_prd, fg_no, fg_name, qty}]
-let compCustomer = '', compDdjh = '', compDdjhPlan = '', compWh = '';
+let compCustomer = '', compDdjh = '', compDdjhPlan = '', compWh = '', compQ = '';
 let compPlanCat = '';   // 车间仓的外发计划分类：'' | '安装' | '其他'（安装=DDJH 以「安装」开头）
 
 // 完工 tab：点击行 → openCompletionModal
@@ -1635,7 +1791,7 @@ async function loadCompletion() {
     const data = await api(BASE + '/completion/transfer');
     allCompletionData = data.items || [];   // 做完(剩余≤0) 或 剩余料已全退的单，后端已过滤
     completionData = allCompletionData;
-    renderCompletionList();
+    compRebuild();                          // 搜索词/筛选在数据到之前就输入了 → 这里补上，别让搜索「消失」
   } catch(e) {
     el.innerHTML = '<div class="error-msg">加载失败: '+e.message+'</div>';
   }
@@ -1659,19 +1815,30 @@ function compPlanHit(d) {
   return compPlanCat === '安装' ? isIns : !isIns;
 }
 
+// 搜索：直接子串匹配所有可见字段（IC号/日期/品号/品名/指令单/客户/外发计划/仓库/来料单）
+// ponytail: 不建索引，537 行全表扫，够快；上万行再改成预建 haystack
+function compMatchText(d, q) {
+  if (!q) return true;
+  const hay = [d.ic_no, d.ic_dd, d.prd_no, d.prd_name, d.ref, d.cus, d.ddjh,
+               d.wh1, d.wh1_name, d.in_ic_no].join(' ').toUpperCase();
+  return hay.indexOf(q.toUpperCase()) >= 0;
+}
+function compRebuild() {
+  completionData = allCompletionData.filter(d =>
+    compMatchText(d, compQ) &&
+    (!compCustomer || (d.cus||'').toLowerCase().includes(compCustomer.toLowerCase())) &&
+    (!compDdjh    || (d.ref||'').toLowerCase().includes(compDdjh.toLowerCase())) &&
+    (!compDdjhPlan || (d.ddjh||'').toLowerCase().includes(compDdjhPlan.toLowerCase())) &&
+    (!compWh || (d.wh1_name||d.wh1||'') === compWh) &&
+    (!compPlanCat || compPlanHit(d)));
+  renderCompletionList();
+}
+
 function applyCompFilters() {
   compCustomer = ($id('compFCustomer') || {value:''}).value.trim();
   compDdjh     = ($id('compFDdjh')    || {value:''}).value.trim();
   compDdjhPlan = ($id('compFDdjhPlan') || {value:''}).value.trim();
-  completionData = allCompletionData.filter(d => {
-    if (compCustomer && !(d.cus||'').toLowerCase().includes(compCustomer.toLowerCase())) return false;
-    if (compDdjh    && !(d.ref||'').toLowerCase().includes(compDdjh.toLowerCase()))    return false;
-    if (compDdjhPlan && !(d.ddjh||'').toLowerCase().includes(compDdjhPlan.toLowerCase())) return false;
-    if (compWh && (d.wh1_name||d.wh1||'') !== compWh) return false;
-    if (compPlanCat && !compPlanHit(d)) return false;
-    return true;
-  });
-  renderCompletionList();
+  compRebuild();
 }
 
 // 车间仓「外发计划」分类开关（再点一次取消）
@@ -1681,22 +1848,23 @@ function setCompPlanCat(c) {
 }
 
 function resetCompFilters() {
-  compCustomer = ''; compDdjh = ''; compDdjhPlan = ''; compWh = ''; compPlanCat = '';
-  completionData = allCompletionData;
-  renderCompletionList();
+  compCustomer = ''; compDdjh = ''; compDdjhPlan = ''; compWh = ''; compPlanCat = ''; compQ = '';
+  compRebuild();
 }
 
 function filterByWh(wh) {
   compWh = wh;
   compPlanCat = '';   // 换仓库时清掉外发计划分类，避免「别的仓 + 安装」筛成 0 条看着像坏了
-  completionData = compWh
-    ? allCompletionData.filter(d => (d.wh1_name||d.wh1||'') === compWh)
-    : allCompletionData;
-  renderCompletionList();
+  compRebuild();      // 搜索词一起带上（原来这里会把搜索丢掉 → 看着像「搜不到」）
 }
+
+let compSel = new Set();   // 勾选的调拨行 key = ic_no|prd_no
 
 function renderCompletionList() {
   const el = $id('content');
+  // 待完工在上；已完工 / 部分完工已退料排到最后、绿色（MAK 2026-10-19，合并原「完工入库」tab）
+  const openRows = completionData.filter(t => (t.status || 'open') === 'open');
+  const closedRows = completionData.filter(t => (t.status || 'open') !== 'open');
   const toolbar = `
 <div class="pos-un-toolbar" style="padding:8px 12px;display:flex;flex-direction:column;gap:6px">
   <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
@@ -1707,7 +1875,11 @@ function renderCompletionList() {
       <button class="pos-un-filter-reset" onclick="resetCompFilters()">清除</button>
       <button onclick="applyCompFilters()">筛选</button>
     </span>
-    <span class="pos-un-info">${completionData.length} 条</span>
+    <span style="display:inline-flex;gap:6px;align-items:center">
+      <span style="background:#fff7ed;color:#c2410c;border:1.5px solid #fdba74;padding:3px 12px;border-radius:12px;font-size:13px;font-weight:700;white-space:nowrap">待完工 ${openRows.length}</span>
+      <span style="background:#f0fdf4;color:#15803d;border:1.5px solid #86efac;padding:3px 12px;border-radius:12px;font-size:13px;font-weight:700;white-space:nowrap">已完工 ${closedRows.length}</span>
+    </span>
+    <span id="compSelBar" style="display:none;align-items:center;gap:6px;background:#f5f3ff;border:1px solid #c4b5fd;border-radius:18px;padding:3px 4px 3px 12px"></span>
     ${completionList.length > 0 ? `<button onclick="openBatchCompletionModal()" id="batchCompBtn" style="padding:6px 14px;background:var(--accent);color:#fff;border:none;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer">批量完工 (${completionList.length})</button>` : ''}
   </div>
   <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center" id="compWhTabs">
@@ -1740,13 +1912,13 @@ function renderCompletionList() {
   }
 
   if (!completionData.length) {
-    el.innerHTML = toolbar + '<div class="state-msg">暂无待完工的调拨单</div>';
+    el.innerHTML = toolbar + '<div class="state-msg">暂无完工单</div>';
     return;
   }
 
   // 表格：IC_NO | 品号 | 品名 | 仓 | 指令单号 | 客户 | 总数 | 已完工 | 剩余
   // 过滤已在 loadCompletion / renderCompletionListFiltered 完成
-  const tableRows = completionData.map((t, i) => {
+  const tableRows = openRows.map((t, i) => {
     const total = t.total_qty || 0;
     const done  = t.transfer_qty || 0;
     const remain = t.remaining_qty || (total - done);
@@ -1755,15 +1927,17 @@ function renderCompletionList() {
     const added = completionList.filter(x => x.transfer_ic_no === t.ic_no
       && (!x.transfer_prd || x.transfer_prd === t.prd_no)).length;
     const bg = added ? 'background:#dcfce7' : (i % 2 === 0 ? 'background:var(--card)' : 'background:var(--bg)');
-    return `<tr title="${added ? '已加入暂存：' + added + ' 个成品' : '点击选择成品加入暂存'}" style="cursor:pointer;${bg};${added ? 'box-shadow:inset 3px 0 0 #16a34a;' : ''}border-bottom:1px solid var(--border)" onclick="openCompletionModal('${escJs(t.ic_no)}','${escJs(t.prd_no)}')">
+    const _k = t.ic_no + '|' + t.prd_no;
+    return `<tr data-k="${escAttr(_k)}" title="${added ? '已加入暂存：' + added + ' 个成品' : '点击选择成品加入暂存'}" style="cursor:pointer;${bg};${added ? 'box-shadow:inset 3px 0 0 #16a34a;' : ''}border-bottom:1px solid var(--border)" onclick="openCompletionModal('${escJs(t.ic_no)}','${escJs(t.prd_no)}')">
+      <td style="padding:8px 6px;text-align:center" onclick="event.stopPropagation()"><input type="checkbox" class="comp-chk" data-k="${escAttr(_k)}" ${compSel.has(_k)?'checked':''} onchange="compToggle(this)"></td>
       <td style="padding:8px 10px;font-size:12px;color:var(--sub)">${i+1}</td>
-      <td style="padding:8px 10px;font-size:12px;font-weight:600">${fmt(t.ic_no)}</td>
-      <td style="padding:8px 10px;font-size:12px;text-align:center;color:var(--sub)">${fmt(t.ic_dd || '—')}</td>
-      <td style="padding:8px 10px;font-size:12px">${fmt(t.prd_no)}</td>
-      <td style="padding:8px 10px;font-size:13px;color:var(--name);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${fmt(t.prd_name||'')}">${fmt(t.prd_name||'').substring(0,15)}</td>
-      <td style="padding:8px 10px;font-size:12px;text-align:center">${fmt(t.wh1_name||t.wh1||'')}</td>
-      <td style="padding:8px 10px;font-size:12px;text-align:center">${fmt(t.ref||'')}</td>
-      <td style="padding:8px 10px;font-size:12px;text-align:center;color:var(--orange)">${fmt(t.ddjh||'')}</td>
+      <td style="padding:8px 10px;font-size:12px;font-weight:600">${highlight(t.ic_no, compQ)}</td>
+      <td style="padding:8px 10px;font-size:12px;text-align:center;color:var(--sub)">${highlight(t.ic_dd || '—', compQ)}</td>
+      <td style="padding:8px 10px;font-size:12px">${highlight(t.prd_no, compQ)}</td>
+      <td style="padding:8px 10px;font-size:13px;color:var(--name);max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${fmt(t.prd_name||'')}">${highlight(t.prd_name||'', compQ)}</td>
+      <td style="padding:8px 10px;font-size:12px;text-align:center">${highlight(t.wh1_name||t.wh1||'', compQ)}</td>
+      <td style="padding:8px 10px;font-size:12px;text-align:center">${highlight(t.ref||'', compQ)}</td>
+      <td style="padding:8px 10px;font-size:12px;text-align:center;color:var(--orange)">${highlight(t.ddjh||'', compQ)}</td>
       <td style="padding:8px 10px;font-size:12px;text-align:center">${fmt(t.cus||'')}</td>
       <td style="padding:8px 10px;font-size:12px;text-align:right">${total}</td>
       <td style="padding:8px 10px;font-size:12px;text-align:right">${done}</td>
@@ -1777,13 +1951,51 @@ function renderCompletionList() {
       </td>
       <td style="padding:8px 10px;font-size:12px;text-align:right;color:${remain<=0?'var(--green)':'var(--orange)'};font-weight:600">${remain}</td>
       <td style="padding:8px 10px;text-align:center">
-        ${added ? `<div style="font-size:10px;color:#15803d;font-weight:600;margin-bottom:3px">已加入 ${added}</div>` : ''}
-        ${t.returned
-          ? `<span style="font-size:11px;color:var(--green);font-weight:600">已退料</span>`
-          : `${t.ret_qty > 0 ? `<div style="font-size:10px;color:var(--orange);font-weight:600;margin-bottom:3px">部分退 ${t.ret_qty}</div>` : ''}<button onclick="event.stopPropagation();openReturnModal('${escJs(t.ic_no)}')" style="padding:3px 10px;border:1px solid #bfdbfe;border-radius:12px;background:#fff;font-size:11px;cursor:pointer;color:#1e40af">退料</button>`}
+        ${added ? `<div style="font-size:10px;color:#15803d;font-weight:600">已加入 ${added}</div>` : ''}
+        ${t.ret_qty > 0 && !t.returned ? `<div style="font-size:10px;color:var(--orange);font-weight:600">部分退 ${t.ret_qty}</div>` : ''}
+        ${t.returned ? `<div style="font-size:10px;color:var(--green);font-weight:600">已退料</div>` : ''}
+        <button onclick="event.stopPropagation();compRowMenu(event,'${escJs(t.ic_no)}','${escJs(t.prd_no)}')" title="操作" style="width:30px;height:24px;border:1px solid var(--border);border-radius:6px;background:#fff;font-size:15px;line-height:1;cursor:pointer;color:var(--sub)">⋮</button>
       </td>
     </tr>`;
   }).join('');
+
+  // 已完工 / 部分完工已退料的单：绿色置底，不参与点选（没有可完工的料了）
+  const closedHtml = closedRows.length ? `
+      <tr><td colspan="15" style="padding:10px 12px;background:#f0fdf4;border-top:2px solid #86efac;border-bottom:1px solid #bbf7d0;font-size:12px;font-weight:700;color:#15803d">✅ 已完工 / 已退料（${closedRows.length}）</td></tr>` +
+    closedRows.map((t, i) => {
+      const ctotal = t.total_qty || 0, cdone = t.transfer_qty || 0;
+      const cpct = ctotal > 0 ? Math.round(cdone / ctotal * 100) : 0;
+      const _diff = Math.round((cdone - ctotal) * 1000) / 1000;
+      const chip = t.status === 'done'
+        ? '<span style="background:#16a34a;color:#fff;padding:2px 9px;border-radius:10px;font-size:11px;font-weight:700">已完工</span>'
+        : (t.status === 'closed'
+            ? '<span style="background:#475569;color:#fff;padding:2px 9px;border-radius:10px;font-size:11px;font-weight:700">已结案' + (_diff < 0 ? ' · 短收 ' + Math.abs(_diff) : (_diff > 0 ? ' · 超收 ' + _diff : '')) + '</span>'
+            : (t.status === 'returned'
+            ? '<span style="background:#4d7c0f;color:#fff;padding:2px 9px;border-radius:10px;font-size:11px;font-weight:700">部分完工已退料</span>'
+            : '<span style="background:#84cc16;color:#fff;padding:2px 9px;border-radius:10px;font-size:11px;font-weight:700">已退料</span>'));
+      return `<tr style="background:#f0fdf4;border-bottom:1px solid #dcfce7;color:#166534">
+      <td></td>
+      <td style="padding:8px 10px;font-size:12px;color:#4d7c0f">${i+1}</td>
+      <td style="padding:8px 10px;font-size:12px;font-weight:600">${highlight(t.ic_no, compQ)}</td>
+      <td style="padding:8px 10px;font-size:12px;text-align:center;color:#4d7c0f">${highlight(t.ic_dd || '—', compQ)}</td>
+      <td style="padding:8px 10px;font-size:12px">${highlight(t.prd_no, compQ)}</td>
+      <td style="padding:8px 10px;font-size:13px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${fmt(t.prd_name||'')}">${highlight(t.prd_name||'', compQ)}</td>
+      <td style="padding:8px 10px;font-size:12px;text-align:center">${highlight(t.wh1_name||t.wh1||'', compQ)}</td>
+      <td style="padding:8px 10px;font-size:12px;text-align:center">${highlight(t.ref||'', compQ)}</td>
+      <td style="padding:8px 10px;font-size:12px;text-align:center">${highlight(t.ddjh||'', compQ)}</td>
+      <td style="padding:8px 10px;font-size:12px;text-align:center">${highlight(t.cus||'', compQ)}</td>
+      <td style="padding:8px 10px;font-size:12px;text-align:right">${ctotal}</td>
+      <td style="padding:8px 10px;font-size:12px;text-align:right">${cdone}</td>
+      <td style="padding:8px 10px;font-size:12px;text-align:center">${cpct}%</td>
+      <td style="padding:8px 10px;font-size:12px;text-align:right;font-weight:600">${Math.max(0, t.remaining_qty || 0)}</td>
+      <td style="padding:8px 10px;text-align:center">
+        ${chip}
+        ${t.status === 'closed' ? `<button onclick="event.stopPropagation();undoCloseComp('${escJs(t.ic_no)}','${escJs(t.prd_no)}')" style="margin-left:6px;padding:3px 10px;border:1px solid #cbd5e1;border-radius:12px;background:#fff;font-size:11px;cursor:pointer;color:#475569">撤销结案</button>` : ''}
+        ${t.in_ic_no ? `<button class="pr-btn" style="margin:0 0 0 6px" onclick="event.stopPropagation();printInbound('${escJs(t.in_ic_no)}')" title="打印入仓单">🖨 进仓单</button>`
+          : (t.ic_no ? `<button class="pr-btn" style="margin:0 0 0 6px" onclick="event.stopPropagation();printIc('${escJs(t.ic_no)}')" title="没有对应入库单，打调拨出仓单">🖨 出仓单</button>` : '')}
+      </td>
+    </tr>`;
+    }).join('') : '';
 
   const html = `
 ${toolbar}
@@ -1795,6 +2007,7 @@ ${stashedHtml}
   <table style="width:100%;border-collapse:collapse;font-size:12px;border-radius:8px;overflow:hidden;border:1px solid var(--border)">
     <thead>
       <tr style="background:var(--bg)">
+        <th style="padding:8px 6px;text-align:center;font-size:11px;color:var(--sub);border-bottom:1px solid var(--border)"><input type="checkbox" onchange="compSelAll(this.checked)" title="全选待完工" style="cursor:pointer"></th>
         <th style="padding:8px 10px;text-align:left;font-size:11px;color:var(--sub);border-bottom:1px solid var(--border)">#</th>
         <th style="padding:8px 10px;text-align:left;font-size:11px;color:var(--sub);border-bottom:1px solid var(--border)">IC单号</th>
         <th style="padding:8px 10px;text-align:center;font-size:11px;color:var(--sub);border-bottom:1px solid var(--border)">调拨日期</th>
@@ -1812,7 +2025,7 @@ ${stashedHtml}
       </tr>
     </thead>
     <tbody>
-      ${tableRows}
+      ${tableRows}${closedHtml}
     </tbody>
   </table>
 </div>`;
@@ -1846,6 +2059,116 @@ ${stashedHtml}
   }
 }
 
+// ── 完工列表：多选 + 顶部批量操作 + 行内 ⋮ 菜单（MAK 2026-10-20）──────
+function compKey(icNo, prdNo) { return icNo + '|' + prdNo; }
+
+function compToggle(el) {
+  const k = el.getAttribute('data-k');
+  if (el.checked) compSel.add(k); else compSel.delete(k);
+  compUpdateSelBar();
+}
+
+function compSelAll(on) {
+  document.querySelectorAll('tr[data-k]').forEach(tr => {
+    const k = tr.getAttribute('data-k');
+    const cb = tr.querySelector('.comp-chk');
+    if (!cb) return;
+    cb.checked = !!on;
+    if (on) compSel.add(k); else compSel.delete(k);
+  });
+  compUpdateSelBar();
+}
+
+function compSelClear() {
+  compSel.clear();
+  document.querySelectorAll('.comp-chk').forEach(cb => { cb.checked = false; });
+  compUpdateSelBar();
+}
+
+function compSelRows() {
+  const out = [];
+  compSel.forEach(k => {
+    const bar = k.indexOf('|');
+    const ic = k.slice(0, bar), prd = k.slice(bar + 1);
+    const t = (allCompletionData || []).find(x => x.ic_no === ic && x.prd_no === prd);
+    if (t) out.push(t);
+  });
+  return out;
+}
+
+function compUpdateSelBar() {
+  const bar = document.getElementById('compSelBar');
+  if (!bar) return;
+  if (!compSel.size) { bar.style.display = 'none'; bar.innerHTML = ''; return; }
+  const bs = 'padding:4px 10px;border-radius:12px;border:1px solid #c4b5fd;background:#fff;font-size:11px;cursor:pointer;color:#6d28d9;white-space:nowrap';
+  bar.style.display = 'inline-flex';
+  bar.innerHTML = `<b style="font-size:12px;color:#6d28d9;white-space:nowrap">已选 ${compSel.size}</b>
+    <button onclick="compBatchAct('print')" style="${bs}">🖨 出仓单</button>
+    <button onclick="compBatchAct('return')" style="${bs}">退料</button>
+    <button onclick="compBatchAct('close')" style="${bs}">结案</button>
+    <button onclick="compBatchAct('reroute')" style="${bs}">改派</button>
+    <button onclick="compSelClear()" title="清除选择" style="width:22px;height:22px;border-radius:50%;border:none;background:#ede9fe;color:#6d28d9;font-size:12px;cursor:pointer">✕</button>`;
+}
+
+async function compBatchAct(kind) {
+  const rows = compSelRows();
+  if (!rows.length) return;
+  if (kind === 'print' || kind === 'return') {
+    if (rows.length > 1) { toast('⚠️ 出仓单/退料一次处理一张，请只选一条'); return; }
+    if (kind === 'print') printIc(rows[0].ic_no);
+    else openReturnModal(rows[0].ic_no);
+    return;
+  }
+  if (kind === 'close') {
+    const list = rows.filter(r => (r.remaining_qty || 0) > 0);
+    if (!list.length) { toast('⚠️ 选中的都已完工，没有可结案的'); return; }
+    if (!confirm(`结案 ${list.length} 条？\n差额（短收/超收）只记账，不写库存、不记损耗。`)) return;
+    let ok = 0;
+    for (const r of list) {
+      try {
+        const res = await api(BASE + '/completion/close', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ic_no: r.ic_no, prd_no: r.prd_no})
+        });
+        if (res && res.ok !== false) ok++;
+      } catch (e) { /* 继续下一条 */ }
+    }
+    toast(`✅ 已结案 ${ok}/${list.length}`);
+    compSelClear(); loadCompletion();
+    return;
+  }
+  if (kind === 'reroute') {
+    compReroute(rows.map(r => ({ic_no: r.ic_no, prd_no: r.prd_no, remain: r.remaining_qty || 0, wh1: r.wh1 || ''})));
+  }
+}
+
+// 行内 ⋮ 下拉
+function compRowMenu(ev, icNo, prdNo) {
+  if (ev) ev.stopPropagation();
+  document.getElementById('compRowMenu')?.remove();
+  const t = (allCompletionData || []).find(x => x.ic_no === icNo && x.prd_no === prdNo);
+  if (!t) return;
+  const remain = t.remaining_qty || 0, total = t.total_qty || 0, done = t.transfer_qty || 0;
+  const mk = (label, fn, color) => `<div onclick="document.getElementById('compRowMenu').remove();${fn}" style="padding:9px 14px;font-size:12px;cursor:pointer;color:${color || '#334155'};white-space:nowrap" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='#fff'">${label}</div>`;
+  const items = [
+    mk('📋 选成品 / 加入暂存', `openCompletionModal('${escJs(icNo)}','${escJs(prdNo)}')`),
+    mk('🖨 出仓单', `printIc('${escJs(icNo)}')`),
+    t.returned ? '' : mk('↩ 退料', `openReturnModal('${escJs(icNo)}')`, '#1e40af'),
+    remain > 0 ? mk('✔ 结案', `closeCompRow('${escJs(icNo)}','${escJs(prdNo)}',${total},${done})`, '#c2410c') : '',
+    remain > 0 ? mk('⇄ 改派 / 换仓', `compReroute([{ic_no:'${escJs(icNo)}',prd_no:'${escJs(prdNo)}',remain:${remain},wh1:'${escJs(t.wh1 || '')}'}])`, '#6d28d9') : ''
+  ].join('');
+  const d = document.createElement('div');
+  d.id = 'compRowMenu';
+  d.style.cssText = 'position:fixed;z-index:900;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:0 12px 32px rgba(0,0,0,.18);overflow:hidden;min-width:170px';
+  d.innerHTML = items;
+  document.body.appendChild(d);
+  const r = d.getBoundingClientRect();
+  let x = Math.min(ev.clientX, window.innerWidth - r.width - 8);
+  let y = Math.min(ev.clientY, window.innerHeight - r.height - 8);
+  d.style.left = x + 'px'; d.style.top = y + 'px';
+  setTimeout(() => document.addEventListener('click', () => d.remove(), {once: true}), 0);
+}
+
 function updateBatchBtnCount() {
   const btn = document.getElementById('batchCompBtn');
   if (btn) btn.textContent = '\u6279\u91cf\u5b8c\u5de5 (' + completionList.length + ')';
@@ -1872,7 +2195,8 @@ async function openCompletionModal(icNo, prdNo) {
   let fgFail = 0;   // Step A：原来 catch(e){} 空吞，用户看到的是"无匹配"
   for (const m of matches) {
     try {
-      const d = await api(BASE + '/completion/fg_detail?' + new URLSearchParams({fg_no: m.prd_no}));
+      const d = await api(BASE + '/completion/fg_detail?' + new URLSearchParams({fg_no: m.prd_no, mat_no: matPrd}));
+      d.same_family = !!m.same_family;   // 同款不同表面处理（BOM 里没有这条边）
       fgDetails.push(d);
     } catch(e) { fgFail++; }
   }
@@ -1895,6 +2219,9 @@ async function openCompletionModal(icNo, prdNo) {
       + '<td colspan="2" style="padding:8px 10px;font-weight:700;font-size:13px;border-right:2px solid #dbeafe">'
       +   '<span style="color:#6b7280;font-weight:400">' + (idx+1) + '\uff0e</span>' + fmt(d.fg_no)
       +   '<span style="font-weight:400;font-size:13px;color:var(--name);margin-left:8px">' + fmt(d.fg_name||'') + '</span>'
+      +   ((d.same_family || (d.materials||[]).some(x => x.synthetic))
+            ? '<span style="margin-left:8px;background:#ede9fe;color:#6d28d9;border:1px solid #c4b5fd;border-radius:10px;padding:1px 8px;font-size:11px">同款换表面处理</span>'
+            : '')
       + '</td>'
       + '<td style="padding:4px 8px;border-right:1px solid #e5e7eb;font-size:12px;color:#6b7280">'
       +   '<span style="font-size:11px;color:#888">\u6750\u6599</span><br>' + d.materials.length + ' \u79cd'
@@ -1973,7 +2300,7 @@ async function completionAddFgDetail(fgNo, icNo, prdNo, qtyInputId, whInputId) {
   if (!fg_wh) { toast('\u26a0\ufe0f \u8bf7\u586b\u5199\u4ed3\u5e93'); if (_wEl) _wEl.focus(); return; }
   let bomData;
   try {
-    bomData = await api(BASE + '/completion/fg_detail?' + new URLSearchParams({fg_no: fgNo}));
+    bomData = await api(BASE + '/completion/fg_detail?' + new URLSearchParams({fg_no: fgNo, mat_no: prdNo}));
   } catch(e) { toast('\u274c \u52a0\u8f7d BOM \u5931\u8d25'); return; }
   const materials = (bomData.materials||[]).map(m => ({
     prd_no: m.prd_no,
@@ -2102,6 +2429,121 @@ function cmApplyWh(el) {
 // 口径（MAK 定）：**按行退** —— 只写勾中且数量>0 的行，每行上限 = 可退量（完工扣料量 − 已退量）；
 //   提交时把 items[{prd_no,qty}] 传给后端（main.py:1303-1321）；不传 items 才走「还能退的全退」旧兼容分支。
 //   （原注释写的「服务端一律按全退写、退过就不能再退」是旧口径，2026-10-08 复核时改正）
+// 改派：换供应商/仓。默认「直接改原单收货仓」；料已到旧仓时才用「转仓子单」
+// list = [{ic_no, prd_no, remain, wh1}]，可单条也可批量
+async function compReroute(list) {
+  if (!Array.isArray(list)) list = [{ic_no: arguments[0], prd_no: arguments[1], remain: arguments[2], wh1: arguments[3]}];
+  document.getElementById('rrOverlay')?.remove();
+  if (!window.__allWarehouses || !window.__allWarehouses.length) {
+    try { const r = await api(BASE + '/warehouses/all'); window.__allWarehouses = r.warehouses || r.items || r || []; } catch (e) { window.__allWarehouses = []; }
+  }
+  window.__rrMode = 'doc';
+  window.__rrList = list;
+  const one = list.length === 1 ? list[0] : null;
+  const head = one
+    ? `调拨单 ${escAttr(one.ic_no)} · ${escAttr(one.prd_no)}<br>当前仓 <b>${escAttr(one.wh1 || '—')}</b> · 剩余 <b>${gcNum(one.remain)}</b>`
+    : `已选 <b>${list.length}</b> 条调拨行，全部换到同一个仓`;
+  const opts = (window.__allWarehouses || []).map(w => `<option value="${escAttr(w.code)}">${escAttr(w.code + ' ' + (w.name || ''))}</option>`).join('');
+  const ov = document.createElement('div');
+  ov.id = 'rrOverlay';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:520;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:18px';
+  ov.innerHTML = `<div style="background:#fff;border-radius:14px;max-width:460px;width:100%;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+    <div style="font-size:15px;font-weight:700;margin-bottom:4px">改派 / 换仓</div>
+    <div style="font-size:12px;color:#6b7280;margin-bottom:12px">${head}</div>
+    <div style="display:flex;gap:6px;margin-bottom:10px">
+      <button id="rrM0" onclick="rrSetMode('doc')" style="flex:1;padding:8px;border-radius:9px;font-size:12px;cursor:pointer;font-weight:700;border:1.5px solid #7c3aed;background:#f5f3ff;color:#6d28d9">改原单收货仓</button>
+      <button id="rrM1" onclick="rrSetMode('sub')" style="flex:1;padding:8px;border-radius:9px;font-size:12px;cursor:pointer;border:1.5px solid #d1d5db;background:#fff;color:#475569">转仓子单</button>
+    </div>
+    <div id="rrHint" style="font-size:11px;color:#6b7280;margin-bottom:10px">原调拨单的收货仓直接改成新仓，单号/数量都不变。仅限还没做过、没退过料的单。</div>
+    <label style="font-size:12px;color:#374151;display:block">转到哪个仓/供应商
+      <input id="rrTo" list="rrToOpts" placeholder="输入或选择仓库" style="display:block;width:100%;margin-top:4px;padding:9px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
+      <datalist id="rrToOpts">${opts}</datalist></label>
+    <label id="rrQtyWrap" style="font-size:12px;color:#374151;display:none;margin-top:10px">转多少
+      <input id="rrQty" type="number" min="1" step="1" value="${one ? one.remain : (list[0] ? list[0].remain : '')}" style="display:block;width:100%;margin-top:4px;padding:9px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;text-align:right"></label>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button onclick="document.getElementById('rrOverlay').remove()" style="flex:1;padding:11px;border-radius:10px;border:1px solid var(--border);background:#fff;font-size:13px;cursor:pointer">取消</button>
+      <button id="rrOk" onclick="compRerouteSubmit()" style="flex:2;padding:11px;border-radius:10px;border:none;background:#7c3aed;color:#fff;font-size:13px;font-weight:700;cursor:pointer">确认改仓</button>
+    </div></div>`;
+  document.body.appendChild(ov);
+  const i = document.getElementById('rrTo'); if (i) i.focus();
+}
+
+function rrSetMode(m) {
+  window.__rrMode = m;
+  // 直接用 style.xxx 赋值，别再拿 cssText 正则替换（顺序/归一化一变就匹配不上，点了没反应）
+  const paint = (el, on) => {
+    if (!el) return;
+    el.style.border = on ? '1.5px solid #7c3aed' : '1.5px solid #d1d5db';
+    el.style.background = on ? '#f5f3ff' : '#fff';
+    el.style.color = on ? '#6d28d9' : '#475569';
+    el.style.fontWeight = on ? '700' : '400';
+  };
+  paint(document.getElementById('rrM0'), m === 'doc');
+  paint(document.getElementById('rrM1'), m === 'sub');
+  const q = document.getElementById('rrQtyWrap'); if (q) q.style.display = (m === 'sub' ? 'block' : 'none');
+  const h = document.getElementById('rrHint');
+  if (h) h.innerText = (m === 'sub')
+    ? '料已经在旧仓/已开始做：写一张转仓子单（旧仓→新仓），原单号与完工进度不变。'
+    : '原调拨单的收货仓直接改成新仓，单号/数量都不变。仅限还没做过、没退过料的单。';
+  const ok = document.getElementById('rrOk'); if (ok) ok.innerText = (m === 'sub' ? '确认转仓' : '确认改仓');
+}
+
+async function compRerouteSubmit() {
+  const toWh = ((document.getElementById('rrTo') || {}).value || '').trim();
+  const mode = window.__rrMode || 'doc';
+  const qtyOne = parseFloat((document.getElementById('rrQty') || {}).value || 0);
+  const list = window.__rrList || [];
+  if (!toWh) { toast('⚠️ 请填新仓库'); return; }
+  if (!list.length) return;
+  if (mode === 'sub' && list.length === 1 && !(qtyOne > 0)) { toast('⚠️ 数量要大于 0'); return; }
+  const btn = document.getElementById('rrOk'); if (btn) { btn.disabled = true; btn.textContent = '提交中…'; }
+  let ok = 0; const errs = [];
+  for (const it of list) {
+    const body = {ic_no: it.ic_no, prd_no: it.prd_no, to_wh: toWh, mode: mode};
+    if (mode === 'sub') body.qty = (list.length === 1 ? qtyOne : it.remain);
+    try {
+      const r = await api(BASE + '/stock/reroute', {
+        method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+      });
+      if (r && r.ok !== false) ok++; else errs.push((r && r.error) || '失败');
+    } catch (e) { errs.push(e.message || String(e)); }
+  }
+  document.getElementById('rrOverlay')?.remove();
+  if (ok === list.length) toast(`✅ 已${mode === 'doc' ? '改仓' : '转仓'} ${ok} 条 → ${toWh}`);
+  else toast(`⚠️ 成功 ${ok}/${list.length}${errs.length ? '：' + errs[0] : ''}`);
+  compSelClear();
+  loadCompletion();
+}
+
+// 手工结案：发出 1000 回来 980/1020 都正常，剩余不再挂着当待完工；差额只记结案表，不写库存
+async function closeCompRow(icNo, prdNo, total, done) {
+  const diff = Math.round((done - total) * 1000) / 1000;
+  const msg = '确认结案？\n\n调拨单 ' + icNo + '\n品号 ' + prdNo
+    + '\n发出 ' + total + '，已完工 ' + done
+    + (diff < 0 ? '\n短收 ' + Math.abs(diff) + '（按损耗处理，不写库存）' : (diff > 0 ? '\n超收 ' + diff : ''));
+  if (!confirm(msg)) return;
+  try {
+    const r = await api(BASE + '/completion/close', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ic_no: icNo, prd_no: prdNo})
+    });
+    if (!r || r.ok === false) throw new Error((r && r.error) || '结案失败');
+    toast('✅ 已结案：' + icNo);
+    loadCompletion();
+  } catch (e) { toast('❌ ' + (e.message || e)); }
+}
+
+async function undoCloseComp(icNo, prdNo) {
+  if (!confirm('撤销结案？\n\n调拨单 ' + icNo + '\n品号 ' + prdNo + '\n撤销后会重新回到待完工。')) return;
+  try {
+    const r = await api(BASE + '/completion/close?ic_no=' + encodeURIComponent(icNo) + '&prd_no=' + encodeURIComponent(prdNo),
+      { method: 'DELETE' });
+    if (!r || r.ok === false) throw new Error((r && r.error) || '撤销失败');
+    toast('已撤销结案：' + icNo);
+    loadCompletion();
+  } catch (e) { toast('❌ ' + (e.message || e)); }
+}
+
 async function openReturnModal(icNo) {
   let pv = null;
   try {
@@ -2309,9 +2751,15 @@ async function openBatchCompletionModal() {
     const o2 = '<option value="">\u2014</option>' + Object.entries(toolMap).map(([k,v]) => '<option value="'+k+'">'+v+'</option>').join('');
     const row = document.createElement('div');
     row.style.cssText = 'display:flex;align-items:center;gap:6px;margin-bottom:5px';
-    row.innerHTML = '<select style="flex:1;padding:5px 6px;border:1.5px solid #d1d5db;border-radius:6px;font-size:12px">'+o2+'</select>'
-      + '<input type="number" value="1" min="1" placeholder="\u6570\u91cf" style="width:64px;padding:5px 6px;border:1.5px solid #d1d5db;border-radius:6px;font-size:12px;text-align:center">'
+    // 下拉定宽：原来 flex:1 会撑满整行（手机屏上数量框被推到看不见）
+    row.innerHTML = '<select style="width:190px;max-width:60vw;padding:5px 6px;border:1.5px solid #d1d5db;border-radius:6px;font-size:12px;font-family:inherit">'+o2+'</select>'
+      + '<input type="number" value="1" min="1" placeholder="\u6570\u91cf" style="width:78px;padding:5px 6px;border:1.5px solid #d1d5db;border-radius:6px;font-size:12px;text-align:center">'
       + '<button onclick="this.parentElement.remove()" style="width:24px;height:24px;border-radius:50%;border:none;background:#f3f4f6;font-size:13px;cursor:pointer;color:#6b7280">\u00d7</button>';
+    // 选完工具：数量空着/0 就补 1（不改已填的数字）
+    row.querySelector('select').onchange = function() {
+      const qi = row.querySelector('input');
+      if (!qi.value || parseInt(qi.value) < 1) qi.value = 1;
+    };
     area.appendChild(row);
   }
   document.getElementById('cmAddToolBtn').onclick = cmAddTool;
@@ -2542,6 +2990,7 @@ function wireSearchInput(t) {
       fn(val);
     }
   };
+  if (t === 'completion') inp.onkeydown = function (e) { if (e.key === 'Enter') e.preventDefault(); };
   if (t === 'smo') inp.onkeydown = enterSearch(smoSearchByPRD);
   else if (t === 'stock' || t === 'transfer') inp.onkeydown = enterSearch(stockSearchByPRD);
 }
@@ -2860,6 +3309,7 @@ async function loadPMC() {
     pmcItems = data.items || [];
     window.__pmcItems = pmcItems;
     window.__pmcQ = '';
+    window.__pmcOrderF = '';
     renderPMCList(pmcItems, '');
   } catch(e) {
     if (el) el.innerHTML = '<div class="error-msg">加载失败: ' + e.message + '</div>';
@@ -2877,8 +3327,19 @@ function renderPMCList(items, q) {
   var selCount = pmcSelected.length;
   var placeholder = "\u641c\u7d22\u8ba2\u5355/品号/\u5ba2\u6237";
   // \u6309\u6307\u4ee4\u5355\u53f7\u5206\u7c7b\uff08\u4e0d\u6309\u5ba2\u6237\uff0cMAK 2026-09-30\uff09
-  var qRef = pmcItems.map(function(t){return t.ref||t.\u6307\u4ee4\u5355\u53f7||'';}).filter(function(v,i,a){return v&&a.indexOf(v)===i});
-  var refBtns = qRef.map(function(r){return '<button onclick="pmcSetSearch(\'' + escAttr(r) + '\')" style="padding:3px 8px;border-radius:12px;border:1px solid #fef3c7;background:#fef3c7;font-size:11px;cursor:pointer;color:#92400e">#' + escAttr(r) + '</button>';}).join('');
+  // 指令单 chip：和工卡页同一套（带条数、选中实心），编号从大到小
+  var _refCount = {};
+  items.forEach(function(t){ var r = t.ref || t['\u6307\u4ee4\u5355\u53f7'] || ''; if (r) _refCount[r] = (_refCount[r] || 0) + 1; });
+  var qRef = Object.keys(_refCount).sort(function(a, b){ return String(b).localeCompare(String(a), undefined, {numeric: true}); });
+  var _f = window.__pmcOrderF || '';
+  var _chip = function(v, label, n) {
+    var on = _f === v;
+    return '<button onclick="pmcSetOrderF(\'' + escAttr(v) + '\')" style="padding:3px 9px;border-radius:12px;font-size:11px;cursor:pointer;font-weight:600;border:1px solid '
+      + (on ? '#d97706' : '#fef3c7') + ';background:' + (on ? '#f59e0b' : '#fef3c7') + ';color:' + (on ? '#fff' : '#92400e') + '">'
+      + label + (n != null ? ' \u00b7 ' + n : '') + '</button>';
+  };
+  var refBtns = (qRef.length > 1 ? _chip('', '\u5168\u90e8', qRef.length) : '')
+    + qRef.map(function(r){ return _chip(r, '#' + r, _refCount[r]); }).join('');
   var toolbar = '<div style="padding:8px 12px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:6px">' +
     '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
     '<input id="pmcSearch" type="text" placeholder="' + placeholder + '" value="' + escAttr(q || '') + '"' +
@@ -2911,7 +3372,7 @@ function renderPMCList(items, q) {
     var cardContent = '<div style="flex:1;cursor:pointer;min-width:0" onclick="event.stopPropagation();pmcAnalyzeRow(\'' + escAttr(soItm) + '\',\'' + escAttr(prdNo) + '\',' + qty + ')"><div style="font-size:12px;color:var(--sub);margin-bottom:2px">' + escAttr(osNo) + '</div><div style="font-size:14px;font-weight:600;margin-bottom:2px">' + escAttr(prdNo) + '</div><div style="font-size:13px;color:var(--name);margin-bottom:4px;word-break:break-all">' + escAttr(prdName) + '</div>' + (cusName ? '<span style="font-size:11px;color:#374151;background:#f3f4f6;border-radius:3px;padding:1px 5px;margin-right:4px">' + escAttr(cusName) + '</span>' : '') + '</div>';
     var rightDiv = '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0"><div style="font-size:18px;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums">' + fmtQty + '</div><div style="font-size:11px;color:var(--sub)">\u4ef6</div>' + zhilianHtml + '</div>';
     var checkbox = '<div style="display:flex;align-items:flex-start;padding-top:2px" onclick="event.stopPropagation();pmcToggleSel(\'' + escAttr(soItm) + '\',\'' + escAttr(prdNo) + '\')"><input type="checkbox" ' + (isSel?'checked':'') + ' style="width:16px;height:16px;cursor:pointer;accent-color:var(--accent)"></div>';
-    return '<div class="pmc-card' + (isSel?' pmc-card-sel':'') + '" data-pmcrow="1" data-q="' + escAttr(pmcSearchText(t)) + '">' + checkbox + cardContent + rightDiv + '</div>';
+    return '<div class="pmc-card' + (isSel?' pmc-card-sel':'') + '" data-pmcrow="1" data-ref="' + escAttr(t.ref || t['\u6307\u4ee4\u5355\u53f7'] || '') + '" data-q="' + escAttr(pmcSearchText(t)) + '">' + checkbox + cardContent + rightDiv + '</div>';
   }).join('');
   var footer = selCount > 0 ? '<div style="position:sticky;bottom:0;padding:12px;background:rgba(255,255,255,.95);border-top:1px solid var(--border);display:flex;gap:8px;align-items:center"><div style="flex:1;display:flex;align-items:center;gap:8px"><span style="background:var(--accent);color:#fff;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:700">' + selCount + '</span><span style="font-size:13px;color:var(--text)">\u5df2\u9009</span></div><button onclick="pmcPreviewBatch()" style="background:var(--accent);color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:14px;font-weight:600;cursor:pointer">\u6279\u91cf\u9884\u89c8 (' + selCount + ')</button><button onclick="pmcSubmit()" style="background:#16a34a;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:14px;font-weight:600;cursor:pointer">\u751f成 MPS</button></div>' : '';
   el.innerHTML = toolbar + '<div style="padding:6px 0">' + cards + '</div>' + '<div class="state-msg" id="pmcEmptyHint" style="display:none">\u65e0\u5339\u914d\u7ed3\u679c</div>' + footer;
@@ -2932,10 +3393,12 @@ function pmcIsSel(t) {
 // 只切 DOM 显隐 —— 不重渲染，输入框的值和焦点都保住
 function pmcApplyFilter() {
   var q = (window.__pmcQ || '').toLowerCase();
+  var of = window.__pmcOrderF || '';
   var rows = document.querySelectorAll('[data-pmcrow]');
   var n = 0;
   rows.forEach(function(r) {
-    var hit = !q || (r.getAttribute('data-q') || '').indexOf(q) >= 0;
+    var hit = (!q || (r.getAttribute('data-q') || '').indexOf(q) >= 0)
+           && (!of || (r.getAttribute('data-ref') || '') === of);
     r.style.display = hit ? '' : 'none';
     if (hit) n++;
   });
@@ -2949,6 +3412,10 @@ function pmcFilterInput(v) {
   window.__pmcQ = v || '';
   pmcApplyFilter();
 }
+function pmcSetOrderF(v) {
+  window.__pmcOrderF = v || '';
+  renderPMCList(window.__pmcItems || [], window.__pmcQ || '');
+}
 function pmcSetSearch(v) {
   var inp = $id('pmcSearch');
   if (inp) inp.value = v || '';
@@ -2959,7 +3426,11 @@ function pmcSetSearch(v) {
 function pmcSelectAllFiltered() {
   var items = window.__pmcItems || [];
   var q = (window.__pmcQ || '').toLowerCase();
-  var vis = items.filter(function(t) { return !q || pmcSearchText(t).indexOf(q) >= 0; });
+  var of = window.__pmcOrderF || '';
+  var vis = items.filter(function(t) {
+    return (!q || pmcSearchText(t).indexOf(q) >= 0)
+        && (!of || String(t.ref || t['\u6307\u4ee4\u5355\u53f7'] || '') === of);
+  });
   if (!vis.length) return;
   var allSel = vis.every(pmcIsSel);
   vis.forEach(function(t) {
@@ -4282,13 +4753,13 @@ function renderStockBatchTools() {
   return stockBatchTools.map((t, i) => `
     <div style="display:flex;gap:6px;align-items:center;margin-bottom:5px">
       <select class="batch-tool-code" onchange="stockBatchTools[${i}].code=this.value"
-        style="flex:2;padding:5px 8px;border:1px solid var(--border);border-radius:5px;font-size:12px;font-family:inherit;background:var(--card)">
+        style="width:220px;max-width:58vw;padding:5px 8px;border:1px solid var(--border);border-radius:5px;font-size:12px;font-family:inherit;background:var(--card);text-overflow:ellipsis">
         <option value="">—</option>
-        ${tools.map(x => `<option value="${x.code}"${x.code === t.code ? ' selected' : ''}>${x.name}</option>`).join('')}
+        ${tools.map(x => { const _n = String(x.name || '').replace(new RegExp('^' + x.code + '\\s*'), ''); return `<option value="${x.code}"${x.code === t.code ? ' selected' : ''} title="${escAttr(x.name)}">${_n || x.code}</option>`; }).join('')}
       </select>
       <input type="number" class="batch-tool-qty" min="1" placeholder="数量"
         value="${t.qty||1}"
-        style="flex:1;padding:5px 8px;border:1px solid var(--border);border-radius:5px;font-size:12px;font-family:inherit;background:var(--card)"
+        style="width:78px;padding:5px 8px;border:1px solid var(--border);border-radius:5px;font-size:12px;font-family:inherit;background:var(--card)"
         oninput="stockBatchTools[${i}].qty=parseInt(this.value)||1">
       <button onclick="removeBatchTool(${i})" style="width:26px;height:26px;border-radius:50%;border:none;background:#FEE2E2;color:#DC2626;font-size:14px;cursor:pointer">×</button>
     </div>`).join('');
@@ -4978,6 +5449,672 @@ async function doShapeConvert() {
     toast('❌ 形态转换失败: ' + e.message);
     if (btn) { btn.disabled = false; btn.textContent = '提交形态转换'; }
   }
+}
+
+// ═════════ 打印（2026-10-17 v3）：统一版式 + 占满纸宽 + 可读字号 ═════════
+// 版式依据 C041.[PRINT] 里 XtraReports 模板的字段绑定与栏目顺序；纸型按实际使用：
+//   请购单 / 采购入库单 / 完工入库单 → A4 纵向
+//   采购订单 → A4 横向
+//   调拨单（出仓单）→ 三联纸 21×14.5cm 横打
+const PR_COMPANY = '中山市安而固五金制品有限公司';
+const PR_ADDR = '中山市小榄镇九州基广成路223号第五工业园5栋1-2楼';
+const PR_TEL = 'TEL:0760-22230332 22189851';
+const PR_PAPER = {
+  a4:    { size: '210mm 297mm', margin: '10mm 8mm 10mm 8mm' },
+  a4l:   { size: '297mm 210mm', margin: '8mm 10mm 8mm 10mm' },
+  three: { size: '210mm 145mm', margin: '5mm 4mm 5mm 4mm' },
+  // 进出仓单实际用纸：9.5 x 5.5 英寸（MAK 2026-10-19）= 241.3 x 139.7 mm
+  // 左右各留 8mm：打印机物理不可打印边距常见 5~7mm，留 4mm 会被切边（MAK 2026-10-19 实测）
+  inout: { size: '9.5in 5.5in', margin: '5mm 8mm 4mm 8mm' },
+  // 工卡：A5 竖版（纸型 MAK 后定，只改这一行）
+  gc:    { size: '145mm 210mm', margin: '11mm 12mm 9mm 12mm' },   // 14.5×21cm 竖版，四周留足打印机不可打印区
+};
+
+function prE(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+function prQ(v, dp) {
+  const n = Number(v);
+  if (!isFinite(n)) return prE(v == null ? '' : v);
+  const s = dp ? n.toFixed(dp) : String(Math.round(n * 1000) / 1000);
+  const [a, b] = s.split('.');
+  return a.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + (b !== undefined ? '.' + b : '');
+}
+function prD(v) { return v ? String(v).slice(0, 10) : ''; }
+
+// o = {title, paper, tight, meta:[[k,v]], cols:[{t,w%,c,cls}], rows, totalRow, signs:[{n,v}], rem}
+function prDoc(o) {
+  const meta = (o.meta || []).filter(x => x && x[1] !== undefined && x[1] !== null && x[1] !== '')
+    .map(([k, v]) => `<div class="pr-m"><span>${prE(k)}</span><b>${prE(v)}</b></div>`).join('');
+  let cols = o.cols || [];
+  let rows = o.rows || [];
+  let totalRow = o.totalRow || null;
+  // 整列为空 → 不打（采购订单的「销售单数量/备注」、调拨单的「备注」常年为空，留着只显得丑）
+  const nonEmpty = cols.map((c, k) =>
+    rows.some(r => String(r[k] == null ? '' : r[k]).trim() !== '') ||
+    (totalRow && String(totalRow[k] == null ? '' : totalRow[k]).trim() !== ''));
+  if (nonEmpty.some(v => !v) && !o.keepEmptyCols) {
+    const keep = nonEmpty.map((v, k) => v ? k : -1).filter(k => k >= 0);
+    cols = keep.map(k => cols[k]);
+    rows = rows.map(r => keep.map(k => r[k]));
+    if (totalRow) totalRow = keep.map(k => totalRow[k]);
+    const sum = cols.reduce((a, c) => a + (c.w || 0), 0) || 1;
+    cols.forEach(c => { c.w = +(c.w / sum * 100).toFixed(2); });
+  }
+  const th = cols.map(c => `<th style="width:${c.w}%">${prE(c.t)}</th>`).join('');
+  const cell = (c, v) => `<td class="${(c.c || 'l')}${c.cls ? ' ' + c.cls : ''}"><div class="cl">${prE(v)}</div></td>`;
+  const tb = rows.map(r => '<tr>' + r.map((v, k) => cell(cols[k] || {}, v)).join('') + '</tr>').join('');
+  const tot = totalRow ? '<tr class="pr-total">' + (() => {
+    // 只把首格（「合计」）与其后连续的空格并格，其余格一律 1 列；
+    // 之前把所有「非空格 + 后续空格」都并了，导致数量/净重错列（2026-10-19）
+    let n = 1;
+    while (n < totalRow.length && String(totalRow[n] == null ? '' : totalRow[n]).trim() === '') n++;
+    const head = `<td class="${(cols[0] || {}).c || 'l'}" colspan="${n}">${prE(totalRow[0])}</td>`;
+    return head + totalRow.slice(n).map((v, k) => cell(cols[k + n] || {}, v)).join('');
+  })() + '</tr>' : '';
+  const signs = (o.signs || []).map(sg => `<div class="pr-sg">${prE(sg.n)}<b>${prE(sg.v || '')}</b></div>`).join('');
+  const tots = (o.tots || []).map(([k, v]) => `<div><span>${prE(k)}</span><b>${prE(v)}</b></div>`).join('');
+  return `<div class="pr-doc${o.tight ? ' pr-tight' : ''}${o.lg ? ' pr-lg' : ''}">
+    <div class="pr-co">${PR_COMPANY}</div>
+    <div class="pr-tel">${PR_TEL}</div>
+    <div class="pr-addr">${PR_ADDR}</div>
+    <div class="pr-title">${prE(o.title)}</div>
+    <div class="pr-meta">${meta}</div>
+    <table class="pr-tb"><thead><tr>${th}</tr></thead><tbody>${tb}${tot}</tbody></table>
+    <div class="pr-foot"><div class="pr-signs">${signs}</div><div class="pr-tots">${tots}</div></div>
+    ${o.rem ? `<div class="pr-rem">${prE(o.rem)}</div>` : ''}
+  </div>`;
+}
+
+function prOut(html, paper) {
+  let area = document.getElementById('printArea');
+  if (!area) { area = document.createElement('div'); area.id = 'printArea'; document.body.appendChild(area); }
+  area.innerHTML = html;
+  let st = document.getElementById('prPageStyle');
+  if (!st) { st = document.createElement('style'); st.id = 'prPageStyle'; document.head.appendChild(st); }
+  st.textContent = `@page{size:${paper.size};margin:${paper.margin}}`;
+  window.print();
+}
+
+// ① 请购单（A4 纵向）
+async function printQts(qtNo) {
+  if (!qtNo) return;
+  try {
+    const d = await api(BASE + '/qts/' + encodeURIComponent(qtNo));
+    const items = d.items || [];
+    const rows = items.map(it => [it.itm, d.cus_no, it.order_no, it.product_no, it.prd_no,
+      it.prd_name, it.ut, prQ(it.qty), prQ(it.order_qty), it.rem1]);
+    const sq = items.reduce((a, x) => a + (Number(x.qty) || 0), 0);
+    prOut(prDoc({
+      title: '请 购 单', paper: PR_PAPER.a4,
+      meta: [['单据编号：', d.qt_no], ['单据日期：', prD(d.qt_dd)],
+             ['供应商：', d.cus_name || d.cus_no], ['紧急程度：', (items[0] || {}).urgency || ''],
+             ['制单人：', d.usr], ['备注：', d.rem]],
+      cols: [{ t: '序号', w: 4.5, c: 'c' }, { t: '客户编号', w: 8, c: 'c' },
+             { t: '指令单号', w: 10, c: 'c' }, { t: '成品编号', w: 11.5, c: 'c', cls: 'code' },
+             { t: '物料编号', w: 13.5, cls: 'code' }, { t: '材料名称', w: 22, c: 'l' },
+             { t: '单位', w: 4.5, c: 'c' }, { t: '请购数量', w: 8.5, c: 'r', big: 1 },
+             { t: '订单数量', w: 8, c: 'r' }, { t: '备注', w: 9.5 }],
+      rows, totalRow: ['合计', '', '', '', '', '', '', prQ(sq), '', ''],
+      signs: [{ n: '制单：', v: '' }, { n: '审核：', v: '' }, { n: '批准：', v: '' }],
+    }), PR_PAPER.a4);
+  } catch (e) { toast('⚠️ 打印失败：' + (e.message || e)); }
+}
+
+// ② 采购订单（A4 横向）
+function printPos(osNo) {
+  const all = (window.__posUnItems || []).filter(r => fmt(r.os_no) === osNo);
+  if (!all.length) { toast('⚠️ 本单数据已刷新，请重新筛选后再打印'); return; }
+  const h = all[0];
+  const rows = all.map(r => [r.itm, r.order_no, r.customer, '', r.prd_no, r.prd_name, r.ut,
+    prQ(r.qty), prQ(r.up, 4), prQ(r.amt, 2), '']);
+  const sq = all.reduce((a, x) => a + (Number(x.qty) || 0), 0);
+  const sa = all.reduce((a, x) => a + (Number(x.amt) || 0), 0);
+  prOut(prDoc({
+    title: '采 购 订 单', paper: PR_PAPER.a4l,
+    meta: [['单号：', osNo], ['日期：', prD(h.os_dd)], ['供应商：', h.supplier],
+           ['交期：', prD(h.est_dd)], ['客户：', h.customer], ['制单：', h.usr]],
+    cols: [{ t: '项', w: 4, c: 'c' }, { t: '指令单号', w: 8, c: 'c' },
+           { t: '客户代号', w: 7, c: 'c' }, { t: '销售单数量', w: 7, c: 'r' },
+           { t: '物料编号', w: 12.5, cls: 'code' }, { t: '产品名称', w: 28 },
+           { t: '单位', w: 3.5, c: 'c' }, { t: '采购数量', w: 7.5, c: 'r', big: 1 },
+           { t: '单价', w: 7.5, c: 'r' }, { t: '金额', w: 8, c: 'r' }, { t: '备注', w: 8 }],
+    rows, totalRow: ['合计', '', '', '', '', '', '', prQ(sq), '', prQ(sa, 2), ''],
+    signs: [{ n: '制单：', v: '' }, { n: '审核：', v: '' }, { n: '供方确认：', v: '' }, { n: '交期确认：', v: '' }],
+  }), PR_PAPER.a4l);
+}
+
+// ③ 采购入库单（A4 纵向）
+function printPs(psNo) {
+  const all = (window.__psInItems || []).filter(r => fmt(r.ps_no) === psNo);
+  if (!all.length) { toast('⚠️ 本单数据已刷新，请重新加载后再打印'); return; }
+  const h = all[0];
+  const rows = all.map(r => [r.cus_no, r.order_no, r.ref_itm, r.prd_no, r.prd_name, r.ut,
+    prQ(r.qty), prQ(r.dz), prQ(r.jz), r.rem1 || '', r.wh || '']);
+  const sq = all.reduce((a, x) => a + (Number(x.qty) || 0), 0);
+  const sj = all.reduce((a, x) => a + (Number(x.jz) || 0), 0);
+  prOut(prDoc({
+    title: '采 购 入 库 单', paper: PR_PAPER.a4,
+    meta: [['单据编号：', psNo], ['单据日期：', prD(h.ps_dd)],
+           ['供应商：', h.supplier], ['制单人：', h.usr]],
+    cols: [{ t: '客户', w: 6, c: 'c' }, { t: '指令单号', w: 10, c: 'c' },
+           { t: '采购行', w: 9.5, c: 'c', cls: 'code' }, { t: '物料编号', w: 12, cls: 'code' },
+           { t: '名称', w: 25 }, { t: '单位', w: 4, c: 'c' },
+           { t: '入库数量', w: 8.5, c: 'r', big: 1 }, { t: '单重(G)', w: 7, c: 'r' },
+           { t: '净重(KG)', w: 8, c: 'r' }, { t: '备注', w: 5.5 }, { t: '库位', w: 4.5, c: 'c' }],
+    rows, totalRow: ['合计', '', '', '', '', '', prQ(sq), '', prQ(sj), '', ''],
+    signs: [{ n: '制单：', v: '' }, { n: '送货：', v: '' }, { n: '收货：', v: '' }, { n: '质检：', v: '' }],
+  }), PR_PAPER.a4);
+}
+
+// ④ 出/进仓单 —— 照 MAK 提供的原单样张（出仓单打印.png）复刻，2026-10-19
+// 共用版式：公司名/地址/TEL·FAX/标题 + 左「部门/厂商」右「日期·编号」+ 11 列表格（固定 6 行，不足补「以下空白」）
+function ocN(v) { const n = Number(v); return isFinite(n) ? String(Math.round(n * 1000) / 1000) : (v == null ? '' : String(v)); }
+function ocD(v) { return String(v || '').slice(0, 10).replace(/^(\d+)-(\d+)-(\d+)$/, '$1年$2月$3日'); }
+function ocRef(v) { return String(v == null ? '' : v).replace(/\//g, '/\u200b'); }   // 只在 / 处断行
+function ocRem(v) { return String(v == null ? '' : v).replace(/[;；]\s*运输工具:\S+/, ''); }  // 工具行去掉重复品号
+function ocDoc(o) {
+  const MIN = 6;
+  const mkRow = (vals, blue) => '<tr>' + o.cols.map((c, k) => {
+    const cls = [(c.cls || ''), (c.b || blue) ? 'ocb' : ''].join(' ').trim();
+    const v = vals[k] == null ? '' : String(vals[k]);
+    return `<td class="${cls}">${c.nm ? `<div class="ocn">${prE(v)}</div>` : prE(v)}</td>`;
+  }).join('') + '</tr>';
+  let body = o.rows.map(r => mkRow(r)).join('');
+  if (o.rows.length < MIN) {                      // 原单固定 6 个序号行
+    const nmIdx = o.cols.findIndex(c => c.nm);
+    const blank = o.cols.map((c, k) => k === nmIdx ? '以下空白' : '');
+    body += mkRow([o.rows.length + 1, ...blank.slice(1)], true);
+    for (let i = o.rows.length + 2; i <= MIN; i++) body += mkRow([i, ...blank.slice(1)]);
+  }
+  const sumOf = key => o.rows.reduce((a, r) => a + (Number(r[o.cols.findIndex(c => c.k === key)]) || 0), 0);
+  const tot = o.cols.map((c, k) => {
+    if (k === 0) return '<td></td>';
+    if (k === 1) return '<td class="l">合计：</td>';
+    if (c.k === 'q') return `<td class="ocb">${prE(ocN(sumOf('q')))}</td>`;
+    if (c.k === 'j') return `<td class="ocb">${prE(Number(sumOf('j')).toFixed(1))}</td>`;
+    return '<td></td>';
+  }).join('');
+  return `<div class="pr-doc pr-oc${o.rows.length > 4 ? ' oc-compact' : ''}">
+    <div class="oc-co">中山市安而固五金制品有限公司</div>
+    <div class="oc-line">地址：中山市小榄镇九洲广成路工业区5栋1楼</div>
+    <div class="oc-line">TEL:0760-22230332 22189851 FAX:0760-22230332 22260231</div>
+    <div class="oc-title">${prE(o.title)}</div>
+    <div class="oc-head">
+      <div class="oc-l"><span>部门/厂商：</span><b>${prE(o.dept || '')}</b></div>
+      <div class="oc-r"><div><span>单据日期：</span><b>${prE(ocD(o.dd))}</b></div>
+        <div><span>单据编号：</span><b>${prE(o.no || '')}</b></div></div>
+    </div>
+    <table class="oc-tb"><colgroup>${o.cols.map(c => `<col style="width:${c.w}%">`).join('')}</colgroup>
+      <thead><tr>${o.cols.map(c => `<th>${prE(c.t)}</th>`).join('')}</tr></thead>
+      <tbody>${body}<tr>${tot}</tr></tbody></table>
+    <div class="oc-sign"><span>收货：</span><span>质检：</span><span>发货：</span><span>制单：</span></div>
+  </div>`;
+}
+
+// 出仓单（调拨）：序号 客户 指令单号 品号 名称 单位 厂号 实发数量 单重 净重 备注
+async function printIc(icNo) {
+  if (!icNo) return;
+  try {
+    const d = await api(BASE + '/ic/' + encodeURIComponent(icNo));
+    const items = d.items || [];
+    const ut = it => it.ut || (/^0300/.test(it.prd_no) ? 'PCE' : '');
+    const cols = [
+      { t: '序号', w: 3.8 }, { t: '客户', w: 5.5, cls: 'wr' }, { t: '指令单号', w: 8.5, cls: 'wr' },
+      { t: '品号', w: 12.5 }, { t: '名称', w: 21.5, nm: 1 }, { t: '单位', w: 4.4 },
+      { t: '厂号', w: 9, cls: 'wr' }, { t: '实发数量', w: 6.2, b: 1, k: 'q' },
+      { t: '单重(G)', w: 4.6, b: 1 }, { t: '净重(KG)', w: 6, b: 1, k: 'j' }, { t: '备注', w: 18, b: 1, cls: 'wr' }];
+    const rows = items.map((it, i) => [i + 1, ocRef(it.cus || d.cus), ocRef(it.order_no || d.order_no),
+      it.prd_no, it.prd_name, ut(it), it.ddjh || '', ocN(it.qty), ocN(it.dz), ocN(it.jz), ocRem(it.rem || d.rem)]);
+    prOut(ocDoc({ title: '出仓单', no: d.ic_no, dd: d.ic_dd, dept: d.wh1_name || d.wh1, cols, rows }), PR_PAPER.inout);
+  } catch (e) { toast('⚠️ 打印失败：' + (e.message || e)); }
+}
+
+// 进仓单（完工入库）：序号 客户 指令单号 品号 名称 单位 入库数量 单重 净重 备注 库位
+async function printInbound(icNo) {
+  if (!icNo) return;
+  try {
+    const d = await api(BASE + '/ic/' + encodeURIComponent(icNo));
+    const items = d.items || [];
+    const ut = it => it.ut || (/^0300/.test(it.prd_no) ? 'PCE' : '');
+    const cols = [
+      { t: '序号', w: 3.8 }, { t: '客户', w: 5.5, cls: 'wr' }, { t: '指令单号', w: 8.5, cls: 'wr' },
+      { t: '品号', w: 12.5 }, { t: '名称', w: 23, nm: 1 }, { t: '单位', w: 4.4 },
+      { t: '入库数量', w: 6.4, b: 1, k: 'q' }, { t: '单重(G)', w: 5.4, b: 1 },
+      { t: '净重(KG)', w: 6, b: 1, k: 'j' }, { t: '备注', w: 20, b: 1, cls: 'wr' },
+      { t: '库位', w: 4.5 }];
+    const rows = items.map((it, i) => [i + 1, ocRef(it.cus || d.cus), ocRef(it.order_no || d.order_no),
+      it.prd_no, it.prd_name, ut(it), ocN(it.qty), ocN(it.dz), ocN(it.jz), ocRem(it.rem || d.rem), '']);
+    prOut(ocDoc({ title: '进仓单', no: d.ic_no, dd: d.ic_dd, dept: d.wh1_name || d.wh1, cols, rows }), PR_PAPER.inout);
+  } catch (e) { toast('⚠️ 打印失败：' + (e.message || e)); }
+}
+
+// ── 工卡（GC）：一张卡 = 一个成品 + 一个工序（2026-10-19）──────────────────
+// 工序按 BOM 链自动识别：成品=组装 / 名称含黑坯=黑坯 / 其余半成品=电镀外协；可手动加。
+let gcQ = '', gcOrderF = '', gcItems = [], gcCards = [], gcView = 'cand', gcGroup = 'order', gcd_ = [], gcStages = [], gcStageIdx = 0, gcPrd = null, gcOpen = false;
+let gcCus = '', gcCusNo = '', gcOrder = '';
+function gcP(v) { const n = Number(v); if (!isFinite(n)) return ''; return String(Number(n.toFixed(6))); }
+
+function gcNum(v, dp) {
+  const n = Number(v);
+  if (!isFinite(n)) return '';
+  const s = dp != null ? n.toFixed(dp) : String(Math.round(n * 1000) / 1000);
+  const [a, b] = s.split('.');
+  return a.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + (b !== undefined ? '.' + b : '');
+}
+
+// 两个子视图：候选成品（开新卡） / 已开工卡（查回来重打）
+// 指令单号筛选（和 PMC 模块同一套配色）：点 chip 只过滤当前视图，不影响搜索框
+function gcOrderCounts() {
+  const m = new Map();
+  if (gcView === 'cards') {
+    for (const r of gcCards) for (const o of String(r.order_no || '').split('/').map(x => x.trim()).filter(Boolean)) m.set(o, (m.get(o) || 0) + 1);
+  } else {
+    for (const r of gcItems) for (const o of ((r.orders && r.orders.length) ? r.orders : [])) m.set(o, (m.get(o) || 0) + 1);
+  }
+  return m;
+}
+function gcOrderChips() {
+  const m = gcOrderCounts();
+  if (m.size < 2) return '';
+  const arr = [...m.entries()].sort((a, b) => b[1] - a[1]);
+  const chip = (v, t, n) => `<button onclick="gcSetOrderF('${escJs(v)}')" style="padding:3px 9px;border-radius:12px;font-size:11px;cursor:pointer;font-weight:600;
+    border:1px solid ${gcOrderF === v ? '#d97706' : '#fef3c7'};background:${gcOrderF === v ? '#f59e0b' : '#fef3c7'};color:${gcOrderF === v ? '#fff' : '#92400e'}">${t}${n != null ? ' · ' + n : ''}</button>`;
+  return `<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;padding:0 12px 8px">
+    <span style="font-size:11px;color:var(--sub)">指令单号：</span>
+    ${chip('', '全部', arr.length)}${arr.map(([o, n]) => chip(o, '#' + o, n)).join('')}</div>`;
+}
+function gcSetOrderF(v) {
+  gcOrderF = v;
+  if (gcView === 'cards') renderGCCards(); else renderGCList();
+}
+
+function gcShell() {
+  const b = (v, t) => `<button onclick="gcSetView('${v}')" style="padding:6px 14px;border-radius:18px;font-size:12px;cursor:pointer;margin-right:6px;
+    border:1px solid ${gcView === v ? '#2563eb' : '#e5e7eb'};background:${gcView === v ? '#2563eb' : '#f9fafb'};
+    color:${gcView === v ? '#fff' : '#374151'};font-weight:${gcView === v ? '600' : '400'}">${t}</button>`;
+  return `<div class="pos-un-toolbar" style="padding:8px 12px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+    ${b('cand', '📋 候选成品')}${b('cards', '🗂 已开工卡')}
+    ${gcView === 'cand' ? `<button onclick="gcGroup = gcGroup === 'order' ? 'flat' : 'order'; renderGCList();"
+      style="padding:6px 12px;border-radius:18px;border:1px dashed #94a3b8;background:#fff;font-size:12px;cursor:pointer">
+      ${gcGroup === 'order' ? '按净需平铺' : '按指令单分类'}</button>` : ''}
+    <span class="pos-un-info" style="margin-left:auto">${
+      gcView === 'cand' ? (gcItems.length + ' 个成品有净需求') : (gcCards.length + ' 张工卡')}</span>
+  </div>${gcOrderChips()}`;
+}
+
+function gcSetView(v) {
+  gcView = v; gcQ = ''; gcOrderF = ''; if ($id('searchInput')) $id('searchInput').value = '';
+  loadGC();
+}
+
+async function loadGC() {
+  const el = $id('content');
+  el.innerHTML = gcShell() + '<div class="state-msg"><div class="spinner"></div>加载中…</div>';
+  try {
+    if (gcView === 'cards') {
+      const d = await api(BASE + '/gc/list?' + new URLSearchParams({ kw: gcQ || '' }));
+      gcCards = d.items || [];
+      renderGCCards();
+    } else {
+      const d = await api(BASE + '/gc/candidates?' + new URLSearchParams({ kw: gcQ || '' }));
+      gcItems = d.items || [];
+      renderGCList();
+    }
+  } catch (e) {
+    el.innerHTML = gcShell() + '<div class="error-msg">加载失败: ' + e.message + '</div>';
+  }
+}
+
+function renderGCCards() {
+  const el = $id('content');
+  const _rows = gcCards.filter(r => !gcOrderF || String(r.order_no || '').split('/').map(x => x.trim()).indexOf(gcOrderF) >= 0);
+  if (!gcCards.length) {
+    el.innerHTML = gcShell() + `<div class="state-msg">${gcQ ? '没找到匹配的工卡' : '还没开过工卡'}</div>`;
+    return;
+  }
+  let h = gcShell() + '<div class="list">';
+  const _stChip = (st) => ({
+    0: '<span style="background:#fff7ed;color:#c2410c;border:1px solid #fdba74;padding:1px 8px;border-radius:9px;font-size:11px;font-weight:700">待开工</span>',
+    1: '<span style="background:#eff6ff;color:#1d4ed8;border:1px solid #93c5fd;padding:1px 8px;border-radius:9px;font-size:11px;font-weight:700">已开工</span>',
+    2: '<span style="background:#f0fdf4;color:#15803d;border:1px solid #86efac;padding:1px 8px;border-radius:9px;font-size:11px;font-weight:700">已完工</span>',
+    9: '<span style="background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db;padding:1px 8px;border-radius:9px;font-size:11px;font-weight:700">作废</span>',
+  }[st] || '');
+  const _stBtn = (r) => {
+    const st = r.status || 0;
+    const b = [];
+    if (st === 0) b.push(`<button onclick="event.stopPropagation();gcSetStatus('${escJs(r.gc_no)}',1)" style="padding:3px 10px;border:1px solid #93c5fd;border-radius:12px;background:#eff6ff;font-size:11px;font-weight:600;cursor:pointer;color:#1d4ed8">开工</button>`);
+    if (st === 0 || st === 1) b.push(`<button onclick="event.stopPropagation();gcSetStatus('${escJs(r.gc_no)}',2)" style="padding:3px 10px;border:1px solid #86efac;border-radius:12px;background:#f0fdf4;font-size:11px;font-weight:600;cursor:pointer;color:#15803d">完工</button>`);
+    if (st === 0 || st === 1) b.push(`<button onclick="event.stopPropagation();gcSetStatus('${escJs(r.gc_no)}',9)" style="padding:3px 10px;border:1px solid #e5e7eb;border-radius:12px;background:#fff;font-size:11px;cursor:pointer;color:#6b7280">作废</button>`);
+    return b.join('');
+  };
+  if (!_rows.length) { el.innerHTML = gcShell() + '<div class="state-msg">指令单 ' + gcOrderF + ' 下没有工卡</div>'; return; }
+  for (const r of _rows) {
+    const _void = (r.status || 0) === 9;
+    h += `<div class="qts-row" style="cursor:pointer${_void ? ';opacity:.55' : ''}" onclick="gcReprint('${escJs(r.gc_no)}')">
+      <div class="qts-row-head">
+        ${_stChip(r.status || 0)}
+        <span class="qts-status open">${highlight(r.proc_name || r.proc, gcQ)}</span>
+        <span class="qts-no">${highlight(r.gc_no, gcQ)}</span>
+        <span class="qts-date">${highlight(r.gc_dd || '', gcQ)}</span>
+        <button class="pr-btn" onclick="event.stopPropagation();gcReprint('${escJs(r.gc_no)}')" title="重打这张工卡">🖨 重打</button>
+        ${_stBtn(r)}
+      </div>
+      <div class="qts-row-line2">${highlight(r.prd_no, gcQ)} ${highlight(r.prd_name || '', gcQ)}</div>
+      <div class="qts-row-line2" style="color:var(--sub);font-size:12px">
+        本工序 ${highlight(r.stage_prd, gcQ)} · 数量 ${gcNum(r.qty)} · 客户 ${highlight(r.cus_no || '—', gcQ)} · 指令单 ${highlight(r.order_no || '—', gcQ)}</div>
+    </div>`;
+  }
+  el.innerHTML = h + '</div>';
+}
+
+async function gcSetStatus(gcNo, status) {
+  const nm = {1: '开工', 2: '完工', 9: '作废'}[status] || '';
+  if (status === 9 && !confirm('作废工卡 ' + gcNo + '？\n\n作废后不再参与查重，卡仍可重打查看。')) return;
+  try {
+    const r = await api(BASE + '/gc/status', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({gc_no: gcNo, status: status})
+    });
+    if (!r || r.ok === false) throw new Error((r && r.error) || '更新失败');
+    toast('✅ ' + gcNo + ' → ' + nm);
+    loadGC();
+  } catch (e) { toast('❌ ' + (e.message || e)); }
+}
+
+async function gcReprint(gcNo) {
+  try {
+    const d = await api(BASE + '/gc/' + encodeURIComponent(gcNo));
+    if (!d.ok) throw new Error(d.error || '工卡不存在');
+    gcRenderPrint(d.head, d.head.gc_no, d.head.qty, d.head.proc_name);
+  } catch (e) { toast('⚠️ ' + e.message); }
+}
+
+function gcRow(r, showOrder) {
+  const st = (Number(r.mat_stock) || 0) + (Number(r.prod_stock) || 0);
+  const multi = (r.orders || []).length > 1 ? `<span style="font-size:10px;color:#2563eb;background:#EFF6FF;padding:1px 6px;border-radius:8px">共${r.orders.length}单</span>` : '';
+  return `<div class="qts-row" style="cursor:pointer" onclick="openGC('${escJs(r.prd)}')">
+      <div class="qts-row-head">
+        <span class="qts-status open">净需 ${gcNum(r.net)}</span>
+        <span class="qts-no">${highlight(r.prd, gcQ)}</span>
+        <span class="qts-date">库存 ${gcNum(st)}</span>${multi}
+        <button class="pr-btn" style="margin-left:auto" onclick="event.stopPropagation();openGC('${escJs(r.prd)}')" title="开/打印工卡">🧾 工卡</button>
+      </div>
+      <div class="qts-row-line2">${highlight(r.name || '', gcQ)}</div>
+      ${showOrder && (r.orders || []).length ? `<div class="qts-row-line2" style="color:var(--sub);font-size:12px">指令单 ${r.orders.map(o => highlight(o, gcQ)).join(' / ')}</div>` : ''}
+    </div>`;
+}
+
+function renderGCList() {
+  const el = $id('content');
+  if (!gcItems.length) { el.innerHTML = gcShell() + `<div class="state-msg">${gcQ ? '没找到匹配的成品' : '没有净需求 > 0 的成品'}</div>`; return; }
+  let h = gcShell();
+
+  const _byOrder = (r) => !gcOrderF || ((r.orders && r.orders.length) ? r.orders : []).indexOf(gcOrderF) >= 0;
+  if (gcGroup === 'flat') {
+    const _flat = gcItems.filter(_byOrder);
+    h += `<div class="pos-un-toolbar" style="padding:0 12px 8px"><span class="pos-un-info">点一行开卡 · ${_flat.length} 个成品${gcOrderF ? ' · 指令单 ' + gcOrderF : ''}</span></div><div class="list">`;
+    if (!_flat.length) h += `<div class="state-msg">指令单 ${gcOrderF} 下没有成品</div>`;
+    for (const r of _flat) h += gcRow(r, true);
+    el.innerHTML = h + '</div>';
+    return;
+  }
+
+  // 按指令单分类：同一成品挂多张单时，每组各出现一次（方便按单备料）；排序按该单净需合计从大到小
+  const g = new Map();
+  const q = (gcQ || '').toUpperCase();
+  for (const r of gcItems) {
+    let os = (r.orders && r.orders.length) ? r.orders : ['(无指令单)'];
+    if (gcOrderF) os = os.filter(o => o === gcOrderF);
+    if (!os.length) continue;
+    // 搜的是指令单号 → 只留在命中的那一组，别把同一个成品的其它单也铺出来
+    if (q) {
+      const hit = os.filter(o => o.toUpperCase().indexOf(q) >= 0);
+      if (hit.length) os = hit;
+    }
+    for (const o of os) {
+      if (!g.has(o)) g.set(o, { items: [], net: 0 });
+      const e = g.get(o);
+      e.items.push(r); e.net += Number(r.net) || 0;
+    }
+  }
+  const groups = [...g.entries()].sort((a, b) => (a[0] === '(无指令单)') - (b[0] === '(无指令单)') || b[1].net - a[1].net);
+  h += `<div class="pos-un-toolbar" style="padding:0 12px 8px"><span class="pos-un-info">${groups.length} 张指令单 · ${gcItems.length} 个成品 · 点一行开卡</span></div>`;
+  for (const [o, e] of groups) {
+    h += `<div style="padding:10px 12px 4px;font-size:13px;font-weight:700;color:#1f2937;background:var(--bg);position:sticky;top:0;z-index:1">
+      指令单 ${highlight(o, gcQ)} <span style="font-weight:400;font-size:12px;color:var(--sub)">· ${e.items.length} 个成品 · 净需合计 ${gcNum(e.net)}</span></div>
+      <div class="list">`;
+    for (const r of e.items) h += gcRow(r, false);
+    h += '</div>';
+  }
+  el.innerHTML = h;
+}
+
+async function openGC(prd) {
+  try {
+    const d = await api(BASE + '/gc/chain?prd_no=' + encodeURIComponent(prd));
+    gcPrd = { prd: prd, name: (gcItems.find(x => x.prd === prd) || {}).name || '' };
+    gcStages = d.stages || [];
+    gcCus = d.cus || ''; gcCusNo = d.cus_no || ''; gcOrder = d.order_no || '';
+    // 默认选黑坯（MAK 最常用的工序）；没有黑坯再退到电镀/组装
+    let _i = gcStages.findIndex(s => s.proc === 'HB');
+    if (_i < 0) _i = gcStages.findIndex(s => s.proc === 'DD');
+    if (_i < 0) _i = 0;
+    gcStageIdx = _i;
+    gcOpen = true;
+    gcRenderModal();
+  } catch (e) { toast('⚠️ ' + e.message); }
+}
+
+function gcStageTab(i) {
+  gcStageIdx = i;
+  gcRenderModal();
+}
+
+function gcRenderModal() {
+  $id('gcOverlay')?.remove();
+  const s = gcStages[gcStageIdx];
+  const ov = document.createElement('div');
+  ov.id = 'gcOverlay';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:16px';
+  let tabs = '';
+  gcStages.forEach((x, i) => {
+    const on = i === gcStageIdx;
+    tabs += `<button onclick="gcStageTab(${i})" style="padding:6px 12px;border-radius:18px;border:1px solid ${on ? '#2563eb' : '#e5e7eb'};
+      background:${on ? '#2563eb' : '#f9fafb'};color:${on ? '#fff' : '#374151'};font-size:12px;cursor:pointer;margin-right:6px">
+      ${fmt(x.proc_name)} · ${fmt(x.prd)} ${x.ok ? '✅' : '❌'}</button>`;
+  });
+  let rows = '';
+  (s ? s.inputs : []).forEach((it, i) => {
+    rows += `<tr>
+      <td style="padding:5px 8px;text-align:center;border-bottom:1px solid #eef1f5">${i + 1}</td>
+      <td style="padding:5px 8px;border-bottom:1px solid #eef1f5">${fmt(it.prd)}</td>
+      <td style="padding:5px 8px;border-bottom:1px solid #eef1f5;color:var(--name)">${fmt(it.name || '')}</td>
+      <td style="padding:5px 8px;text-align:center;border-bottom:1px solid #eef1f5">${fmt(it.ut || '')}</td>
+      <td style="padding:5px 8px;text-align:right;border-bottom:1px solid #eef1f5">${gcNum(it.per, 4)}</td>
+      <td style="padding:5px 8px;text-align:right;border-bottom:1px solid #eef1f5;font-weight:600">${gcNum(it.need, 2)}</td>
+      <td style="padding:5px 8px;text-align:right;border-bottom:1px solid #eef1f5">${gcNum(it.stock, 2)}</td>
+      <td style="padding:5px 8px;text-align:right;border-bottom:1px solid #eef1f5;color:${it.gap > 0 ? '#dc2626' : '#16a34a'}">${it.gap > 0 ? gcNum(it.gap, 2) : '—'}</td>
+    </tr>`;
+  });
+  if (!rows) rows = '<tr><td colspan="8" style="padding:14px;text-align:center;color:#9ca3af">该品号没有 BOM 子件</td></tr>';
+  const verdict = !s ? '' : (s.ok
+    ? `<span style="color:#16a34a;font-weight:700">✅ 齐料，可做 ${gcNum(s.can)}</span>`
+    : `<span style="color:#dc2626;font-weight:700">❌ 缺料，最多做 ${gcNum(s.can)}，缺口 ${gcNum(Math.max(0, s.qty - s.can))}</span>`);
+  ov.innerHTML = `<div style="background:#fff;border-radius:14px;width:100%;max-width:min(96vw,1100px);max-height:92vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+    <div style="padding:14px 18px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <div style="flex:1;font-size:15px;font-weight:700">🧾 工卡
+        <span style="font-size:12px;font-weight:400;color:#6b7280;margin-left:8px">${fmt(gcPrd ? gcPrd.prd : '')}</span></div>
+      <button onclick="document.getElementById('gcOverlay').remove()" style="padding:5px 12px;border:1px solid #e5e7eb;border-radius:20px;background:#f9fafb;font-size:12px;cursor:pointer">关闭</button>
+    </div>
+    <div style="padding:10px 18px 0;font-size:12px;color:#374151">成品：${fmt(gcPrd ? gcPrd.prd : '')} ${fmt(gcPrd ? gcPrd.name : '')}</div>
+    ${s ? `<div style="padding:6px 18px 0;font-size:13px;color:#111827;background:#f8fafc;margin:8px 18px 0;border-radius:8px;padding:8px 12px">
+      <div style="font-weight:700">本工序：${fmt(s.proc_name)} · ${fmt(s.prd)}</div>
+      <div style="font-size:12px;color:#374151;margin-top:2px">${fmt(s.name || '')}</div>
+      <div style="font-size:11px;color:#6b7280;margin-top:2px">单位 ${fmt(s.ut || '—')}${s.spc ? ' · 规格 ' + fmt(s.spc) : ''} · 净需求 ${gcNum(s.qty)}</div></div>` : ''}
+    <div style="padding:10px 18px;display:flex;flex-wrap:wrap;gap:6px">${tabs}
+      <button onclick="gcAddStage()" style="padding:6px 12px;border-radius:18px;border:1px dashed #94a3b8;background:#fff;font-size:12px;cursor:pointer">＋ 添加工序</button>
+    </div>
+    <div style="padding:0 18px 10px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end">
+      <label style="font-size:12px;color:#6b7280">本工序数量
+        <input id="gcQty" type="number" value="${s ? s.qty : ''}" min="1" step="1"
+          style="display:block;width:150px;padding:7px 9px;border:1.5px solid var(--border);border-radius:6px;font-size:14px;margin-top:3px"></label>
+      <label style="font-size:12px;color:#6b7280">工序名称
+        <input id="gcProcName" type="text" value="${s ? escAttr(s.proc_name || '') : ''}"
+          style="display:block;width:150px;padding:7px 9px;border:1.5px solid var(--border);border-radius:6px;font-size:14px;margin-top:3px"></label>
+      <label style="font-size:12px;color:#6b7280">客户
+        <input id="gcCus" type="text" value="${escAttr(gcCus)}" title="${escAttr(gcCusNo || '')}"
+          style="display:block;width:130px;padding:7px 9px;border:1.5px solid var(--border);border-radius:6px;font-size:14px;margin-top:3px"></label>
+      <label style="font-size:12px;color:#6b7280">指令单号
+        <input id="gcOrder" type="text" value="${escAttr(gcOrder)}"
+          style="display:block;width:150px;padding:7px 9px;border:1.5px solid var(--border);border-radius:6px;font-size:14px;margin-top:3px"></label>
+      <div style="font-size:13px;padding-bottom:6px">${verdict}</div>
+    </div>
+    <div style="flex:1;overflow:auto;padding:0 18px 8px">
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr style="background:#f8fafc;color:#475569">
+          <th style="padding:6px 8px">#</th><th style="padding:6px 8px;text-align:left">物料品号</th>
+          <th style="padding:6px 8px;text-align:left">名称</th><th style="padding:6px 8px">单位</th>
+          <th style="padding:6px 8px;text-align:right">每件用量</th><th style="padding:6px 8px;text-align:right">需要量</th>
+          <th style="padding:6px 8px;text-align:right">库存</th><th style="padding:6px 8px;text-align:right">缺口</th>
+        </tr></thead><tbody>${rows}</tbody>
+      </table>
+    </div>
+    <div style="padding:12px 18px;border-top:1px solid #e5e7eb;display:flex;justify-content:flex-end;gap:10px">
+      <button onclick="document.getElementById('gcOverlay').remove()" style="padding:9px 18px;border:1px solid #e5e7eb;border-radius:20px;background:#f9fafb;font-size:13px;cursor:pointer">取消</button>
+      <button onclick="gcPreview()" style="padding:9px 18px;background:#fff;color:#0f172a;border:1.5px solid var(--border);border-radius:20px;font-size:13px;font-weight:600;cursor:pointer">👁 预览</button>
+      <button onclick="gcPrint()" style="padding:9px 22px;background:var(--green);color:#fff;border:none;border-radius:20px;font-size:13px;font-weight:600;cursor:pointer">🖨 开卡并打印</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+}
+
+async function gcAddStage() {
+  const p = (prompt('工序品号（要生产的品号）') || '').trim();
+  if (!p) return;
+  const nm = (prompt('工序名称', '包装') || '其他').trim();
+  const q = Number(prompt('本工序数量', '1000') || 0);
+  if (!q) return;
+  try {
+    const d = await api(BASE + '/gc/inputs?' + new URLSearchParams({ prd_no: p, qty: q, proc_name: nm }));
+    if (!d.stage) { toast('⚠️ 该品号没有 BOM 子件'); return; }
+    gcStages.push(d.stage);
+    gcStageIdx = gcStages.length - 1;
+    gcRenderModal();
+  } catch (e) { toast('⚠️ ' + e.message); }
+}
+
+// 预览：按弹窗当前填写值渲染工卡，不取号、不写 GC_HEAD
+function gcPreview() {
+  const s = gcStages[gcStageIdx];
+  if (!s || !gcPrd) return;
+  const qty = Number(($id('gcQty') || {}).value || s.qty);
+  if (!qty) { toast('⚠️ 数量不能为空'); return; }
+  const pname = (($id('gcProcName') || {}).value || s.proc_name || '').trim();
+  const f = s.qty > 0 ? qty / s.qty : 1;
+  const inputs = (s.inputs || []).map(it => {
+    const need = (Number(it.per) || 0) * qty;
+    return Object.assign({}, it, {need: need, gap: Math.max(0, need - (Number(it.stock) || 0)),
+      can: (Number(it.per) || 0) > 0 ? Math.floor((Number(it.stock) || 0) / Number(it.per)) : 0});
+  });
+  const can = inputs.length ? Math.min.apply(null, inputs.map(x => x.can)) : 0;
+  const st = Object.assign({}, s, {inputs: inputs, can: can, ok: inputs.length > 0 && can >= qty - 1e-6});
+  const head = {
+    gc_dd: new Date().toISOString().slice(0, 10),
+    cus_disp: ((($id('gcCus') || {}).value || '').trim() || gcCus),
+    order_no: ((($id('gcOrder') || {}).value || '').trim()),
+    prd_no: gcPrd.prd, prd_name: gcPrd.name || '',
+    stage_prd: s.prd, stage_ut: s.ut, stage_spc: s.spc, stage: st,
+  };
+  gcRenderPrint(head, '预览·未开卡', qty, pname);
+}
+
+// 已有同成品同工序的卡 → 三选一（重打 / 新开 / 取消）
+function gcAskExisting(ex, qty, pname) {
+  const old = document.getElementById('gcDupOverlay'); if (old) old.remove();
+  const ov = document.createElement('div');
+  ov.id = 'gcDupOverlay';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:520;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:18px';
+  const stTxt = {0: '待开工', 1: '已开工', 2: '完工'}[ex.status] || '—';
+  ov.innerHTML = `<div style="background:#fff;border-radius:14px;max-width:420px;width:100%;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+    <div style="font-size:15px;font-weight:700;margin-bottom:6px">这个工序已经有工卡</div>
+    <div style="font-size:13px;color:#374151;line-height:1.7">
+      <b>${prE(ex.gc_no)}</b>　${prE(ex.gc_dd || '')}　<span style="color:#c2410c;font-weight:600">${stTxt}</span><br>
+      数量 ${gcNum(ex.qty)}　本次填写 ${gcNum(qty)}
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:14px">
+      <button onclick="document.getElementById('gcDupOverlay').remove();gcReprint('${escJs(ex.gc_no)}')" style="padding:11px;border-radius:10px;border:1.5px solid #bfdbfe;background:#EFF6FF;color:#1e40af;font-size:13px;font-weight:600;cursor:pointer">🖨 重打已有的 ${prE(ex.gc_no)}</button>
+      <button onclick="document.getElementById('gcDupOverlay').remove();gcPrint(true)" style="padding:11px;border-radius:10px;border:1.5px solid #86efac;background:#f0fdf4;color:#15803d;font-size:13px;font-weight:600;cursor:pointer">＋ 还是新开一张</button>
+      <button onclick="document.getElementById('gcDupOverlay').remove()" style="padding:11px;border-radius:10px;border:1px solid var(--border);background:#fff;color:#475569;font-size:13px;cursor:pointer">取消</button>
+    </div></div>`;
+  document.body.appendChild(ov);
+}
+
+async function gcPrint(forceNew) {
+  const s = gcStages[gcStageIdx];
+  if (!s || !gcPrd) return;
+  const qty = Number(($id('gcQty') || {}).value || s.qty);
+  const pname = (($id('gcProcName') || {}).value || s.proc_name || '').trim();
+  if (!qty) { toast('⚠️ 数量不能为空'); return; }
+  if (!forceNew) {
+    try {
+      const ex = await api(BASE + '/gc/existing?' + new URLSearchParams({prd_no: gcPrd.prd, stage_prd: s.prd, proc: s.proc}));
+      if (ex && ex.found) { gcAskExisting(ex, qty, pname); return; }
+    } catch (e) { /* 查重失败不挡开卡 */ }
+  }
+  try {
+    const res = await api(BASE + '/gc/create', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prd_no: gcPrd.prd, stage_prd: s.prd, proc: s.proc, proc_name: pname, qty: qty,
+        cus_no: gcCusNo || (($id('gcCus') || {}).value || '').trim(), order_no: (($id('gcOrder') || {}).value || '').trim() })
+    });
+    if (!res || res.ok === false || res.error) throw new Error((res && res.error) || '开卡失败');
+    const g = await api(BASE + '/gc/' + encodeURIComponent(res.gc_no));
+    gcRenderPrint(g.head, res.gc_no, qty, pname);
+    setTimeout(gcRenderModal, 200);
+  } catch (e) { toast('⚠️ ' + (e.message || e)); }
+}
+
+function gcRenderPrint(h, gcNo, qty, pname) {
+  const st = h.stage || {};
+  const rows = (st.inputs || []).map((it, i) => `<tr>
+    <td class="c">${i + 1}</td><td>${prE(it.prd)}</td><td>${prE(it.name || '')}</td>
+    <td class="c">${prE(it.ut || '')}</td><td class="r">${prE(gcP(it.per))}</td>
+    <td class="r">${prE(ocN(it.need))}</td><td class="r">${prE(ocN(it.stock))}</td>
+    <td class="r">${prE(ocN(it.gap))}</td></tr>`).join('');
+  const verdict = st.ok
+    ? `齐料，可做 ${gcNum(st.can)} ${prE(st.ut || '')}（需 ${gcNum(qty)}）`
+    : `缺料，最多做 ${gcNum(st.can)}，缺 ${gcNum(Math.max(0, qty - (st.can || 0)))}`;
+  let html = `<div class="pr-doc pr-gc">
+    <div class="gc-co">中山市安而固五金制品有限公司</div>
+    <div class="gc-title">生产工卡</div>
+    <div class="gc-hd"><span>工卡号：<b>${prE(gcNo)}</b></span><span>开卡日期：${prE(ocD(h.gc_dd))}</span><span>客户：${prE(h.cus_disp || h.cus_no || '—')}</span><span>指令单：${prE(h.order_no || '—')}</span></div>
+    <table class="gc-info">
+      <tr><th>成品品号</th><td>${prE(h.prd_no)}</td><th>工序</th><td>${prE(pname || st.proc_name || '')}</td></tr>
+      <tr><th>成品名称</th><td colspan="3">${prE(h.prd_name || '')}</td></tr>
+      <tr><th>本工序品号</th><td>${prE(h.stage_prd)}</td><th>单位</th><td>${prE(h.stage_ut || '')}</td></tr>
+      <tr><th>本工序名称</th><td colspan="3">${prE(st.name || '')}</td></tr>
+      <tr><th>本工序数量</th><td>${prE(gcNum(qty))}</td><th>规格</th><td>${prE(h.stage_spc || '')}</td></tr>
+
+    </table>
+    <div class="gc-sub">投入物料</div>
+    <table class="gc-tb"><thead><tr>
+      <th style="width:4%">#</th><th style="width:24%">物料品号</th><th style="width:29%">名称</th><th style="width:6%">单位</th>
+      <th style="width:10%">每件用量</th><th style="width:10%">需要量</th><th style="width:10%">库存</th><th style="width:7%">缺口</th>
+    </tr></thead><tbody>${rows}</tbody></table>
+    <div class="gc-verdict">${verdict}</div>
+    <table class="gc-fill">
+      <tr><th>开工日期</th><td></td><th>完工日期</th><td></td></tr>
+      <tr><th>操作者</th><td></td><th>检验</th><td></td></tr>
+      <tr><th>实做数</th><td></td><th>不良数</th><td></td></tr>
+      <tr><th>备注</th><td colspan="3"></td></tr>
+    </table>
+    <!-- 制单/审核/批准 不要（MAK 2026-10-20） -->
+  </div>`;
+  // 145×210mm 纸：只有材料特别多才压缩
+  const _n = ((st.inputs || []).length);
+  const _lvl = _n >= 22 ? 3 : (_n >= 16 ? 2 : (_n >= 10 ? 1 : 0));
+  if (_lvl) html = html.replace('class="pr-doc pr-gc"', 'class="pr-doc pr-gc gc-t' + _lvl + '"');
+  else if (_n <= 2) html = html.replace('class="pr-doc pr-gc"', 'class="pr-doc pr-gc gc-roomy"');
+  prOut(html, PR_PAPER.gc);
 }
 
 loadQts();
