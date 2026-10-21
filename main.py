@@ -6788,7 +6788,7 @@ def _gc_load(conn):
     return _GC_CACHE
 
 
-def _gc_stages(conn, fg_no: str, base_qty: float, custom: Optional[list] = None, net_map=None):
+def _gc_stages(conn, fg_no: str, base_qty: float, custom: Optional[list] = None, net_map=None, stock=None):
     """从成品往下走 BOM，每个自制件(KND 2/3)算一道工序；返回每道工序的投入料与够不够。
     custom=[{prd, proc_code, proc_name, qty}] 可手动加 BOM 里没有的工序。"""
     c = _gc_load(conn)
@@ -6836,7 +6836,13 @@ def _gc_stages(conn, fg_no: str, base_qty: float, custom: Optional[list] = None,
                            "qty": float(x.get("qty") or 0), "inputs": inputs, "depth": 99})
 
     allp = sorted({i["prd"] for s in stages for i in s["inputs"]})
-    stock = _v2_stock(allp, conn) if allp else {}
+    if stock is None:                      # 传了 stock 就复用（批量齐料查询用）
+        stock = _v2_stock(allp, conn) if allp else {}
+    return _gc_apply_stock(stages, stock)
+
+
+def _gc_apply_stock(stages, stock):
+    """把库存回填到每道工序的投入料，算 gap/can/ok。可重复调用（幂等）。"""
     for s in stages:
         cap = None
         for i in s["inputs"]:
@@ -7096,6 +7102,45 @@ async def gc_inputs(prd_no: str = Query(...), qty: float = Query(...), proc_name
         stages = _gc_stages(conn, prd_no, qty, custom=[{"prd": prd_no, "qty": qty,
                                                        "proc_code": "QT", "proc_name": proc_name}])
         return {"ok": True, "stage": stages[-1] if stages else None}
+    finally:
+        conn.close()
+
+
+@app.post("/api/gc/ready")
+async def gc_ready(payload: dict = Body(...)):
+    """齐料批量查询（只读）。items=[{prd, qty?, mode?}]，最多 50 个。
+    mode=fg（默认）：按成品整条工序链算；mode=stage：只算该工序本身（已开工卡用）。
+    库存只查一次，50 个约 1-2 秒。"""
+    req = (payload.get("items") or [])[:50]
+    if not req:
+        return {"ok": True, "items": []}
+    conn = get_conn("C041")
+    try:
+        net_map = {x.get("prd"): float(x.get("net") or 0) for x in _gnet_items()}
+        plan, allp = [], set()
+        for it in req:
+            prd = str(it.get("prd") or "").strip()
+            if not prd:
+                continue
+            qty = float(it.get("qty") or 0) or float(net_map.get(prd, 0) or 0)
+            stages = _gc_stages(conn, prd, qty, net_map=net_map, stock={})
+            if str(it.get("mode") or "fg") == "stage":
+                own = [s for s in stages if s.get("prd") == prd]
+                stages = own[:1] if own else stages[:1]
+            allp |= {i["prd"] for s in stages for i in s["inputs"]}
+            plan.append((prd, stages))
+        stock = _v2_stock(sorted(allp), conn) if allp else {}
+        out = []
+        for prd, stages in plan:
+            _gc_apply_stock(stages, stock)
+            ready = sum(1 for s in stages if s.get("ok"))
+            lack = len(stages) - ready
+            lack_qty = max([max([i["gap"] for i in s["inputs"]] or [0]) for s in stages] or [0])
+            min_can = min([(s.get("can") or 0) for s in stages] or [0])
+            out.append({"prd": prd, "stages": len(stages), "ready": ready, "lack": lack,
+                        "all_ready": bool(stages) and lack == 0,
+                        "lack_qty": round(float(lack_qty), 3), "min_can": int(min_can)})
+        return {"ok": True, "items": out}
     finally:
         conn.close()
 

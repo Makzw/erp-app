@@ -5749,13 +5749,36 @@ function gcShell() {
     border:1px solid ${gcView === v ? '#2563eb' : '#e5e7eb'};background:${gcView === v ? '#2563eb' : '#f9fafb'};
     color:${gcView === v ? '#fff' : '#374151'};font-weight:${gcView === v ? '600' : '400'}">${t}</button>`;
   return `<div class="pos-un-toolbar" style="padding:8px 12px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-    ${b('cand', '📋 候选成品')}${b('cards', '🗂 已开工卡')}
+    ${b('cand', '📋 候选成品')}${b('cards', '🗂 已开工卡')}${gcView === 'cards' ? '' : ''}
     ${gcView === 'cand' ? `<button onclick="gcGroup = gcGroup === 'order' ? 'flat' : 'order'; renderGCList();"
       style="padding:6px 12px;border-radius:18px;border:1px dashed #94a3b8;background:#fff;font-size:12px;cursor:pointer">
       ${gcGroup === 'order' ? '按净需平铺' : '按指令单分类'}</button>` : ''}
     <span class="pos-un-info" style="margin-left:auto">${
       gcView === 'cand' ? (gcItems.length + ' 个成品有净需求') : (gcCards.length + ' 张工卡')}</span>
-  </div>${gcOrderChips()}`;
+  </div>${gcView === 'cards' ? gcReadyChips() : ''}${gcOrderChips()}`;
+}
+
+function gcReadyChips() {
+  const on = (f) => gcReadyFilter === f;
+  const st = (f) => `onclick="gcSetReadyFilter('${f}')" style="padding:5px 12px;border-radius:16px;font-size:12px;cursor:pointer;margin-right:6px;
+    border:1px solid ${on(f) ? '#2563eb' : '#e5e7eb'};background:${on(f) ? '#eff6ff' : '#fff'};color:${on(f) ? '#1d4ed8' : '#475569'};font-weight:${on(f) ? '600' : '400'}"`;
+  if (gcView === 'cand') {
+    return `<div class="pos-un-toolbar" style="padding:2px 12px 6px;display:flex;gap:4px;flex-wrap:wrap;align-items:center">
+      <span class="pos-un-info" style="margin-right:4px">齐料（本页）</span>
+      <button ${st('all')}>全部</button>
+      <button ${st('ready')}>✅ 齐料 <span id="gcReadyCnt">–</span></button>
+      <button onclick="loadGC()" style="padding:5px 12px;border-radius:16px;border:1px dashed #94a3b8;background:#fff;font-size:12px;cursor:pointer">🔄 重算</button>
+    </div>`;
+  }
+  return `<div class="pos-un-toolbar" style="padding:2px 12px 6px;display:flex;gap:4px;flex-wrap:wrap;align-items:center">
+    <span class="pos-un-info" style="margin-right:4px">齐料</span>
+    <button ${st('all')}>全部</button>
+    <button ${st('ready')}>✅ 齐料</button>
+    <button ${st('lack')}>⚠️ 缺料</button>
+    <button id="gcRdBtn" onclick="gcRefreshCardsReady()" style="padding:5px 12px;border-radius:16px;border:1px solid #86efac;background:#f0fdf4;color:#15803d;font-size:12px;font-weight:600;cursor:pointer">🔄 刷新齐料</button>
+    <label style="font-size:12px;color:#475569;display:flex;align-items:center;gap:4px;margin-left:4px">
+      <input type="checkbox" ${gcReadySort ? 'checked' : ''} onchange="gcReadySort=this.checked;renderGCCards()"> 齐料置顶</label>
+  </div>`;
 }
 
 function gcSetView(v) {
@@ -5783,7 +5806,10 @@ async function loadGC() {
 
 function renderGCCards() {
   const el = $id('content');
-  const _rows = gcCards.filter(r => !gcOrderF || String(r.order_no || '').split('/').map(x => x.trim()).indexOf(gcOrderF) >= 0);
+  const _rd = (r) => gcReady['#' + r.gc_no];
+  let _rows = gcCards.filter(r => !gcOrderF || String(r.order_no || '').split('/').map(x => x.trim()).indexOf(gcOrderF) >= 0);
+  if (gcReadyFilter !== 'all') _rows = _rows.filter(r => { const x = _rd(r); return gcReadyFilter === 'ready' ? !!(x && x.all_ready) : !!(x && !x.all_ready); });
+  if (gcReadySort) _rows = _rows.slice().sort((a, b) => (!!(_rd(b) || {}).all_ready ? 1 : 0) - (!!(_rd(a) || {}).all_ready ? 1 : 0));
   if (!gcCards.length) {
     el.innerHTML = gcShell() + `<div class="state-msg">${gcQ ? '没找到匹配的工卡' : '还没开过工卡'}</div>`;
     return;
@@ -5806,9 +5832,12 @@ function renderGCCards() {
   if (!_rows.length) { el.innerHTML = gcShell() + '<div class="state-msg">指令单 ' + gcOrderF + ' 下没有工卡</div>'; return; }
   for (const r of _rows) {
     const _void = (r.status || 0) === 9;
-    h += `<div class="qts-row" style="cursor:pointer${_void ? ';opacity:.55' : ''}" onclick="gcReprint('${escJs(r.gc_no)}')">
+    const _x = _rd(r);
+    const _bcol = _x ? (_x.all_ready ? '#22c55e' : '#f97316') : 'transparent';
+    h += `<div class="qts-row" style="cursor:pointer${_void ? ';opacity:.55' : ''};border-left:3px solid ${_bcol}" onclick="gcReprint('${escJs(r.gc_no)}')">
       <div class="qts-row-head">
         ${_stChip(r.status || 0)}
+        ${gcRdBadge(_x)}
         <span class="qts-status open">${highlight(r.proc_name || r.proc, gcQ)}</span>
         <span class="qts-no">${highlight(r.gc_no, gcQ)}</span>
         <span class="qts-date">${highlight(r.gc_dd || '', gcQ)}</span>
@@ -5845,14 +5874,68 @@ async function gcReprint(gcNo) {
   } catch (e) { toast('⚠️ ' + e.message); }
 }
 
+// ===== 齐料（MAK 2026-10-21）：候选按成品整条链、已开工卡按单工序 =====
+let gcReady = {}, gcReadyFilter = 'all', gcReadySort = true;
+const GC_RD_TIP = '按当前 V2 实时库存算，领料后会变；点「刷新齐料」重算';
+
+function gcRdBadge(x) {
+  if (!x) return '<span style="font-size:11px;color:#94a3b8">…</span>';
+  if (x.all_ready) return `<span title="${GC_RD_TIP}" style="font-size:11px;font-weight:700;color:#15803d;background:#f0fdf4;border:1px solid #86efac;padding:1px 7px;border-radius:9px;white-space:nowrap">✅ ${x.ready}/${x.stages} 齐</span>`;
+  return `<span title="${GC_RD_TIP} · 缺口 ${gcNum(x.lack_qty)}，最多做 ${gcNum(x.min_can)}" style="font-size:11px;font-weight:700;color:#c2410c;background:#fff7ed;border:1px solid #fdba74;padding:1px 7px;border-radius:9px;white-space:nowrap">⚠️ ${x.ready}/${x.stages} 缺</span>`;
+}
+
+async function gcRdFetch(items) {
+  if (!items.length) return;
+  const r = await api(BASE + '/gc/ready', {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({items: items})});
+  (r.items || []).forEach(x => { gcReady[x.prd] = x; });
+}
+
+// 候选：对当前可见前 30 条批量取（300 个全算要 18s，滚动/筛选用不到就不算）
+async function gcFillReadyCand() {
+  const spans = [...document.querySelectorAll('#content [data-rd]')].slice(0, 30);
+  if (!spans.length) return;
+  const prds = [...new Set(spans.map(el => el.dataset.rd))];
+  const todo = prds.filter(p => !gcReady[p]);
+  try {
+    await gcRdFetch(todo.map(p => ({prd: p, mode: 'fg'})));
+    spans.forEach(el => { el.innerHTML = gcRdBadge(gcReady[el.dataset.rd]); });
+    document.querySelectorAll('#content .qts-row[data-prd]').forEach(row => {
+      const x = gcReady[row.dataset.prd];
+      row.style.display = (gcReadyFilter === 'ready' && !(x && x.all_ready)) ? 'none' : '';
+    });
+    const c = $id('gcReadyCnt');
+    if (c) c.textContent = prds.filter(p => (gcReady[p] || {}).all_ready).length;
+  } catch (e) { spans.forEach(el => { el.textContent = '—'; }); }
+}
+
+// 已开工卡：手动刷新，一次 50 张（mode=stage 只算该工序）
+async function gcRefreshCardsReady() {
+  const btn = $id('gcRdBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ 计算中…'; }
+  try {
+    for (let i = 0; i < gcCards.length; i += 50) {
+      const batch = gcCards.slice(i, i + 50);
+      await gcRdFetch(batch.map(r => ({prd: r.stage_prd || r.prd_no, qty: r.qty, mode: 'stage'})));
+      batch.forEach(r => { const x = gcReady[r.stage_prd || r.prd_no]; if (x) gcReady['#' + r.gc_no] = x; });
+    }
+    toast('✔ 齐料已刷新 ' + gcCards.length + ' 张');
+  } catch (e) { toast('⚠️ ' + e.message); }
+  if (btn) { btn.disabled = false; btn.textContent = '🔄 刷新齐料'; }
+  renderGCCards();
+}
+
+function gcSetReadyFilter(f) { gcReadyFilter = f; gcView === 'cards' ? renderGCCards() : renderGCList(); }
+
 function gcRow(r, showOrder) {
   const st = (Number(r.mat_stock) || 0) + (Number(r.prod_stock) || 0);
   const multi = (r.orders || []).length > 1 ? `<span style="font-size:10px;color:#2563eb;background:#EFF6FF;padding:1px 6px;border-radius:8px">共${r.orders.length}单</span>` : '';
-  return `<div class="qts-row" style="cursor:pointer" onclick="openGC('${escJs(r.prd)}')">
+  return `<div class="qts-row" data-prd="${escJs(r.prd)}" style="cursor:pointer" onclick="openGC('${escJs(r.prd)}')">
       <div class="qts-row-head">
         <span class="qts-status open">净需 ${gcNum(r.net)}</span>
         <span class="qts-no">${highlight(r.prd, gcQ)}</span>
         <span class="qts-date">库存 ${gcNum(st)}</span>${multi}
+        <span class="gc-rd" data-rd="${escJs(r.prd)}"></span>
         <button class="pr-btn" style="margin-left:auto" onclick="event.stopPropagation();openGC('${escJs(r.prd)}')" title="开/打印工卡">🧾 工卡</button>
       </div>
       <div class="qts-row-line2">${highlight(r.name || '', gcQ)}</div>
@@ -5868,10 +5951,12 @@ function renderGCList() {
   const _byOrder = (r) => !gcOrderF || ((r.orders && r.orders.length) ? r.orders : []).indexOf(gcOrderF) >= 0;
   if (gcGroup === 'flat') {
     const _flat = gcItems.filter(_byOrder);
+    h += gcReadyChips();
     h += `<div class="pos-un-toolbar" style="padding:0 12px 8px"><span class="pos-un-info">点一行开卡 · ${_flat.length} 个成品${gcOrderF ? ' · 指令单 ' + gcOrderF : ''}</span></div><div class="list">`;
     if (!_flat.length) h += `<div class="state-msg">指令单 ${gcOrderF} 下没有成品</div>`;
     for (const r of _flat) h += gcRow(r, true);
     el.innerHTML = h + '</div>';
+    gcFillReadyCand();
     return;
   }
 
@@ -5894,6 +5979,7 @@ function renderGCList() {
     }
   }
   const groups = [...g.entries()].sort((a, b) => (a[0] === '(无指令单)') - (b[0] === '(无指令单)') || b[1].net - a[1].net);
+  h += gcReadyChips();
   h += `<div class="pos-un-toolbar" style="padding:0 12px 8px"><span class="pos-un-info">${groups.length} 张指令单 · ${gcItems.length} 个成品 · 点一行开卡</span></div>`;
   for (const [o, e] of groups) {
     h += `<div style="padding:10px 12px 4px;font-size:13px;font-weight:700;color:#1f2937;background:var(--bg);position:sticky;top:0;z-index:1">
@@ -5903,6 +5989,7 @@ function renderGCList() {
     h += '</div>';
   }
   el.innerHTML = h;
+  gcFillReadyCand();
 }
 
 async function openGC(prd) {
