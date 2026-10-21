@@ -6386,7 +6386,8 @@ function gcFixHtml(d, gcNo) {
     let rows = '';
     for (let i = 0; i < per; i++) {
       const it = sl[i], no = p * per + i + 1;   // 行号续排：第 2 页从 7 开始
-      if (!it) { rows += `<tr class="blank"><td class="c no">${no}</td><td colspan="4"></td></tr>`; continue; }
+      // 空白行也画满 5 格：预印卡是完整网格，空行断线会显得表格没印全（MAK 2026-10-21）
+      if (!it) { rows += `<tr class="blank"><td class="c no">${no}</td><td></td><td></td><td></td><td></td></tr>`; continue; }
       const v = {pn: String(it.prd || '')};
       // 后两列（操作者/实做数）预印空白，由工人按行手签，系统一个字都不打
       rows += `<tr><td class="c no">${no}</td>`
