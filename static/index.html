@@ -651,7 +651,7 @@
     #printArea .pr-oc table.oc-tb td.l{text-align:left}
     #printArea .pr-oc .oc-sign{display:flex;justify-content:space-between;margin-top:1.8mm;font-size:9.5pt}
     /* 工卡 145×210mm 竖版（MAK 2026-10-20 改纸型，无图标） */
-    #printArea .pr-gc{font-family:"SimSun","宋体",serif;color:#000;font-size:11pt;line-height:1.32}
+    #printArea .pr-gc{font-family:"SimSun","宋体","AR PL UMing CN","Times New Roman",serif;color:#000;font-size:11pt;line-height:1.32}
     #printArea .pr-gc .gc-co{text-align:center;font-size:13pt;font-weight:700}
     #printArea .pr-gc .gc-title{text-align:center;font-size:18pt;font-weight:700;letter-spacing:6px;margin:0.6mm 0 1.6mm}
     #printArea .pr-gc .gc-hd{display:flex;justify-content:space-between;flex-wrap:wrap;gap:0.8mm 4mm;font-size:10.4pt;margin-bottom:1mm}
@@ -694,7 +694,7 @@
     #printArea .pr-gc.gc-fix .fx-info td.w2{white-space:normal;font-size:9.6pt;line-height:4.2mm;max-height:8.6mm;overflow:hidden}
     #printArea .pr-gc.gc-fix .fx-tb{top:65.2mm}
     #printArea .pr-gc.gc-fix .fx-tb thead th{height:9mm;font-size:9pt;text-align:center}
-    /* 名称格：36mm / 7.4pt / 最多 4 行（3.25mm × 4 = 13mm ≤ 槽高 13.3） */
+    /* 名称格：36mm / 7.4pt / 最多 4 行（3.25mm × 4 = 13.0mm ≤ 槽高 13.3） */
     #printArea .pr-gc.gc-fix .fx-tb .nm{white-space:normal;font-size:7.4pt;line-height:3.25mm;overflow:hidden}
     #printArea .pr-gc.gc-fix .fx-tb .nm .cl{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
     #printArea .pr-gc.gc-fix .fx-tb td.c{text-align:center}
@@ -6306,13 +6306,13 @@ function gcClean(n) {
   return s.trim();
 }
 // 物料表列宽（mm，合计 121）：# · 品号 · 名称 · 单位 · 每件用量 · 需要量 · 库存 · 缺口
-const GC_COL = [4, 31, 36, 7, 8.5, 12, 11.5, 11];
+const GC_COL = [4, 31, 36, 7, 8.5, 12, 11.5, 11];   // 方案A 定稿（MAK 2026-10-21 决策1 选 B：不加宽库存，接受缩字）
 // 数字/短文本自适应：按列可用宽选字号（8.5pt 起，最小 5.8pt）。
-// 字宽按「半角 0.19mm/pt、汉字 0.353mm/pt」保守估（SimSun 实际 0.176/0.353，留余量给 Android/无宋体环境）。
+// 字宽按 SimSun 实测「半角 0.176mm/pt、汉字 0.3528mm/pt」；无宋体的机器由 "AR PL UMing CN" 兜底（实测同宽）。
 // MAK 的「≥7 位自动缩字」由这条统一实现：位数多了自然落到 7.x pt，但优先保证数字完整不被截。
 function gcW(t) { let w = 0; for (const ch of String(t == null ? '' : t)) w += /[\x00-\xff]/.test(ch) ? 0.20 : 0.353; return w; }
 function gcFit(t, wmm, maxPt, minPt, pad) {
-  const top = maxPt || 8.5, low = minPt || 5.8, avail = wmm - (pad == null ? 0.9 : pad);
+  const top = maxPt || 8.5, low = minPt || 5.8, avail = wmm - (pad == null ? 0.8 : pad);
   let pt = top;
   while (pt > low && gcW(t) * pt > avail) pt -= 0.2;
   return pt >= top - 0.01 ? '' : ` style="font-size:${pt.toFixed(1)}pt"`;
@@ -6395,7 +6395,7 @@ function gcCalSheet() {
   for (let x = 0; x <= 120; x += 10) ticks += `<div style="position:absolute;left:${x}mm;top:0;width:0.15mm;height:3mm;background:#000"></div>`;
   for (let y = 0; y <= 190; y += 10) ticks += `<div style="position:absolute;left:0;top:${y}mm;height:0.15mm;width:3mm;background:#000"></div>`;
   let slots = '';
-  [65.2, 74.2, 87.5, 100.8, 114.1, 127.4, 140.7, 154, 159].forEach(y => {
+  [65.2, 74.2, 87.5, 100.8, 114.1, 127.4, 140.7, 154, 159, 169, 179].forEach(y => {
     slots += `<div style="position:absolute;left:0;top:${y}mm;width:121mm;height:0.15mm;background:#c00"></div>`
            + `<div style="position:absolute;left:113mm;top:${(y - 1.5).toFixed(1)}mm;font-size:6pt;color:#c00">${y}</div>`;
   });
@@ -6405,7 +6405,8 @@ function gcCalSheet() {
     <div style="position:absolute;left:0;top:95mm;width:121mm;height:0.2mm;background:#000"></div>
     ${ticks}${slots}
     <div style="position:absolute;left:2mm;top:2mm;font-size:9pt">校准页：外框应压在预印卡的外框上（距纸边 上11 / 下10 / 左12 / 右12mm）</div>
-    <div style="position:absolute;left:2mm;top:181mm;font-size:9pt">红线＝物料行槽（表头 9 + 6 行 × 13.3mm）；偏右/偏下填正数，偏左/偏上填负数，单位 mm</div>
+    <div style="position:absolute;left:2mm;top:178mm;font-size:8pt">红线＝行槽分界：表头 9 + 6 行 × 13.3，结论 5，手填栏 3 行 × 10.0</div>
+    <div style="position:absolute;left:2mm;top:183mm;font-size:8pt">偏右/偏下填正数，偏左/偏上填负数，单位 mm（可 0.5）</div>
   </div>`;
   prOut(html, PR_PAPER.gc);
 }
