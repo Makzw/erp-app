@@ -7139,7 +7139,14 @@ async def gc_ready(payload: dict = Body(...)):
             min_can = min([(s.get("can") or 0) for s in stages] or [0])
             out.append({"prd": prd, "stages": len(stages), "ready": ready, "lack": lack,
                         "all_ready": bool(stages) and lack == 0,
-                        "lack_qty": round(float(lack_qty), 3), "min_can": int(min_can)})
+                        "lack_qty": round(float(lack_qty), 3), "min_can": int(min_can),
+                        # 按工序明细：前端显示「黑坯 ✅ · 组装 ❌ 0/2」
+                        "detail": [{"proc": s.get("proc"), "name": s.get("proc_name"),
+                                    "ok": bool(s.get("ok")),
+                                    "rows": len(s.get("inputs") or []),
+                                    "ok_rows": sum(1 for i in (s.get("inputs") or []) if float(i.get("gap") or 0) <= 0),
+                                    "gap_qty": round(max([float(i.get("gap") or 0) for i in (s.get("inputs") or [])] or [0]), 3)}
+                                   for s in stages]})
         return {"ok": True, "items": out}
     finally:
         conn.close()

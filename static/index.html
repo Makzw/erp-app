@@ -5766,7 +5766,8 @@ function gcReadyChips() {
     return `<div class="pos-un-toolbar" style="padding:2px 12px 6px;display:flex;gap:4px;flex-wrap:wrap;align-items:center">
       <span class="pos-un-info" style="margin-right:4px">齐料（本页）</span>
       <button ${st('all')}>全部</button>
-      <button ${st('ready')}>✅ 齐料 <span id="gcReadyCnt">–</span></button>
+      <button ${st('partial')}>✅ 有齐料工序 <span id="gcReadyCnt">–</span></button>
+      <button ${st('ready')}>✅ 全部齐 <span id="gcReadyAllCnt">–</span></button>
       <button onclick="loadGC()" style="padding:5px 12px;border-radius:16px;border:1px dashed #94a3b8;background:#fff;font-size:12px;cursor:pointer">🔄 重算</button>
     </div>`;
   }
@@ -5837,7 +5838,7 @@ function renderGCCards() {
     h += `<div class="qts-row" style="cursor:pointer${_void ? ';opacity:.55' : ''};border-left:3px solid ${_bcol}" onclick="gcReprint('${escJs(r.gc_no)}')">
       <div class="qts-row-head">
         ${_stChip(r.status || 0)}
-        ${gcRdBadge(_x)}
+        ${gcRdBadge(_x, true)}
         <span class="qts-status open">${highlight(r.proc_name || r.proc, gcQ)}</span>
         <span class="qts-no">${highlight(r.gc_no, gcQ)}</span>
         <span class="qts-date">${highlight(r.gc_dd || '', gcQ)}</span>
@@ -5878,10 +5879,34 @@ async function gcReprint(gcNo) {
 let gcReady = {}, gcReadyFilter = 'all', gcReadySort = true;
 const GC_RD_TIP = '按当前 V2 实时库存算，领料后会变；点「刷新齐料」重算';
 
-function gcRdBadge(x) {
+function gcRdBadge(x, isCard) {
   if (!x) return '<span style="font-size:11px;color:#94a3b8">…</span>';
-  if (x.all_ready) return `<span title="${GC_RD_TIP}" style="font-size:11px;font-weight:700;color:#15803d;background:#f0fdf4;border:1px solid #86efac;padding:1px 7px;border-radius:9px;white-space:nowrap">✅ ${x.ready}/${x.stages} 齐</span>`;
-  return `<span title="${GC_RD_TIP} · 缺口 ${gcNum(x.lack_qty)}，最多做 ${gcNum(x.min_can)}" style="font-size:11px;font-weight:700;color:#c2410c;background:#fff7ed;border:1px solid #fdba74;padding:1px 7px;border-radius:9px;white-space:nowrap">⚠️ ${x.ready}/${x.stages} 缺</span>`;
+  const base = 'font-size:11px;font-weight:700;padding:1px 7px;border-radius:9px;white-space:nowrap;border:1px solid ';
+  // 已开工卡：一张卡就一道工序，直接 ✅/❌
+  if (isCard) {
+    return x.all_ready
+      ? `<span title="${GC_RD_TIP}" style="${base}#86efac;color:#15803d;background:#f0fdf4">✅ 齐</span>`
+      : `<span title="${GC_RD_TIP} · 缺口 ${gcNum(x.lack_qty)}，最多做 ${gcNum(x.min_can)}" style="${base}#fdba74;color:#c2410c;background:#fff7ed">⚠️ 缺</span>`;
+  }
+  const det = x.detail || [];
+  if (x.all_ready) return `<span title="${GC_RD_TIP}" style="${base}#86efac;color:#15803d;background:#f0fdf4">✅ 全齐 ${x.stages}/${x.stages}</span>`;
+  // 同名工序合并：黑坯 2/2 道齐 · 组装 0/1 道齐（数字 = 工序道数，不是料行数）
+  const by = {};
+  det.forEach(d => {
+    const k = d.name || d.proc || '?';
+    by[k] = by[k] || {ok: 0, n: 0, gap: 0, rows: 0, ok_rows: 0};
+    const g = by[k]; g.n++; if (d.ok) g.ok++;
+    g.gap = Math.max(g.gap, d.gap_qty || 0); g.rows += d.rows; g.ok_rows += d.ok_rows;
+  });
+  const groups = Object.entries(by).map(([k, v]) => ({name: k, ...v}));
+  const okG = groups.filter(g => g.ok > 0), badG = groups.filter(g => g.ok === 0);
+  const show = [...okG.slice(0, 2), ...badG.slice(0, 2)].slice(0, 3);
+  const txt = show.map(g => `${g.name}${g.ok > 0 ? '✅' : '❌'}${g.ok}/${g.n}`).join(' · ') + (groups.length > show.length ? ' +' + (groups.length - show.length) : '');
+  const tip = GC_RD_TIP + '\n' + groups.map(g => `${g.name}：${g.ok}/${g.n} 道齐 · 料 ${g.ok_rows}/${g.rows} 行${g.gap > 0 ? ' · 缺 ' + gcNum(g.gap) : ''}`).join('\n');
+  // 有工序齐 = 橙（能开一部分）；一道都不齐 = 红
+  return okG.length
+    ? `<span title="${tip}" style="${base}#fdba74;color:#c2410c;background:#fff7ed">✅ ${txt}</span>`
+    : `<span title="${tip}" style="${base}#fca5a5;color:#b91c1c;background:#fef2f2">⛔ ${txt}</span>`;
 }
 
 async function gcRdFetch(items) {
@@ -5893,19 +5918,24 @@ async function gcRdFetch(items) {
 
 // 候选：对当前可见前 30 条批量取（300 个全算要 18s，滚动/筛选用不到就不算）
 async function gcFillReadyCand() {
-  const spans = [...document.querySelectorAll('#content [data-rd]')].slice(0, 30);
-  if (!spans.length) return;
-  const prds = [...new Set(spans.map(el => el.dataset.rd))];
+  const all = [...document.querySelectorAll('#content [data-rd]')];
+  if (!all.length) return;
+  const prds = [...new Set(all.map(el => el.dataset.rd))].slice(0, 30);   // 30 个成品（不是 30 行）
+  const keep = new Set(prds);
+  const spans = all.filter(el => keep.has(el.dataset.rd));
   const todo = prds.filter(p => !gcReady[p]);
   try {
     await gcRdFetch(todo.map(p => ({prd: p, mode: 'fg'})));
     spans.forEach(el => { el.innerHTML = gcRdBadge(gcReady[el.dataset.rd]); });
     document.querySelectorAll('#content .qts-row[data-prd]').forEach(row => {
       const x = gcReady[row.dataset.prd];
-      row.style.display = (gcReadyFilter === 'ready' && !(x && x.all_ready)) ? 'none' : '';
+      const pass = gcReadyFilter === 'all' || (x && (gcReadyFilter === 'partial' ? x.ready > 0 : x.all_ready));
+      row.style.display = pass ? '' : 'none';
     });
-    const c = $id('gcReadyCnt');
-    if (c) c.textContent = prds.filter(p => (gcReady[p] || {}).all_ready).length;
+    const c1 = $id('gcReadyCnt'), c2 = $id('gcReadyAllCnt');
+    const nAll = prds.length;
+    if (c1) c1.textContent = prds.filter(p => (gcReady[p] || {}).ready > 0).length + '/' + nAll;
+    if (c2) c2.textContent = prds.filter(p => (gcReady[p] || {}).all_ready).length + '/' + nAll;
   } catch (e) { spans.forEach(el => { el.textContent = '—'; }); }
 }
 
