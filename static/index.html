@@ -708,8 +708,9 @@
     /* 行号列只有 4mm：两位行号 10/11/12 要 7.5pt + 去掉左右内边距才放得下（7.5pt 保持基线 y≈90.25） */
     #printArea .pr-gc.gc-fix .fx-tb td.no{font-size:7.5pt;padding:0}
     #printArea .pr-gc.gc-fix .fx-tb td.r{text-align:right}
-    /* 结论 4.8mm（原 5.0）：让 8 槽 ×10 + 2×15 手填栏正好落在 189.0，保住下边距 10mm */
-    #printArea .pr-gc.gc-fix .fx-verdict{top:154.2mm;height:4.8mm;font-size:10.5pt;font-weight:700;line-height:4.8mm;overflow:hidden}
+    /* 154.2–169.2 是预印的「操作者/实做数」行（系统不打），结论从 169.2 起；
+       169.2 + 4.8 + 15（手填栏 1 行）= 189.0 */
+    #printArea .pr-gc.gc-fix .fx-verdict{top:169.2mm;height:4.8mm;font-size:10.5pt;font-weight:700;line-height:4.8mm;overflow:hidden}
     /* 材料特别多时才压缩（纸高了，常规 8 行内都用原尺寸） */
     #printArea .pr-gc.gc-t1{font-size:8.4pt}
     #printArea .pr-gc.gc-t1 table.gc-info td{font-size:8.2pt;padding:0.8mm 1mm}
@@ -6369,7 +6370,7 @@ function gcFixHtml(d, gcNo) {
         <tr><td></td><td class="w2" colspan="3"${gcInfoFit(gcClean(head.prd_name || ''))}><div class="cl2">${prE(gcClean(head.prd_name || ''))}</div></td></tr>
         <tr><td></td><td${gcFit(head.stage_prd, 38.5, 10.5, 5.8, 2.2)}>${prE(head.stage_prd)}</td><td></td><td${gcFit(head.fg_qty ? gcNum(head.fg_qty) : '—', 38.5, 10.5, 5.8, 2.2)}>${head.fg_qty ? prE(gcNum(head.fg_qty)) : '—'}</td></tr>
         <tr><td></td><td class="w2" colspan="3"${gcInfoFit(gcClean(st.name || ''))}><div class="cl2">${prE(gcClean(st.name || ''))}</div></td></tr>
-        <tr><td></td><td${gcFit(gcNum(d.qty), 38.5, 10.5, 5.8, 2.2)}>${prE(gcNum(d.qty))}</td><td></td><td class="w3"></td></tr>
+        <tr><td></td><td${gcFit(gcNum(d.qty), 38.5, 10.5, 5.8, 2.2)}>${prE(gcNum(d.qty))}</td><td class="w3" colspan="2"></td></tr>
       </table>
       <table class="fx fx-tb"><colgroup><col style="width:4mm"><col style="width:35mm"><col style="width:82mm"></colgroup>
         <thead><tr><th></th><th></th><th></th></tr></thead>
@@ -6407,7 +6408,7 @@ function gcCalSheet() {
   for (let x = 0; x <= 120; x += 10) ticks += `<div style="position:absolute;left:${x}mm;top:0;width:0.15mm;height:3mm;background:#000"></div>`;
   for (let y = 0; y <= 190; y += 10) ticks += `<div style="position:absolute;left:0;top:${y}mm;height:0.15mm;width:3mm;background:#000"></div>`;
   let slots = '';
-  [65.2, 74.2, 84.2, 94.2, 104.2, 114.2, 124.2, 134.2, 144.2, 154.2, 159.0, 174.0].forEach(y => {
+  [65.2, 74.2, 84.2, 94.2, 104.2, 114.2, 124.2, 134.2, 144.2, 154.2, 169.2, 174.0].forEach(y => {
     slots += `<div style="position:absolute;left:0;top:${y}mm;width:121mm;height:0.15mm;background:#c00"></div>`
            + `<div style="position:absolute;left:113mm;top:${(y - 1.5).toFixed(1)}mm;font-size:6pt;color:#c00">${y}</div>`;
   });
@@ -6417,7 +6418,7 @@ function gcCalSheet() {
     <div style="position:absolute;left:0;top:95mm;width:121mm;height:0.2mm;background:#000"></div>
     ${ticks}${slots}
     <div style="position:absolute;left:2mm;top:2mm;font-size:9pt">校准页：外框应压在预印卡的外框上（距纸边 上11 / 下10 / 左12 / 右12mm）</div>
-    <div style="position:absolute;left:2mm;top:178mm;font-size:8pt">红线＝行槽分界：表头 9 + 8 行 × 10.0（到 154.2），结论 4.8，手填栏 2 行 × 15.0（159.0 / 174.0）</div>
+    <div style="position:absolute;left:2mm;top:178mm;font-size:8pt">红线＝行槽分界：表头 9 + 8 行 × 10.0（到 154.2），操作者行 154.2–169.2，结论 4.8（169.2–174.0），手填栏 1 行 × 15.0（174.0–189.0）</div>
     <div style="position:absolute;left:2mm;top:183mm;font-size:8pt">偏右/偏下填正数，偏左/偏上填负数，单位 mm（可 0.5）</div>
   </div>`;
   prOut(html, PR_PAPER.gc);
