@@ -674,23 +674,33 @@
     #printArea .pr-gc table.gc-fill td{border:0.5pt solid #000;padding:1.3mm 1mm}
     /* 材料少（1~2 行）时手填栏再放开一点，卡片不至于上密下空 */
     #printArea .pr-gc.gc-roomy table.gc-fill th,#printArea .pr-gc.gc-roomy table.gc-fill td{padding:5.5mm 1mm}
-    /* 套打（A1）：预印卡 145×210，固定 6 行 × 9mm，只打值，表格线/字段名由印厂印
+    /* 套打（A2 方案 A，MAK 2026-10-21 拍板）：预印卡 145×210，
+       物料表 表头 9 + 6 槽 × 13.3mm；去公司名；手填栏 3 行 × 10mm
        坐标全部毫米定位，改动必须同步改 backups/工卡_套打_印厂样张.html 的尺寸图 */
-    #printArea .pr-gc.gc-fix{position:relative;width:121mm;height:190mm;font-size:9.6pt;line-height:1.15}
+    #printArea .pr-gc.gc-fix{position:relative;width:121mm;height:190mm;font-size:9pt;line-height:1.15}
     #printArea .pr-gc.gc-fix .fx{position:absolute;left:0;width:121mm}
     #printArea .pr-gc.gc-fix .fx-cont{top:11mm;left:auto;right:0;width:40mm;text-align:right;font-size:8pt;line-height:4mm}
-    #printArea .pr-gc.gc-fix .fx-hd1,#printArea .pr-gc.gc-fix .fx-hd2{font-size:11pt;line-height:5mm;height:5mm}
-    #printArea .pr-gc.gc-fix .fx-hd1{top:15mm}
-    #printArea .pr-gc.gc-fix .fx-hd2{top:20.5mm}
+    #printArea .pr-gc.gc-fix .fx-hd1,#printArea .pr-gc.gc-fix .fx-hd2{font-size:10.5pt;line-height:5mm;height:5mm}
+    #printArea .pr-gc.gc-fix .fx-hd1{top:5.3mm}
+    #printArea .pr-gc.gc-fix .fx-hd2{top:10.3mm}
     #printArea .pr-gc.gc-fix .fx-hd1 span,#printArea .pr-gc.gc-fix .fx-hd2 span{position:absolute;white-space:nowrap}
     #printArea .pr-gc.gc-fix table{border-collapse:collapse;table-layout:fixed}
     #printArea .pr-gc.gc-fix table th,#printArea .pr-gc.gc-fix table td{border:none!important;background:transparent!important;
-            height:9mm;line-height:9mm;padding:0 1mm;font-size:9.6pt;vertical-align:middle;
+            height:13.3mm;padding:0 0.4mm;font-size:9pt;vertical-align:middle;
             white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    #printArea .pr-gc.gc-fix .fx-info{top:26mm}
-    #printArea .pr-gc.gc-fix .fx-info td{font-size:10.5pt}
-    #printArea .pr-gc.gc-fix .fx-tb{top:76.5mm}
-    #printArea .pr-gc.gc-fix .fx-verdict{top:139.5mm;height:5mm;font-size:11pt;font-weight:700;line-height:5mm}
+    #printArea .pr-gc.gc-fix .fx-info{top:15.3mm}
+    #printArea .pr-gc.gc-fix .fx-info td{font-size:10.5pt;height:9mm;padding:0 1mm}
+    /* 长名称格（成品名称/本工序名称，colspan=3 = 99mm）：允许两行，别印成「…」 */
+    #printArea .pr-gc.gc-fix .fx-info td.w2{white-space:normal;font-size:9.6pt;line-height:4.2mm;max-height:8.6mm;overflow:hidden}
+    #printArea .pr-gc.gc-fix .fx-tb{top:65.2mm}
+    #printArea .pr-gc.gc-fix .fx-tb thead th{height:9mm;font-size:9pt;text-align:center}
+    /* 名称格：36mm / 7.4pt / 最多 4 行（3.25mm × 4 = 13mm ≤ 槽高 13.3） */
+    #printArea .pr-gc.gc-fix .fx-tb .nm{white-space:normal;font-size:7.4pt;line-height:3.25mm;overflow:hidden}
+    #printArea .pr-gc.gc-fix .fx-tb .nm .cl{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+    #printArea .pr-gc.gc-fix .fx-tb td.c{text-align:center}
+    #printArea .pr-gc.gc-fix .fx-tb td.no{font-size:7.5pt}
+    #printArea .pr-gc.gc-fix .fx-tb td.r{text-align:right}
+    #printArea .pr-gc.gc-fix .fx-verdict{top:154mm;height:5mm;font-size:10.5pt;font-weight:700;line-height:5mm}
     /* 材料特别多时才压缩（纸高了，常规 8 行内都用原尺寸） */
     #printArea .pr-gc.gc-t1{font-size:8.4pt}
     #printArea .pr-gc.gc-t1 table.gc-info td{font-size:8.2pt;padding:0.8mm 1mm}
@@ -6025,7 +6035,7 @@ function renderGCList() {
 async function openGC(prd) {
   try {
     const d = await api(BASE + '/gc/chain?prd_no=' + encodeURIComponent(prd));
-    gcPrd = { prd: prd, name: (gcItems.find(x => x.prd === prd) || {}).name || '', net: Number(d.qty) || 0 };
+    gcPrd = { prd: prd, name: (gcItems.find(x => x.prd === prd) || {}).name || ((d.stages || [])[0] || {}).name || '', net: Number(d.qty) || 0 };
     gcStages = d.stages || [];
     gcCus = d.cus || ''; gcCusNo = d.cus_no || ''; gcOrder = d.order_no || '';
     // 默认选黑坯（MAK 最常用的工序）；没有黑坯再退到电镀/组装
@@ -6219,7 +6229,7 @@ async function gcPrint(forceNew, mode) {
 function gcRenderPrint(h, gcNo, qty, pname) {
   const st = h.stage || {};
   const rows = (st.inputs || []).map((it, i) => `<tr>
-    <td class="c">${i + 1}</td><td>${prE(it.prd)}</td><td>${prE(it.name || '')}</td>
+    <td class="c">${i + 1}</td><td>${prE(it.prd)}</td><td>${prE(gcClean(it.name || ''))}</td>
     <td class="c">${prE(it.ut || '')}</td><td class="r">${prE(gcP(it.per))}</td>
     <td class="r">${prE(ocN(it.need))}</td><td class="r">${prE(ocN(it.stock))}</td>
     <td class="r">${prE(ocN(it.gap))}</td></tr>`).join('');
@@ -6232,9 +6242,9 @@ function gcRenderPrint(h, gcNo, qty, pname) {
     <div class="gc-hd"><span>工卡号：<b>${prE(gcNo)}</b></span><span>开卡日期：${prE(ocD(h.gc_dd))}</span><span>客户：${prE(h.cus_disp || h.cus_no || '—')}</span><span>指令单：${prE(h.order_no || '—')}</span></div>
     <table class="gc-info">
       <tr><th>成品品号</th><td>${prE(h.prd_no)}</td><th>工序</th><td>${prE(pname || st.proc_name || '')}</td></tr>
-      <tr><th>成品名称</th><td colspan="3">${prE(h.prd_name || '')}</td></tr>
+      <tr><th>成品名称</th><td colspan="3">${prE(gcClean(h.prd_name || ''))}</td></tr>
       <tr><th>本工序品号</th><td>${prE(h.stage_prd)}</td><th>单位</th><td>${prE(h.stage_ut || '')}</td></tr>
-      <tr><th>本工序名称</th><td colspan="3">${prE(st.name || '')}</td></tr>
+      <tr><th>本工序名称</th><td colspan="3">${prE(gcClean(st.name || ''))}</td></tr>
       <tr><th>本工序数量</th><td>${prE(gcNum(qty))}</td><th>成品需求</th><td>${h.fg_qty ? prE(gcNum(h.fg_qty)) : '—'}</td></tr>
 
     </table>
@@ -6287,6 +6297,34 @@ function gcFixData() {
     stage_prd: s.prd, stage_ut: s.ut, stage_spc: s.spc, stage: st}};
 }
 
+// 名称清洗（MAK 2026-10-21）：只删名称末尾「斜杠连接的客户编码串」，其余全部保留。
+// 例：…铁 黑坯 605540/851396/851419/605571 → …铁 黑坯；单个尾码（605571 / HWG-SCU733332-B）不删。
+const GC_TAILCODE = /\s*[0-9A-Za-z]{2,}(?:\/[0-9A-Za-z]{2,}){2,}\s*$/;
+function gcClean(n) {
+  let s = String(n == null ? '' : n), p;
+  do { p = s; s = s.replace(GC_TAILCODE, ''); } while (s !== p);
+  return s.trim();
+}
+// 物料表列宽（mm，合计 121）：# · 品号 · 名称 · 单位 · 每件用量 · 需要量 · 库存 · 缺口
+const GC_COL = [4, 31, 36, 7, 8.5, 12, 11.5, 11];
+// 数字/短文本自适应：按列可用宽选字号（8.5pt 起，最小 5.8pt）。
+// 字宽按「半角 0.19mm/pt、汉字 0.353mm/pt」保守估（SimSun 实际 0.176/0.353，留余量给 Android/无宋体环境）。
+// MAK 的「≥7 位自动缩字」由这条统一实现：位数多了自然落到 7.x pt，但优先保证数字完整不被截。
+function gcW(t) { let w = 0; for (const ch of String(t == null ? '' : t)) w += /[\x00-\xff]/.test(ch) ? 0.20 : 0.353; return w; }
+function gcFit(t, wmm, maxPt, minPt, pad) {
+  const top = maxPt || 8.5, low = minPt || 5.8, avail = wmm - (pad == null ? 0.9 : pad);
+  let pt = top;
+  while (pt > low && gcW(t) * pt > avail) pt -= 0.2;
+  return pt >= top - 0.01 ? '' : ` style="font-size:${pt.toFixed(1)}pt"`;
+}
+// 信息表长文本（colspan=3 = 99mm，允许 2 行）：汉字 0.3528mm/pt，超长就缩，别印成「…」
+function gcInfoFit(t) {
+  const n = String(t || '').length;
+  if (!n) return '';
+  const pt = Math.min(9.6, 95 / (Math.ceil(n / 2) * 0.3528));
+  return pt < 9.5 ? ` style="font-size:${pt.toFixed(1)}pt"` : '';
+}
+
 function gcFixHtml(d, gcNo) {
   const st = d.st, head = d.head, inputs = st.inputs || [];
   const per = GC_FIX.per, np = Math.max(1, Math.ceil(inputs.length / per));
@@ -6298,22 +6336,30 @@ function gcFixHtml(d, gcNo) {
     let rows = '';
     for (let i = 0; i < per; i++) {
       const it = sl[i], no = p * per + i + 1;   // 行号续排：第 2 页从 7 开始
-      rows += it
-        ? `<tr><td class="c">${no}</td><td>${prE(it.prd)}</td><td>${prE(it.name || '')}</td><td class="c">${prE(it.ut || '')}</td><td class="r">${prE(gcP(it.per))}</td><td class="r">${prE(ocN(it.need))}</td><td class="r">${prE(ocN(it.stock))}</td><td class="r">${prE(ocN(it.gap))}</td></tr>`
-        : `<tr class="blank"><td class="c">${no}</td><td colspan="7"></td></tr>`;
+      if (!it) { rows += `<tr class="blank"><td class="c no">${no}</td><td colspan="7"></td></tr>`; continue; }
+      const v = {pn: String(it.prd || ''), per: gcP(it.per), need: gcNum(it.need),
+                 stock: gcNum(it.stock), gap: gcNum(it.gap), ut: String(it.ut || '')};
+      rows += `<tr><td class="c no">${no}</td>`
+        + `<td${gcFit(v.pn, GC_COL[1], 9)}>${prE(v.pn)}</td>`
+        + `<td class="nm"><div class="cl">${prE(gcClean(it.name || ''))}</div></td>`
+        + `<td class="c"${gcFit(v.ut, GC_COL[3], 9)}>${prE(v.ut)}</td>`
+        + `<td class="r"${gcFit(v.per, GC_COL[4])}>${prE(v.per)}</td>`
+        + `<td class="r"${gcFit(v.need, GC_COL[5])}>${prE(v.need)}</td>`
+        + `<td class="r"${gcFit(v.stock, GC_COL[6])}>${prE(v.stock)}</td>`
+        + `<td class="r"${gcFit(v.gap, GC_COL[7])}>${prE(v.gap)}</td></tr>`;
     }
     out.push(`<div class="pr-doc pr-gc gc-fix" style="${p < np - 1 ? 'page-break-after:always;' : ''}">
       ${p ? `<div class="fx fx-cont">续 ${p + 1}/${np}</div>` : ''}
       <div class="fx fx-hd1"><span style="left:16mm">${prE(gcNo)}</span><span style="left:77mm">${prE(ocD(head.gc_dd))}</span></div>
       <div class="fx fx-hd2"><span style="left:11.5mm">${prE(head.cus_disp || '')}</span><span style="left:63.5mm">${prE(head.order_no || '')}</span></div>
       <table class="fx fx-info"><colgroup><col style="width:22mm"><col style="width:38.5mm"><col style="width:22mm"><col style="width:38.5mm"></colgroup>
-        <tr><td></td><td>${prE(head.prd_no)}</td><td></td><td>${prE(d.pname || st.proc_name || '')}</td></tr>
-        <tr><td></td><td colspan="3">${prE(head.prd_name || '')}</td></tr>
-        <tr><td></td><td>${prE(head.stage_prd)}</td><td></td><td>${prE(head.stage_ut || '')}</td></tr>
-        <tr><td></td><td colspan="3">${prE(st.name || '')}</td></tr>
-        <tr><td></td><td>${prE(gcNum(d.qty))}</td><td></td><td>${head.fg_qty ? prE(gcNum(head.fg_qty)) : '—'}</td></tr>
+        <tr><td></td><td${gcFit(head.prd_no, 38.5, 10.5, 5.8, 2.2)}>${prE(head.prd_no)}</td><td></td><td${gcFit(d.pname || st.proc_name || '', 38.5, 10.5, 5.8, 2.2)}>${prE(d.pname || st.proc_name || '')}</td></tr>
+        <tr><td></td><td class="w2" colspan="3"${gcInfoFit(gcClean(head.prd_name || ''))}>${prE(gcClean(head.prd_name || ''))}</td></tr>
+        <tr><td></td><td${gcFit(head.stage_prd, 38.5, 10.5, 5.8, 2.2)}>${prE(head.stage_prd)}</td><td></td><td${gcFit(head.stage_ut || '', 38.5, 10.5, 5.8, 2.2)}>${prE(head.stage_ut || '')}</td></tr>
+        <tr><td></td><td class="w2" colspan="3"${gcInfoFit(gcClean(st.name || ''))}>${prE(gcClean(st.name || ''))}</td></tr>
+        <tr><td></td><td${gcFit(gcNum(d.qty), 38.5, 10.5, 5.8, 2.2)}>${prE(gcNum(d.qty))}</td><td></td><td${gcFit(head.fg_qty ? gcNum(head.fg_qty) : '—', 38.5, 10.5, 5.8, 2.2)}>${head.fg_qty ? prE(gcNum(head.fg_qty)) : '—'}</td></tr>
       </table>
-      <table class="fx fx-tb"><colgroup><col style="width:4.84mm"><col style="width:32.67mm"><col style="width:29.72mm"><col style="width:9mm"><col style="width:10.89mm"><col style="width:13.31mm"><col style="width:10.89mm"><col style="width:9.68mm"></colgroup>
+      <table class="fx fx-tb"><colgroup><col style="width:4mm"><col style="width:31mm"><col style="width:36mm"><col style="width:7mm"><col style="width:8.5mm"><col style="width:12mm"><col style="width:11.5mm"><col style="width:11mm"></colgroup>
         <thead><tr><th></th><th></th><th></th><th></th><th></th><th></th><th></th><th></th></tr></thead>
         <tbody>${rows}</tbody></table>
       <div class="fx fx-verdict">${verdict}</div>
@@ -6343,17 +6389,23 @@ function gcPrintFixed() {
 }
 
 // 校准页：打在预印卡上，外框应与卡上印的框重合；偏了就把毫米数填回去
+// 坐标 = 可印区坐标（纸面 − 上11 / 左12）。红线是物料行槽（表头 9 + 6×13.3）与结论/手填栏分界。
 function gcCalSheet() {
   let ticks = '';
-  for (let x = 12; x <= 133; x += 10) ticks += `<div style="position:absolute;left:${x}mm;top:11mm;width:0.2mm;height:4mm;background:#000"></div>`;
-  for (let y = 11; y <= 201; y += 10) ticks += `<div style="position:absolute;left:12mm;top:${y}mm;height:0.2mm;width:4mm;background:#000"></div>`;
+  for (let x = 0; x <= 120; x += 10) ticks += `<div style="position:absolute;left:${x}mm;top:0;width:0.15mm;height:3mm;background:#000"></div>`;
+  for (let y = 0; y <= 190; y += 10) ticks += `<div style="position:absolute;left:0;top:${y}mm;height:0.15mm;width:3mm;background:#000"></div>`;
+  let slots = '';
+  [65.2, 74.2, 87.5, 100.8, 114.1, 127.4, 140.7, 154, 159].forEach(y => {
+    slots += `<div style="position:absolute;left:0;top:${y}mm;width:121mm;height:0.15mm;background:#c00"></div>`
+           + `<div style="position:absolute;left:113mm;top:${(y - 1.5).toFixed(1)}mm;font-size:6pt;color:#c00">${y}</div>`;
+  });
   const html = `<div class="pr-doc" style="position:relative;width:121mm;height:190mm;font-family:'SimSun',serif">
     <div style="position:absolute;left:0;top:0;width:121mm;height:190mm;border:0.3mm solid #000"></div>
-    <div style="position:absolute;left:60mm;top:0;width:0.2mm;height:190mm;background:#000"></div>
-    <div style="position:absolute;left:0;top:94.5mm;width:121mm;height:0.2mm;background:#000"></div>
-    ${ticks}
-    <div style="position:absolute;left:2mm;top:2mm;font-size:9pt">校准页：外框应压在预印卡的外框上（距纸边 上11 / 下9 / 左12 / 右12mm）</div>
-    <div style="position:absolute;left:2mm;top:180mm;font-size:9pt">偏右/偏下就填正数，偏左/偏上填负数，单位 mm，可填 0.5</div>
+    <div style="position:absolute;left:60.5mm;top:0;width:0.2mm;height:190mm;background:#000"></div>
+    <div style="position:absolute;left:0;top:95mm;width:121mm;height:0.2mm;background:#000"></div>
+    ${ticks}${slots}
+    <div style="position:absolute;left:2mm;top:2mm;font-size:9pt">校准页：外框应压在预印卡的外框上（距纸边 上11 / 下10 / 左12 / 右12mm）</div>
+    <div style="position:absolute;left:2mm;top:181mm;font-size:9pt">红线＝物料行槽（表头 9 + 6 行 × 13.3mm）；偏右/偏下填正数，偏左/偏上填负数，单位 mm</div>
   </div>`;
   prOut(html, PR_PAPER.gc);
 }
