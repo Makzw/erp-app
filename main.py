@@ -6730,19 +6730,25 @@ async def pmc_make_qd(
 
 
 # ── 工卡（GC）：一张卡 = 一个成品 + 一个工序 ─────────────────────────────────
-# 工序按 BOM 链自动识别：成品(KND=2)=组装、名称含「黑坯」(KND=3)=黑坯、其余(KND=3)=电镀/外协
+# 工序按 BOM 链自动识别：成品(KND=2)=组装、名称含「黑坯」(KND=3)=黑坯、
+# 电镀/喷粉类=外协(DD，不出工卡)、其余 KND=3 = QT 其他工序（MAK 2026-10-21 拍板）
 # 工卡号：GC-<工序码>-<yymmdd>-<3位流水>，流水取当天同工序 MAX+1（写 GC_HEAD，可追溯/报工）
 _GC_CACHE = {"ts": 0.0, "kids": None, "name": {}, "knd": {}, "ut": {}, "spc": {}}
 _GC_TTL = 600
-_GC_PROC = {"AZ": "组装", "HB": "黑坯", "DD": "电镀/外协", "QT": "其他"}
+_GC_PROC = {"AZ": "组装", "HB": "黑坯", "DD": "电镀/外协（已停用，仅老卡可读）", "QT": "其他工序"}
+_GC_OUT_KW = ("电镀", "镀锌", "镀镍", "滚镀", "蓝锌", "白锌", "彩锌", "镀彩", "镀白", "镀蓝",
+              "喷粉", "喷涂", "喷漆")
 
 
 def _gc_proc_code(prd: str, name: str, knd: str) -> str:
+    n = name or ""
     if str(knd) == "2":
         return "AZ"
-    if "黑坯" in (name or ""):
+    if "黑坯" in n:
         return "HB"
-    return "DD" if str(knd) == "3" else "QT"
+    if any(w in n for w in _GC_OUT_KW):
+        return "DD"          # 外协（电镀/喷粉）—— 出卡时跳过
+    return "QT"              # 其他自制（冲孔/搓牙/打头…）
 
 
 def _gc_load(conn):
@@ -6794,7 +6800,8 @@ def _gc_stages(conn, fg_no: str, base_qty: float, custom: Optional[list] = None,
             return
         seen.add(p)
         k, n = knd.get(p, ""), name.get(p, "")
-        if k in ("2", "3"):
+        proc = _gc_proc_code(p, n, k)
+        if k in ("2", "3") and proc != "DD":   # 外协工序不出工卡，但仍要往下走（黑坯在它下面）
             # 本工序数量默认取「该工序品号自己的全厂净需求」（已扣现有库存），
             # 否则按 成品数量 × 链上累计系数（工序品号在全局需求里查不到时）
             own = float((net_map or {}).get(p, 0) or 0)
@@ -6805,7 +6812,7 @@ def _gc_stages(conn, fg_no: str, base_qty: float, custom: Optional[list] = None,
                 inputs.append({"prd": ch, "name": name.get(ch, ""), "ut": ut.get(ch, ""),
                                "per": per, "need": sq * per})
             stages.append({"prd": p, "name": n, "spc": spc.get(p, ""), "knd": k, "ut": ut.get(p, ""),
-                           "proc": _gc_proc_code(p, n, k), "qty": round(sq, 3),
+                           "proc": proc, "qty": round(sq, 3),
                            "inputs": inputs, "depth": depth})
         for ch, q, bas in kids.get(p, []):
             walk(ch, factor * ((q / bas) if bas else q), depth + 1)
@@ -6866,6 +6873,8 @@ def _gc_ensure_table(cur):
             CRT_DT     datetime     NOT NULL DEFAULT GETDATE()
         )
     """)
+    # 成品全厂净需求（开卡时定格，重打不漂）
+    cur.execute("IF COL_LENGTH('GC_HEAD','FG_QTY') IS NULL ALTER TABLE GC_HEAD ADD FG_QTY decimal(18,3) NULL")
 
 
 def _gnet_items():
@@ -6992,6 +7001,9 @@ async def gc_create(payload: dict = Body(...)):
     order_no = str(payload.get("order_no") or "")[:80]
     rem = str(payload.get("rem") or "")[:200]
     usr = str(payload.get("usr") or "")[:30]
+    fg_qty = float(payload.get("fg_qty") or 0)
+    if fg_qty <= 0:      # 前端没传就现取该成品的全厂净需求
+        fg_qty = next((float(x.get("net") or 0) for x in _gnet_items() if x.get("prd") == prd_no), 0.0)
     conn = get_conn("C041")
     try:
         cur = conn.cursor()
@@ -7005,11 +7017,11 @@ async def gc_create(payload: dict = Body(...)):
         gc_no = f"{prefix}{seq:03d}"
         cur.execute("""
             INSERT INTO GC_HEAD (GC_NO, GC_DD, PRD_NO, STAGE_PRD, PROC_CODE, PROC_NAME,
-                                 QTY, CUS_NO, ORDER_NO, USR, REM)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                 QTY, FG_QTY, CUS_NO, ORDER_NO, USR, REM)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (gc_no, dd.date(),
               prd_no.encode("gbk"), (stage_prd or prd_no).encode("gbk"),
-              proc, proc_name, qty, cus_no.encode("gbk"),
+              proc, proc_name, qty, fg_qty, cus_no.encode("gbk"),
               order_no.encode("gbk"), usr, rem))
         conn.commit()
         return {"ok": True, "gc_no": gc_no}
@@ -7100,7 +7112,7 @@ async def gc_list(kw: str = Query(default=""), limit: int = Query(default=200)):
             SELECT GC_NO, CONVERT(varchar(10), GC_DD, 120), CONVERT(varbinary(60), PRD_NO),
                    CONVERT(varbinary(60), STAGE_PRD), PROC_CODE, PROC_NAME, QTY,
                    CONVERT(varbinary(30), CUS_NO), CONVERT(varbinary(90), ORDER_NO),
-                   USR, CONVERT(varchar(19), CRT_DT, 120), ISNULL(STATUS, 0)
+                   USR, CONVERT(varchar(19), CRT_DT, 120), ISNULL(STATUS, 0), ISNULL(FG_QTY, 0)
             FROM GC_HEAD WITH(NOLOCK)
             WHERE USABLE = 1
               AND (%s = '' OR UPPER(GC_NO) LIKE %s OR UPPER(CONVERT(varchar(120), PRD_NO)) LIKE %s
@@ -7119,7 +7131,7 @@ async def gc_list(kw: str = Query(default=""), limit: int = Query(default=200)):
                         "stage_prd": st_, "stage_name": c["name"].get(st_, ""),
                         "proc": r[4], "proc_name": r[5], "qty": float(r[6] or 0),
                         "cus_no": g(r[7]), "order_no": g(r[8]), "usr": r[9], "crt_dt": r[10],
-                        "status": int(r[11] or 0)})
+                        "status": int(r[11] or 0), "fg_qty": float(r[12] or 0)})
         return {"ok": True, "count": len(out), "items": out}
     finally:
         conn.close()
@@ -7136,7 +7148,7 @@ async def gc_get(gc_no: str):
             SELECT GC_NO, CONVERT(varchar(10), GC_DD, 120), CONVERT(varbinary(60), PRD_NO),
                    CONVERT(varbinary(60), STAGE_PRD), PROC_CODE, PROC_NAME, QTY,
                    CONVERT(varbinary(30), CUS_NO), CONVERT(varbinary(90), ORDER_NO),
-                   USR, REM, STATUS
+                   USR, REM, STATUS, ISNULL(FG_QTY, 0)
             FROM GC_HEAD WITH(NOLOCK) WHERE GC_NO = %s
         """, (gc_no,))
         r = cur.fetchone()
@@ -7144,7 +7156,8 @@ async def gc_get(gc_no: str):
             return {"ok": False, "error": "工卡不存在"}
         hdr = {"gc_no": r[0], "gc_dd": r[1], "prd_no": g(r[2]), "stage_prd": g(r[3]),
                "proc": r[4], "proc_name": r[5], "qty": float(r[6] or 0),
-               "cus_no": g(r[7]), "order_no": g(r[8]), "usr": r[9], "rem": r[10], "status": int(r[11] or 0)}
+               "cus_no": g(r[7]), "order_no": g(r[8]), "usr": r[9], "rem": r[10], "status": int(r[11] or 0),
+               "fg_qty": float(r[12] or 0)}
         c = _gc_load(conn)
         # 卡头存的是内部客户编号(10003)，打印时换成人认的「简称(代号)」
         if hdr["cus_no"]:

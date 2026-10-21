@@ -651,29 +651,46 @@
     #printArea .pr-oc table.oc-tb td.l{text-align:left}
     #printArea .pr-oc .oc-sign{display:flex;justify-content:space-between;margin-top:1.8mm;font-size:9.5pt}
     /* 工卡 145×210mm 竖版（MAK 2026-10-20 改纸型，无图标） */
-    #printArea .pr-gc{font-family:"SimSun","宋体",serif;color:#000;font-size:10pt;line-height:1.32}
-    #printArea .pr-gc .gc-co{text-align:center;font-size:12pt;font-weight:700}
-    #printArea .pr-gc .gc-title{text-align:center;font-size:17pt;font-weight:700;letter-spacing:6px;margin:0.6mm 0 1.6mm}
-    #printArea .pr-gc .gc-hd{display:flex;justify-content:space-between;flex-wrap:wrap;gap:0.8mm 4mm;font-size:9.4pt;margin-bottom:1mm}
+    #printArea .pr-gc{font-family:"SimSun","宋体",serif;color:#000;font-size:11pt;line-height:1.32}
+    #printArea .pr-gc .gc-co{text-align:center;font-size:13pt;font-weight:700}
+    #printArea .pr-gc .gc-title{text-align:center;font-size:18pt;font-weight:700;letter-spacing:6px;margin:0.6mm 0 1.6mm}
+    #printArea .pr-gc .gc-hd{display:flex;justify-content:space-between;flex-wrap:wrap;gap:0.8mm 4mm;font-size:10.4pt;margin-bottom:1mm}
     #printArea .pr-gc .gc-hd span{white-space:nowrap}
     #printArea .pr-gc table.gc-info{width:100%;border-collapse:collapse;margin-bottom:2mm;table-layout:fixed}
     #printArea .pr-gc table.gc-info th{width:24mm;background:#f4f4f4;border:0.5pt solid #000;font-weight:400;
-            font-size:9.2pt;padding:0.8mm}
-    #printArea .pr-gc table.gc-info td{border:0.5pt solid #000;padding:0.6mm 1.1mm;font-size:9.4pt}
-    #printArea .pr-gc .gc-sub{font-size:10pt;font-weight:700;margin:1.4mm 0 0.9mm}
+            font-size:10.2pt;padding:0.8mm}
+    #printArea .pr-gc table.gc-info td{border:0.5pt solid #000;padding:0.6mm 1.1mm;font-size:10.5pt}
+    #printArea .pr-gc .gc-sub{font-size:11pt;font-weight:700;margin:1.4mm 0 0.9mm}
     #printArea .pr-gc table.gc-tb{width:100%;border-collapse:collapse;table-layout:fixed}
     #printArea .pr-gc table.gc-tb th,#printArea .pr-gc table.gc-tb td{border:0.5pt solid #000;padding:0.45mm 0.6mm;
-            font-size:8.6pt;line-height:1.12;word-break:break-all}
-    #printArea .pr-gc table.gc-tb th{background:#f4f4f4;font-weight:400;font-size:8.4pt}
+            font-size:9.6pt;line-height:1.12;word-break:break-all}
+    #printArea .pr-gc table.gc-tb th{background:#f4f4f4;font-weight:400;font-size:9.4pt}
     #printArea .pr-gc table.gc-tb td.c{text-align:center}
     #printArea .pr-gc table.gc-tb td.r{text-align:right}
-    #printArea .pr-gc .gc-verdict{margin-top:1.4mm;font-size:10.5pt;font-weight:700}
+    #printArea .pr-gc .gc-verdict{margin-top:1.4mm;font-size:11.5pt;font-weight:700}
     #printArea .pr-gc table.gc-fill{width:100%;border-collapse:collapse;margin-top:2mm}
     #printArea .pr-gc table.gc-fill th{width:22mm;background:#f4f4f4;border:0.5pt solid #000;font-weight:400;
-            font-size:9.2pt;padding:1.3mm 1mm;text-align:left}
+            font-size:10.2pt;padding:1.3mm 1mm;text-align:left}
     #printArea .pr-gc table.gc-fill td{border:0.5pt solid #000;padding:1.3mm 1mm}
     /* 材料少（1~2 行）时手填栏再放开一点，卡片不至于上密下空 */
-    #printArea .pr-gc.gc-roomy table.gc-fill th,#printArea .pr-gc.gc-roomy table.gc-fill td{padding:8mm 1mm}
+    #printArea .pr-gc.gc-roomy table.gc-fill th,#printArea .pr-gc.gc-roomy table.gc-fill td{padding:5.5mm 1mm}
+    /* 套打（A1）：预印卡 145×210，固定 6 行 × 9mm，只打值，表格线/字段名由印厂印
+       坐标全部毫米定位，改动必须同步改 backups/工卡_套打_印厂样张.html 的尺寸图 */
+    #printArea .pr-gc.gc-fix{position:relative;width:121mm;height:190mm;font-size:9.6pt;line-height:1.15}
+    #printArea .pr-gc.gc-fix .fx{position:absolute;left:0;width:121mm}
+    #printArea .pr-gc.gc-fix .fx-cont{top:11mm;left:auto;right:0;width:40mm;text-align:right;font-size:8pt;line-height:4mm}
+    #printArea .pr-gc.gc-fix .fx-hd1,#printArea .pr-gc.gc-fix .fx-hd2{font-size:11pt;line-height:5mm;height:5mm}
+    #printArea .pr-gc.gc-fix .fx-hd1{top:15mm}
+    #printArea .pr-gc.gc-fix .fx-hd2{top:20.5mm}
+    #printArea .pr-gc.gc-fix .fx-hd1 span,#printArea .pr-gc.gc-fix .fx-hd2 span{position:absolute;white-space:nowrap}
+    #printArea .pr-gc.gc-fix table{border-collapse:collapse;table-layout:fixed}
+    #printArea .pr-gc.gc-fix table th,#printArea .pr-gc.gc-fix table td{border:none!important;background:transparent!important;
+            height:9mm;line-height:9mm;padding:0 1mm;font-size:9.6pt;vertical-align:middle;
+            white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    #printArea .pr-gc.gc-fix .fx-info{top:26mm}
+    #printArea .pr-gc.gc-fix .fx-info td{font-size:10.5pt}
+    #printArea .pr-gc.gc-fix .fx-tb{top:76.5mm}
+    #printArea .pr-gc.gc-fix .fx-verdict{top:139.5mm;height:5mm;font-size:11pt;font-weight:700;line-height:5mm}
     /* 材料特别多时才压缩（纸高了，常规 8 行内都用原尺寸） */
     #printArea .pr-gc.gc-t1{font-size:8.4pt}
     #printArea .pr-gc.gc-t1 table.gc-info td{font-size:8.2pt;padding:0.8mm 1mm}
@@ -5891,7 +5908,7 @@ function renderGCList() {
 async function openGC(prd) {
   try {
     const d = await api(BASE + '/gc/chain?prd_no=' + encodeURIComponent(prd));
-    gcPrd = { prd: prd, name: (gcItems.find(x => x.prd === prd) || {}).name || '' };
+    gcPrd = { prd: prd, name: (gcItems.find(x => x.prd === prd) || {}).name || '', net: Number(d.qty) || 0 };
     gcStages = d.stages || [];
     gcCus = d.cus || ''; gcCusNo = d.cus_no || ''; gcOrder = d.order_no || '';
     // 默认选黑坯（MAK 最常用的工序）；没有黑坯再退到电镀/组装
@@ -5981,7 +5998,10 @@ function gcRenderModal() {
     <div style="padding:12px 18px;border-top:1px solid #e5e7eb;display:flex;justify-content:flex-end;gap:10px">
       <button onclick="document.getElementById('gcOverlay').remove()" style="padding:9px 18px;border:1px solid #e5e7eb;border-radius:20px;background:#f9fafb;font-size:13px;cursor:pointer">取消</button>
       <button onclick="gcPreview()" style="padding:9px 18px;background:#fff;color:#0f172a;border:1.5px solid var(--border);border-radius:20px;font-size:13px;font-weight:600;cursor:pointer">👁 预览</button>
+      <button onclick="gcPreviewFix()" style="padding:9px 14px;background:#fff;color:#0f172a;border:1.5px solid var(--border);border-radius:20px;font-size:13px;font-weight:600;cursor:pointer" title="按预印卡 6 行固定版式预览">👁 套打预览</button>
+      <button onclick="gcPrintFixed()" style="padding:9px 18px;background:#0f172a;color:#fff;border:none;border-radius:20px;font-size:13px;font-weight:600;cursor:pointer">🖨 套打 6 行</button>
       <button onclick="gcPrint()" style="padding:9px 22px;background:var(--green);color:#fff;border:none;border-radius:20px;font-size:13px;font-weight:600;cursor:pointer">🖨 开卡并打印</button>
+      <button onclick="gcCalDlg()" style="padding:9px 12px;background:#fff;color:#64748b;border:1.5px solid var(--border);border-radius:20px;font-size:13px;cursor:pointer" title="套打校准">⚙</button>
     </div>
   </div>`;
   document.body.appendChild(ov);
@@ -6021,7 +6041,7 @@ function gcPreview() {
     gc_dd: new Date().toISOString().slice(0, 10),
     cus_disp: ((($id('gcCus') || {}).value || '').trim() || gcCus),
     order_no: ((($id('gcOrder') || {}).value || '').trim()),
-    prd_no: gcPrd.prd, prd_name: gcPrd.name || '',
+    prd_no: gcPrd.prd, prd_name: gcPrd.name || '', fg_qty: Number(gcPrd.net) || 0,
     stage_prd: s.prd, stage_ut: s.ut, stage_spc: s.spc, stage: st,
   };
   gcRenderPrint(head, '预览·未开卡', qty, pname);
@@ -6042,13 +6062,14 @@ function gcAskExisting(ex, qty, pname) {
     </div>
     <div style="display:flex;flex-direction:column;gap:8px;margin-top:14px">
       <button onclick="document.getElementById('gcDupOverlay').remove();gcReprint('${escJs(ex.gc_no)}')" style="padding:11px;border-radius:10px;border:1.5px solid #bfdbfe;background:#EFF6FF;color:#1e40af;font-size:13px;font-weight:600;cursor:pointer">🖨 重打已有的 ${prE(ex.gc_no)}</button>
-      <button onclick="document.getElementById('gcDupOverlay').remove();gcPrint(true)" style="padding:11px;border-radius:10px;border:1.5px solid #86efac;background:#f0fdf4;color:#15803d;font-size:13px;font-weight:600;cursor:pointer">＋ 还是新开一张</button>
+      <button onclick="document.getElementById('gcDupOverlay').remove();gcPrint(true,gcPrintMode)" style="padding:11px;border-radius:10px;border:1.5px solid #86efac;background:#f0fdf4;color:#15803d;font-size:13px;font-weight:600;cursor:pointer">＋ 还是新开一张</button>
       <button onclick="document.getElementById('gcDupOverlay').remove()" style="padding:11px;border-radius:10px;border:1px solid var(--border);background:#fff;color:#475569;font-size:13px;cursor:pointer">取消</button>
     </div></div>`;
   document.body.appendChild(ov);
 }
 
-async function gcPrint(forceNew) {
+async function gcPrint(forceNew, mode) {
+  gcPrintMode = mode || 'full';
   const s = gcStages[gcStageIdx];
   if (!s || !gcPrd) return;
   const qty = Number(($id('gcQty') || {}).value || s.qty);
@@ -6063,12 +6084,17 @@ async function gcPrint(forceNew) {
   try {
     const res = await api(BASE + '/gc/create', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prd_no: gcPrd.prd, stage_prd: s.prd, proc: s.proc, proc_name: pname, qty: qty,
+      body: JSON.stringify({ prd_no: gcPrd.prd, stage_prd: s.prd, proc: s.proc, proc_name: pname, qty: qty, fg_qty: Number(gcPrd.net) || 0,
         cus_no: gcCusNo || (($id('gcCus') || {}).value || '').trim(), order_no: (($id('gcOrder') || {}).value || '').trim() })
     });
     if (!res || res.ok === false || res.error) throw new Error((res && res.error) || '开卡失败');
     const g = await api(BASE + '/gc/' + encodeURIComponent(res.gc_no));
-    gcRenderPrint(g.head, res.gc_no, qty, pname);
+    if (gcPrintMode === 'fix') {
+      const d = gcFixData();
+      prOut(gcFixHtml(d || {qty: qty, pname: pname, st: s, head: g.head}, res.gc_no), gcPaperFix());
+    } else {
+      gcRenderPrint(g.head, res.gc_no, qty, pname);
+    }
     setTimeout(gcRenderModal, 200);
   } catch (e) { toast('⚠️ ' + (e.message || e)); }
 }
@@ -6092,13 +6118,13 @@ function gcRenderPrint(h, gcNo, qty, pname) {
       <tr><th>成品名称</th><td colspan="3">${prE(h.prd_name || '')}</td></tr>
       <tr><th>本工序品号</th><td>${prE(h.stage_prd)}</td><th>单位</th><td>${prE(h.stage_ut || '')}</td></tr>
       <tr><th>本工序名称</th><td colspan="3">${prE(st.name || '')}</td></tr>
-      <tr><th>本工序数量</th><td>${prE(gcNum(qty))}</td><th>规格</th><td>${prE(h.stage_spc || '')}</td></tr>
+      <tr><th>本工序数量</th><td>${prE(gcNum(qty))}</td><th>成品需求</th><td>${h.fg_qty ? prE(gcNum(h.fg_qty)) : '—'}</td></tr>
 
     </table>
     <div class="gc-sub">投入物料</div>
     <table class="gc-tb"><thead><tr>
-      <th style="width:4%">#</th><th style="width:24%">物料品号</th><th style="width:29%">名称</th><th style="width:6%">单位</th>
-      <th style="width:10%">每件用量</th><th style="width:10%">需要量</th><th style="width:10%">库存</th><th style="width:7%">缺口</th>
+      <th style="width:4%">#</th><th style="width:23%">物料品号</th><th style="width:28%">名称</th><th style="width:6%">单位</th>
+      <th style="width:10%">每件用量</th><th style="width:12%">需要量</th><th style="width:10%">库存</th><th style="width:7%">缺口</th>
     </tr></thead><tbody>${rows}</tbody></table>
     <div class="gc-verdict">${verdict}</div>
     <table class="gc-fill">
@@ -6115,6 +6141,127 @@ function gcRenderPrint(h, gcNo, qty, pname) {
   if (_lvl) html = html.replace('class="pr-doc pr-gc"', 'class="pr-doc pr-gc gc-t' + _lvl + '"');
   else if (_n <= 2) html = html.replace('class="pr-doc pr-gc"', 'class="pr-doc pr-gc gc-roomy"');
   prOut(html, PR_PAPER.gc);
+}
+
+// ===== 套打（A1）：预印卡 145×210，固定 6 行 × 9mm，只打值（表格线/字段名由印厂印）=====
+// 坐标改动必须同步改 backups/工卡_套打_印厂样张.html 的尺寸图，否则印一批废一批
+const GC_FIX = {per: 6, dx: 0, dy: 0};
+try { const c = JSON.parse(localStorage.getItem('gcFixCal') || '{}'); GC_FIX.dx = +c.dx || 0; GC_FIX.dy = +c.dy || 0; } catch (e) {}
+let gcPrintMode = 'full';   // 'full' 整张打印 / 'fix' 套打
+
+function gcFixData() {
+  const s = gcStages[gcStageIdx];
+  if (!s || !gcPrd) return null;
+  const qty = Number(($id('gcQty') || {}).value || s.qty);
+  if (!qty) { toast('⚠️ 数量不能为空'); return null; }
+  const pname = (($id('gcProcName') || {}).value || s.proc_name || '').trim();
+  const inputs = (s.inputs || []).map(it => {
+    const need = (Number(it.per) || 0) * qty;
+    return Object.assign({}, it, {need: need, gap: Math.max(0, need - (Number(it.stock) || 0)),
+      can: (Number(it.per) || 0) > 0 ? Math.floor((Number(it.stock) || 0) / Number(it.per)) : 0});
+  });
+  const can = inputs.length ? Math.min.apply(null, inputs.map(x => x.can)) : 0;
+  const st = Object.assign({}, s, {inputs: inputs, can: can, ok: inputs.length > 0 && can >= qty - 1e-6});
+  return {qty: qty, pname: pname, st: st, head: {
+    gc_dd: new Date().toISOString().slice(0, 10),
+    cus_disp: ((($id('gcCus') || {}).value || '').trim() || gcCus),
+    order_no: ((($id('gcOrder') || {}).value || '').trim()),
+    prd_no: gcPrd.prd, prd_name: gcPrd.name || '', fg_qty: Number(gcPrd.net) || 0,
+    stage_prd: s.prd, stage_ut: s.ut, stage_spc: s.spc, stage: st}};
+}
+
+function gcFixHtml(d, gcNo) {
+  const st = d.st, head = d.head, inputs = st.inputs || [];
+  const per = GC_FIX.per, np = Math.max(1, Math.ceil(inputs.length / per));
+  const verdict = st.ok ? `齐料，可做 ${gcNum(st.can)} ${prE(st.ut || '')}`
+                        : `缺料，最多做 ${gcNum(st.can)}，缺 ${gcNum(Math.max(0, d.qty - (st.can || 0)))}`;
+  const out = [];
+  for (let p = 0; p < np; p++) {
+    const sl = inputs.slice(p * per, (p + 1) * per);
+    let rows = '';
+    for (let i = 0; i < per; i++) {
+      const it = sl[i], no = p * per + i + 1;   // 行号续排：第 2 页从 7 开始
+      rows += it
+        ? `<tr><td class="c">${no}</td><td>${prE(it.prd)}</td><td>${prE(it.name || '')}</td><td class="c">${prE(it.ut || '')}</td><td class="r">${prE(gcP(it.per))}</td><td class="r">${prE(ocN(it.need))}</td><td class="r">${prE(ocN(it.stock))}</td><td class="r">${prE(ocN(it.gap))}</td></tr>`
+        : `<tr class="blank"><td class="c">${no}</td><td colspan="7"></td></tr>`;
+    }
+    out.push(`<div class="pr-doc pr-gc gc-fix" style="${p < np - 1 ? 'page-break-after:always;' : ''}">
+      ${p ? `<div class="fx fx-cont">续 ${p + 1}/${np}</div>` : ''}
+      <div class="fx fx-hd1"><span style="left:16mm">${prE(gcNo)}</span><span style="left:77mm">${prE(ocD(head.gc_dd))}</span></div>
+      <div class="fx fx-hd2"><span style="left:11.5mm">${prE(head.cus_disp || '')}</span><span style="left:63.5mm">${prE(head.order_no || '')}</span></div>
+      <table class="fx fx-info"><colgroup><col style="width:22mm"><col style="width:38.5mm"><col style="width:22mm"><col style="width:38.5mm"></colgroup>
+        <tr><td></td><td>${prE(head.prd_no)}</td><td></td><td>${prE(d.pname || st.proc_name || '')}</td></tr>
+        <tr><td></td><td colspan="3">${prE(head.prd_name || '')}</td></tr>
+        <tr><td></td><td>${prE(head.stage_prd)}</td><td></td><td>${prE(head.stage_ut || '')}</td></tr>
+        <tr><td></td><td colspan="3">${prE(st.name || '')}</td></tr>
+        <tr><td></td><td>${prE(gcNum(d.qty))}</td><td></td><td>${head.fg_qty ? prE(gcNum(head.fg_qty)) : '—'}</td></tr>
+      </table>
+      <table class="fx fx-tb"><colgroup><col style="width:4.84mm"><col style="width:32.67mm"><col style="width:29.72mm"><col style="width:9mm"><col style="width:10.89mm"><col style="width:13.31mm"><col style="width:10.89mm"><col style="width:9.68mm"></colgroup>
+        <thead><tr><th></th><th></th><th></th><th></th><th></th><th></th><th></th><th></th></tr></thead>
+        <tbody>${rows}</tbody></table>
+      <div class="fx fx-verdict">${verdict}</div>
+    </div>`);
+  }
+  return out.join('');
+}
+
+// 校准 = 平移 @page 边距（左右/上下同时相反方向加减，可印区仍 121×190），
+// 不用 left/top 平移：那会被页边裁掉
+function gcPaperFix() {
+  const dx = GC_FIX.dx, dy = GC_FIX.dy;
+  return {size: PR_PAPER.gc.size,
+          margin: `${(11 + dy).toFixed(1)}mm ${(12 - dx).toFixed(1)}mm ${(9 - dy).toFixed(1)}mm ${(12 + dx).toFixed(1)}mm`};
+}
+
+// 套打预览（不写库、不取号）
+function gcPreviewFix() {
+  const d = gcFixData();
+  if (!d) return;
+  prOut(gcFixHtml(d, '预览·未开卡'), gcPaperFix());
+}
+
+// 套打开卡并打印（与整张打印同一开卡流程，只是渲染成固定 6 行）
+function gcPrintFixed() {
+  gcPrint(false, 'fix');
+}
+
+// 校准页：打在预印卡上，外框应与卡上印的框重合；偏了就把毫米数填回去
+function gcCalSheet() {
+  let ticks = '';
+  for (let x = 12; x <= 133; x += 10) ticks += `<div style="position:absolute;left:${x}mm;top:11mm;width:0.2mm;height:4mm;background:#000"></div>`;
+  for (let y = 11; y <= 201; y += 10) ticks += `<div style="position:absolute;left:12mm;top:${y}mm;height:0.2mm;width:4mm;background:#000"></div>`;
+  const html = `<div class="pr-doc" style="position:relative;width:121mm;height:190mm;font-family:'SimSun',serif">
+    <div style="position:absolute;left:0;top:0;width:121mm;height:190mm;border:0.3mm solid #000"></div>
+    <div style="position:absolute;left:60mm;top:0;width:0.2mm;height:190mm;background:#000"></div>
+    <div style="position:absolute;left:0;top:94.5mm;width:121mm;height:0.2mm;background:#000"></div>
+    ${ticks}
+    <div style="position:absolute;left:2mm;top:2mm;font-size:9pt">校准页：外框应压在预印卡的外框上（距纸边 上11 / 下9 / 左12 / 右12mm）</div>
+    <div style="position:absolute;left:2mm;top:180mm;font-size:9pt">偏右/偏下就填正数，偏左/偏上填负数，单位 mm，可填 0.5</div>
+  </div>`;
+  prOut(html, PR_PAPER.gc);
+}
+function gcCalSave() {
+  GC_FIX.dx = Number(($id('calDx') || {}).value || 0);
+  GC_FIX.dy = Number(($id('calDy') || {}).value || 0);
+  localStorage.setItem('gcFixCal', JSON.stringify({dx: GC_FIX.dx, dy: GC_FIX.dy}));
+  const o = $id('gcCalOverlay'); if (o) o.remove();
+  toast(`✔ 校准已保存 X ${GC_FIX.dx}mm / Y ${GC_FIX.dy}mm`);
+}
+function gcCalDlg() {
+  const old = $id('gcCalOverlay'); if (old) old.remove();
+  const ov = document.createElement('div');
+  ov.id = 'gcCalOverlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+  ov.innerHTML = `<div style="background:#fff;border-radius:14px;padding:18px;width:330px;font-size:13px">
+    <div style="font-weight:700;font-size:15px;margin-bottom:4px">套打校准</div>
+    <div style="color:#64748b;line-height:1.5;margin-bottom:10px">先点「打校准页」打在预印卡上，看外框比卡上印的框偏了多少毫米；偏右/偏下填正数。</div>
+    <label style="display:block">横向 X（mm）<input id="calDx" type="number" step="0.5" value="${GC_FIX.dx}" style="width:100%;padding:7px;margin:4px 0 10px;border:1px solid var(--border);border-radius:8px"></label>
+    <label style="display:block">纵向 Y（mm）<input id="calDy" type="number" step="0.5" value="${GC_FIX.dy}" style="width:100%;padding:7px;margin:4px 0 10px;border:1px solid var(--border);border-radius:8px"></label>
+    <div style="display:flex;gap:8px">
+      <button onclick="gcCalSheet()" style="flex:1;padding:9px;border-radius:9px;border:1px solid var(--border);background:#f8fafc;cursor:pointer;font-size:13px">打校准页</button>
+      <button onclick="gcCalSave()" style="flex:1;padding:9px;border-radius:9px;border:none;background:var(--green);color:#fff;font-weight:600;cursor:pointer;font-size:13px">保存</button>
+    </div></div>`;
+  document.body.appendChild(ov);
 }
 
 loadQts();
