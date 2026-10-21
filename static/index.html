@@ -589,7 +589,9 @@
       body > *:not(#printArea){display:none !important}
       #printArea{display:block !important;position:static !important;width:auto !important;color:#000}
     }
-    #printArea .pr-doc{font-family:"Times New Roman","宋体",serif;color:#000;font-size:10pt;line-height:1.28}
+    /* Linux/无宋体环境的兜底字：只能用 TrueType 轮廓字体（文泉驿正黑），CFF/OTF 的 Noto Serif CJK 会被
+       Chromium 导出成 Type3 字体 → 别的阅读器里字形全错（2026-10-21 实测 坯→环、*→"） */
+    #printArea .pr-doc{font-family:"Times New Roman","宋体","WenQuanYi Zen Hei",serif;color:#000;font-size:10pt;line-height:1.28}
     #printArea .pr-co{font-size:15pt;font-weight:700;text-align:center;letter-spacing:2px}
     #printArea .pr-tel{font-size:8.5pt;text-align:center;margin-top:0.4mm}
     #printArea .pr-addr{font-size:8.5pt;text-align:center;margin-bottom:2.6mm}
@@ -632,7 +634,7 @@
     #printArea .pr-doc.pr-lg table.pr-tb td.nm .cl{font-size:9pt;line-height:1.3}
     #printArea .pr-doc.pr-lg table.pr-tb td.sm .cl{font-size:9pt;line-height:1.22;white-space:normal}
     /* 出仓单：照 MAK 原单样张（出仓单打印.png）复刻 */
-    #printArea .pr-oc{font-family:"SimSun","宋体",serif;color:#000;font-size:10pt;line-height:1.2}
+    #printArea .pr-oc{font-family:"SimSun","宋体","WenQuanYi Zen Hei",serif;color:#000;font-size:10pt;line-height:1.2}
     #printArea .pr-oc .oc-co{text-align:center;font-size:14pt;font-weight:700;letter-spacing:1px;line-height:1.1}
     #printArea .pr-oc .oc-line{text-align:center;font-size:9pt}
     #printArea .pr-oc .oc-title{text-align:center;font-size:14pt;font-weight:700;margin:0.8mm 0 1mm;letter-spacing:2px}
@@ -651,7 +653,7 @@
     #printArea .pr-oc table.oc-tb td.l{text-align:left}
     #printArea .pr-oc .oc-sign{display:flex;justify-content:space-between;margin-top:1.8mm;font-size:9.5pt}
     /* 工卡 145×210mm 竖版（MAK 2026-10-20 改纸型，无图标） */
-    #printArea .pr-gc{font-family:"SimSun","宋体","AR PL UMing CN","Times New Roman",serif;color:#000;font-size:11pt;line-height:1.32}
+    #printArea .pr-gc{font-family:"SimSun","宋体","WenQuanYi Zen Hei",serif;color:#000;font-size:11pt;line-height:1.32}
     #printArea .pr-gc .gc-co{text-align:center;font-size:13pt;font-weight:700}
     #printArea .pr-gc .gc-title{text-align:center;font-size:18pt;font-weight:700;letter-spacing:6px;margin:0.6mm 0 1.6mm}
     #printArea .pr-gc .gc-hd{display:flex;justify-content:space-between;flex-wrap:wrap;gap:0.8mm 4mm;font-size:10.4pt;margin-bottom:1mm}
@@ -690,15 +692,21 @@
             white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     #printArea .pr-gc.gc-fix .fx-info{top:15.3mm}
     #printArea .pr-gc.gc-fix .fx-info td{font-size:10.5pt;height:9mm;padding:0 1mm}
-    /* 长名称格（成品名称/本工序名称，colspan=3 = 99mm）：允许两行，别印成「…」 */
-    #printArea .pr-gc.gc-fix .fx-info td.w2{white-space:normal;font-size:9.6pt;line-height:4.2mm;max-height:8.6mm;overflow:hidden}
+    /* 长名称格（成品名称/本工序名称，colspan=3 = 99mm）：两行封顶。
+       ⚠ max-height 在 table-cell 上无效 → 行会被撑高把下面几行顶乱（实测 本工序数量 压到「投入物料」上），
+       必须用内层 div 做 -webkit-line-clamp。 */
+    #printArea .pr-gc.gc-fix .fx-info td.w2{white-space:normal;font-size:9.6pt;line-height:4.2mm;height:9mm;overflow:hidden}
+    /* cl2 必须自己写 line-height/font-size：注入层的 td{line-height:8.7mm !important} 会把它撑成 2×8.7=17.4mm */
+    #printArea .pr-gc.gc-fix .fx-info td.w2 .cl2{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
+            overflow:hidden;line-height:4.2mm;font-size:9.6pt}
     #printArea .pr-gc.gc-fix .fx-tb{top:65.2mm}
     #printArea .pr-gc.gc-fix .fx-tb thead th{height:9mm;font-size:9pt;text-align:center}
     /* 名称格：36mm / 7.4pt / 最多 4 行（3.25mm × 4 = 13.0mm ≤ 槽高 13.3） */
     #printArea .pr-gc.gc-fix .fx-tb .nm{white-space:normal;font-size:7.4pt;line-height:3.25mm;overflow:hidden}
     #printArea .pr-gc.gc-fix .fx-tb .nm .cl{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
     #printArea .pr-gc.gc-fix .fx-tb td.c{text-align:center}
-    #printArea .pr-gc.gc-fix .fx-tb td.no{font-size:7.5pt}
+    /* 行号列只有 4mm：两位行号 10/11/12 要 7.5pt + 去掉左右内边距才放得下（7.5pt 保持基线 y≈90.25） */
+    #printArea .pr-gc.gc-fix .fx-tb td.no{font-size:7.5pt;padding:0}
     #printArea .pr-gc.gc-fix .fx-tb td.r{text-align:right}
     #printArea .pr-gc.gc-fix .fx-verdict{top:154mm;height:5mm;font-size:10.5pt;font-weight:700;line-height:5mm}
     /* 材料特别多时才压缩（纸高了，常规 8 行内都用原尺寸） */
@@ -6308,11 +6316,20 @@ function gcClean(n) {
 // 物料表列宽（mm，合计 121）：# · 品号 · 名称 · 单位 · 每件用量 · 需要量 · 库存 · 缺口
 const GC_COL = [4, 31, 36, 7, 8.5, 12, 11.5, 11];   // 方案A 定稿（MAK 2026-10-21 决策1 选 B：不加宽库存，接受缩字）
 // 数字/短文本自适应：按列可用宽选字号（8.5pt 起，最小 5.8pt）。
-// 字宽按 SimSun 实测「半角 0.176mm/pt、汉字 0.3528mm/pt」；无宋体的机器由 "AR PL UMing CN" 兜底（实测同宽）。
+// 半角字宽取 0.198mm/pt（= 本机实际用的 WenQuanYi Zen Hei 实测值；SimSun 是 0.176，宁可小 12% 也不能截字）。汉字 0.3528mm/pt。
 // MAK 的「≥7 位自动缩字」由这条统一实现：位数多了自然落到 7.x pt，但优先保证数字完整不被截。
-function gcW(t) { let w = 0; for (const ch of String(t == null ? '' : t)) w += /[\x00-\xff]/.test(ch) ? 0.20 : 0.353; return w; }
+// 字宽（mm/pt，WenQuanYi Zen Hei 实测）：数字/字母 0.215、逗号句点 0.105、其他半角 0.19、汉字 0.3528
+function gcW(t) {
+  let w = 0;
+  for (const ch of String(t == null ? '' : t)) {
+    w += /[0-9A-Za-z]/.test(ch) ? 0.215 : /[.,]/.test(ch) ? 0.105 : /[\x00-\xff]/.test(ch) ? 0.19 : 0.3528;
+  }
+  return w;
+}
+// 注意 maxPt 必须与 CSS 里该类单元格的实际 font-size 一致（物料表 = 9pt），
+// 否则「算出来放得下 → 不写 inline」但实际按 9pt 渲染 → 6 位数被省略号截掉（2026-10-21 实测 31,460 → 31,4…）
 function gcFit(t, wmm, maxPt, minPt, pad) {
-  const top = maxPt || 8.5, low = minPt || 5.8, avail = wmm - (pad == null ? 0.8 : pad);
+  const top = maxPt || 9, low = minPt || 5.8, avail = wmm - (pad == null ? 1.2 : pad);  // 留 1.2mm 余量：临界值上实测会被省略号吃掉
   let pt = top;
   while (pt > low && gcW(t) * pt > avail) pt -= 0.2;
   return pt >= top - 0.01 ? '' : ` style="font-size:${pt.toFixed(1)}pt"`;
@@ -6354,9 +6371,9 @@ function gcFixHtml(d, gcNo) {
       <div class="fx fx-hd2"><span style="left:11.5mm">${prE(head.cus_disp || '')}</span><span style="left:63.5mm">${prE(head.order_no || '')}</span></div>
       <table class="fx fx-info"><colgroup><col style="width:22mm"><col style="width:38.5mm"><col style="width:22mm"><col style="width:38.5mm"></colgroup>
         <tr><td></td><td${gcFit(head.prd_no, 38.5, 10.5, 5.8, 2.2)}>${prE(head.prd_no)}</td><td></td><td${gcFit(d.pname || st.proc_name || '', 38.5, 10.5, 5.8, 2.2)}>${prE(d.pname || st.proc_name || '')}</td></tr>
-        <tr><td></td><td class="w2" colspan="3"${gcInfoFit(gcClean(head.prd_name || ''))}>${prE(gcClean(head.prd_name || ''))}</td></tr>
+        <tr><td></td><td class="w2" colspan="3"${gcInfoFit(gcClean(head.prd_name || ''))}><div class="cl2">${prE(gcClean(head.prd_name || ''))}</div></td></tr>
         <tr><td></td><td${gcFit(head.stage_prd, 38.5, 10.5, 5.8, 2.2)}>${prE(head.stage_prd)}</td><td></td><td${gcFit(head.stage_ut || '', 38.5, 10.5, 5.8, 2.2)}>${prE(head.stage_ut || '')}</td></tr>
-        <tr><td></td><td class="w2" colspan="3"${gcInfoFit(gcClean(st.name || ''))}>${prE(gcClean(st.name || ''))}</td></tr>
+        <tr><td></td><td class="w2" colspan="3"${gcInfoFit(gcClean(st.name || ''))}><div class="cl2">${prE(gcClean(st.name || ''))}</div></td></tr>
         <tr><td></td><td${gcFit(gcNum(d.qty), 38.5, 10.5, 5.8, 2.2)}>${prE(gcNum(d.qty))}</td><td></td><td${gcFit(head.fg_qty ? gcNum(head.fg_qty) : '—', 38.5, 10.5, 5.8, 2.2)}>${head.fg_qty ? prE(gcNum(head.fg_qty)) : '—'}</td></tr>
       </table>
       <table class="fx fx-tb"><colgroup><col style="width:4mm"><col style="width:31mm"><col style="width:36mm"><col style="width:7mm"><col style="width:8.5mm"><col style="width:12mm"><col style="width:11.5mm"><col style="width:11mm"></colgroup>
@@ -6399,7 +6416,7 @@ function gcCalSheet() {
     slots += `<div style="position:absolute;left:0;top:${y}mm;width:121mm;height:0.15mm;background:#c00"></div>`
            + `<div style="position:absolute;left:113mm;top:${(y - 1.5).toFixed(1)}mm;font-size:6pt;color:#c00">${y}</div>`;
   });
-  const html = `<div class="pr-doc" style="position:relative;width:121mm;height:190mm;font-family:'SimSun',serif">
+  const html = `<div class="pr-doc" style="position:relative;width:121mm;height:190mm">
     <div style="position:absolute;left:0;top:0;width:121mm;height:190mm;border:0.3mm solid #000"></div>
     <div style="position:absolute;left:60.5mm;top:0;width:0.2mm;height:190mm;background:#000"></div>
     <div style="position:absolute;left:0;top:95mm;width:121mm;height:0.2mm;background:#000"></div>
