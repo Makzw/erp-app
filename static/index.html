@@ -2003,7 +2003,7 @@ function renderCompletionList() {
       <td style="padding:8px 10px;font-size:12px;text-align:center;color:var(--sub)">${highlight(t.ic_dd || '—', compQ)}</td>
       <td style="padding:8px 10px;font-size:12px">${highlight(t.prd_no, compQ)}</td>
       <td style="padding:8px 10px;font-size:13px;color:var(--name);max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${fmt(t.prd_name||'')}">${highlight(t.prd_name||'', compQ)}</td>
-      <td style="padding:8px 10px;font-size:12px;text-align:right;color:var(--sub)">${fmtNum(t.dzhw)}</td>
+      <td style="padding:8px 10px;font-size:12px;text-align:right;color:var(--sub)">${fmtNum(t.jzhw)}</td>
       <td style="padding:8px 10px;font-size:12px;text-align:center">${highlight(t.wh1_name||t.wh1||'', compQ)}</td>
       <td style="padding:8px 10px;font-size:12px;text-align:center">${highlight(t.ref||'', compQ)}</td>
       <td style="padding:8px 10px;font-size:12px;text-align:center;color:var(--orange)">${highlight(t.ddjh||'', compQ)}</td>
@@ -2049,7 +2049,7 @@ function renderCompletionList() {
       <td style="padding:8px 10px;font-size:12px;text-align:center;color:#4d7c0f">${highlight(t.ic_dd || '—', compQ)}</td>
       <td style="padding:8px 10px;font-size:12px">${highlight(t.prd_no, compQ)}</td>
       <td style="padding:8px 10px;font-size:13px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${fmt(t.prd_name||'')}">${highlight(t.prd_name||'', compQ)}</td>
-      <td style="padding:8px 10px;font-size:12px;text-align:right;color:#4d7c0f">${fmtNum(t.dzhw)}</td>
+      <td style="padding:8px 10px;font-size:12px;text-align:right;color:#4d7c0f">${fmtNum(t.jzhw)}</td>
       <td style="padding:8px 10px;font-size:12px;text-align:center">${highlight(t.wh1_name||t.wh1||'', compQ)}</td>
       <td style="padding:8px 10px;font-size:12px;text-align:center">${highlight(t.ref||'', compQ)}</td>
       <td style="padding:8px 10px;font-size:12px;text-align:center">${highlight(t.ddjh||'', compQ)}</td>
@@ -2083,7 +2083,7 @@ ${stashedHtml}
         <th style="padding:8px 10px;text-align:center;font-size:11px;color:var(--sub);border-bottom:1px solid var(--border)">调拨日期</th>
         <th style="padding:8px 10px;text-align:left;font-size:11px;color:var(--sub);border-bottom:1px solid var(--border)">品号</th>
         <th style="padding:8px 10px;text-align:left;font-size:11px;color:var(--sub);border-bottom:1px solid var(--border)">品名</th>
-        <th style="padding:8px 10px;text-align:right;font-size:11px;color:var(--sub);border-bottom:1px solid var(--border)">单重</th>
+        <th style="padding:8px 10px;text-align:right;font-size:11px;color:var(--sub);border-bottom:1px solid var(--border)">净重</th>
         <th style="padding:8px 10px;text-align:center;font-size:11px;color:var(--sub);border-bottom:1px solid var(--border)">仓</th>
         <th style="padding:8px 10px;text-align:center;font-size:11px;color:var(--sub);border-bottom:1px solid var(--border)">指令单</th>
         <th style="padding:8px 10px;text-align:center;font-size:11px;color:var(--sub);border-bottom:1px solid var(--border)">外发计划</th>
@@ -2325,7 +2325,7 @@ async function openCompletionModal(icNo, prdNo) {
     +   '<div style="padding:14px 20px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
     +     '<div style="flex:1;font-size:15px;font-weight:700">\u9009\u62e9\u6210\u54c1'
     +       '<span style="font-size:12px;font-weight:400;color:#6b7280;margin-left:10px">\u8c03\u62e8\u5355 ' + fmt(icNo) + ' \u2014 \u6750\u6599 ' + fmt(matPrd)
-    +         '<b style="margin-left:10px;color:#1d4ed8">\u5355\u91cd ' + fmtNum(matRec.dzhw) + ' g</b>'
+    +         '<b style="margin-left:10px;color:#1d4ed8">\u51c0\u91cd ' + fmtNum(matRec.jzhw) + ' kg</b>'
     +         '<span style="margin-left:8px">\u6570\u91cf ' + fmtNum(matRec.total_qty) + '</span></span>'
     +     '</div>'
     +     '<button onclick="document.getElementById(\'cmOverlay\').remove()" style="padding:5px 12px;border:1px solid #e5e7eb;border-radius:20px;background:#f9fafb;font-size:12px;cursor:pointer">\u53d6\u6d88</button>'
