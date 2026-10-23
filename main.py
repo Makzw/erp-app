@@ -2970,8 +2970,11 @@ async def list_pos_unreceived(
         SELECT p.OS_NO, p.ITM, p.OS_DD, p.CUS_NAME, p.PRD_NO, p.PRD_NAME,
                p.SPC, p.UT, p.QTY, p.UP, p.AMT, p.EST_DD, p.指令单号,
                p.请购数量, p.PS, p.PSQTY, p.PO, p.POQTY, p.客户代号,
-               ISNULL(p.QTY, 0) - ISNULL(p.PSQTY, 0) AS 未回数量
+               ISNULL(p.QTY, 0) - ISNULL(p.PSQTY, 0) AS 未回数量,
+               ISNULL(st.STK, 0) AS STK
         FROM VW_POS p WITH (NOLOCK)
+        LEFT JOIN (SELECT PRD_NO, SUM(QTY_WH) AS STK FROM VW_STOCK_DETAIL2 WITH (NOLOCK)
+                   GROUP BY PRD_NO) st ON st.PRD_NO = p.PRD_NO
         WHERE ISNULL(p.USABLE, 1) = 1
           AND ISNULL(p.CLS_ID, 0) = 0
           AND ISNULL(p.PS, 1) <> 1
@@ -3018,6 +3021,7 @@ async def list_pos_unreceived(
         "poqty":      fv(r[17]),
         "customer":   gv(r[18]),
         "unreceived":  fv(r[19]),
+        "stock":      fv(r[20]),
     } for r in rows]
 
     return {"items": items, "total": total}
@@ -3137,13 +3141,16 @@ async def ps_in(db: str = Query(default="c041"),
         base = ("FROM PSS x WITH (NOLOCK)"
                 " LEFT JOIN POS p WITH (NOLOCK)"
                 "   ON RTRIM(p.OS_NO) + RIGHT('000' + CAST(p.ITM AS varchar(10)), 3) = RTRIM(x.SO_NO_ITM)"
+                " LEFT JOIN (SELECT PRD_NO, SUM(QTY_WH) AS STK FROM VW_STOCK_DETAIL2 WITH (NOLOCK)"
+                "            GROUP BY PRD_NO) st ON st.PRD_NO = x.PRD_NO"
                 " WHERE x.PS_ID='PS' AND ISNULL(x.USABLE,1)=1 AND ISNULL(x.[删除],0)=0"
                 + ((" AND " + " AND ".join(where)) if where else ""))
         cur.execute("SELECT COUNT(*) " + base, tuple(params))
         total = int(cur.fetchone()[0] or 0)
         cur.execute("""SELECT TOP 1000 x.PS_NO, x.PS_DD, x.CUS_NO, x.CUS_NAME, x.PRD_NO, x.PRD_NAME,
                               x.SPC, x.UT, x.QTY, x.WH, x.REF_ITM, x.[指令单号], x.单重, x.净重, x.REM1,
-                              p.CUS_NO AS CUST_NO, p.CUS_NAME AS CUST_NAME
+                              p.CUS_NO AS CUST_NO, p.CUS_NAME AS CUST_NAME,
+                              ISNULL(st.STK, 0) AS STK
                        """ + base + " ORDER BY x.PS_DD DESC, x.PS_NO DESC, x.ITM", tuple(params))
         rows = cur.fetchall()
     finally:
@@ -3165,7 +3172,7 @@ async def ps_in(db: str = Query(default="c041"),
             "prd_no": g(r[4]), "prd_name": g(r[5]), "spc": g(r[6]), "ut": g(r[7]),
             "qty": num(r[8]), "wh": g(r[9]), "ref_itm": g(r[10]), "order_no": g(r[11]),
             "dz": num(r[12]), "jz": num(r[13]), "rem1": g(r[14]),
-            "cust_no": g(r[15]), "cust_name": g(r[16]),
+            "cust_no": g(r[15]), "cust_name": g(r[16]), "stock": num(r[17]),
         })
     return {"items": items, "total": total, "days": days, "q": q,
             "customer": customer, "supplier": supplier, "order_no": order_no,

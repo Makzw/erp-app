@@ -1222,6 +1222,7 @@ function renderPosUnreceived(items) {
         </div>
         <div class="qts-row-foot">
           <span>未回: <b>${r.unreceived} ${fmt(r.ut)}</b></span>
+          <span style="color:${parseFloat(r.stock||0)>0?'var(--green)':'var(--sub)'}">库存: <b>${fmtNum(r.stock)}</b> ${fmt(r.ut)}</span>
           <span style="color:var(--sub)">订单: ${r.qty}</span>
           <button class="pos-close-btn" data-osno="${escAttr(fmt(r.os_no))}" data-itm="${r.itm}"
                   onclick="closePosUnRow(this)">关闭单据</button>
@@ -1356,6 +1357,7 @@ function renderPsIn(items) {
         </div>
         <div class="qts-row-foot">
           <span>数量: <b>${fmtNum(r.qty)} ${fmt(r.ut)}</b></span>
+          <span style="color:${parseFloat(r.stock||0)>0?'var(--green)':'var(--sub)'}">库存: <b>${fmtNum(r.stock)}</b> ${fmt(r.ut)}</span>
           <span style="color:var(--sub)">库位: ${fmt(r.wh) || '—'}</span>
         </div>
       </div>
