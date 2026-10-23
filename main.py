@@ -3097,34 +3097,54 @@ async def close_pos_unreceived(
 #   · days=7 默认 → 最近 7 天（含今天）；days=30；days=0 → 全部日期。
 #   · 作废行（USABLE=0）与已删除行不显示 —— 与 app 内其他列表口径一致。
 #   · q = 品号 / 品名 / 供应商 / PS 单号 / 采购行号(REF_ITM) 模糊。
+#   · 独立筛选：customer 客户 / supplier 供应商 / order_no 指令单号（AND 叠加）。
 #   · 关联键：REF_ITM = POS.OS_NO + RIGHT('000'+ITM,3)（采购行）；指令单号只有部分行填。
-_PS_IN_MATCH = ("(PRD_NO LIKE %s OR PRD_NAME LIKE %s OR CUS_NAME LIKE %s"
-                " OR PS_NO LIKE %s OR REF_ITM LIKE %s)")
 
 
 @app.get("/api/ps-in")
 async def ps_in(db: str = Query(default="c041"),
                 q: str = Query(default=""),
-                days: int = Query(default=7, ge=0, le=3650)):
-    """PS 采购入库单明细（PSS.PS_ID='PS'）。days=0 → 全部。"""
+                days: int = Query(default=7, ge=0, le=3650),
+                customer: str = Query(default=""),
+                supplier: str = Query(default=""),
+                order_no: str = Query(default="")):
+    """PS 采购入库单明细（PSS.PS_ID='PS'）。days=0 → 全部。
+
+    三个独立筛选（AND 叠加）：customer 客户 / supplier 供应商 / order_no 指令单号。
+    ⚠️ PSS.CUS_NO/CUS_NAME 在这张单上存的是**供应商**；
+       客户只能经 SO_NO_ITM → POS(OS_NO+ITM) 取（采购入库没有自己的客户列）。
+    """
     db_name = "T041" if db.lower() == "t041" else "C041"
     conn = get_conn(db=db_name)
     try:
         cur = conn.cursor()
         where, params = [], []
         if days:
-            where.append("PS_DD >= DATEADD(day, -%d, CAST(CAST(GETDATE() AS date) AS datetime))" % (days - 1))
+            where.append("x.PS_DD >= DATEADD(day, -%d, CAST(CAST(GETDATE() AS date) AS datetime))" % (days - 1))
         if q:
-            where.append(_PS_IN_MATCH)
+            where.append("(x.PRD_NO LIKE %s OR x.PRD_NAME LIKE %s OR x.CUS_NAME LIKE %s"
+                         " OR x.PS_NO LIKE %s OR x.REF_ITM LIKE %s)")
             params += ["%" + q + "%"] * 5
-        w = (" AND " + " AND ".join(where)) if where else ""
-        base = ("FROM PSS WITH (NOLOCK) WHERE PS_ID='PS'"
-                " AND ISNULL(USABLE,1)=1 AND ISNULL([删除],0)=0" + w)
+        if supplier:
+            where.append("(x.CUS_NO LIKE %s OR x.CUS_NAME LIKE %s)")
+            params += ["%" + supplier + "%"] * 2
+        if order_no:
+            where.append("x.[指令单号] LIKE %s")
+            params.append("%" + order_no + "%")
+        if customer:
+            where.append("(p.CUS_NO LIKE %s OR p.CUS_NAME LIKE %s)")
+            params += ["%" + customer + "%"] * 2
+        base = ("FROM PSS x WITH (NOLOCK)"
+                " LEFT JOIN POS p WITH (NOLOCK)"
+                "   ON RTRIM(p.OS_NO) + RIGHT('000' + CAST(p.ITM AS varchar(10)), 3) = RTRIM(x.SO_NO_ITM)"
+                " WHERE x.PS_ID='PS' AND ISNULL(x.USABLE,1)=1 AND ISNULL(x.[删除],0)=0"
+                + ((" AND " + " AND ".join(where)) if where else ""))
         cur.execute("SELECT COUNT(*) " + base, tuple(params))
         total = int(cur.fetchone()[0] or 0)
-        cur.execute("""SELECT TOP 1000 PS_NO, PS_DD, CUS_NO, CUS_NAME, PRD_NO, PRD_NAME,
-                              SPC, UT, QTY, WH, REF_ITM, [指令单号], 单重, 净重, REM1
-                       """ + base + " ORDER BY PS_DD DESC, PS_NO DESC, ITM", tuple(params))
+        cur.execute("""SELECT TOP 1000 x.PS_NO, x.PS_DD, x.CUS_NO, x.CUS_NAME, x.PRD_NO, x.PRD_NAME,
+                              x.SPC, x.UT, x.QTY, x.WH, x.REF_ITM, x.[指令单号], x.单重, x.净重, x.REM1,
+                              p.CUS_NO AS CUST_NO, p.CUS_NAME AS CUST_NAME
+                       """ + base + " ORDER BY x.PS_DD DESC, x.PS_NO DESC, x.ITM", tuple(params))
         rows = cur.fetchall()
     finally:
         conn.close()
@@ -3145,10 +3165,13 @@ async def ps_in(db: str = Query(default="c041"),
             "prd_no": g(r[4]), "prd_name": g(r[5]), "spc": g(r[6]), "ut": g(r[7]),
             "qty": num(r[8]), "wh": g(r[9]), "ref_itm": g(r[10]), "order_no": g(r[11]),
             "dz": num(r[12]), "jz": num(r[13]), "rem1": g(r[14]),
+            "cust_no": g(r[15]), "cust_name": g(r[16]),
         })
     return {"items": items, "total": total, "days": days, "q": q,
+            "customer": customer, "supplier": supplier, "order_no": order_no,
             "caliber": "PSS(PS_ID='PS') 采购入库明细；作废(USABLE=0)/已删除行不显示；"
-                       + ("最近 %d 天（含今天）" % days if days else "全部日期")}
+                       + ("最近 %d 天（含今天）" % days if days else "全部日期")
+                       + "；客户经 SO_NO_ITM→POS 关联"}
 
 
 # ── API: 已完工入库（IC_KND=13 + REM LIKE '完工入库%'）────────────────────────

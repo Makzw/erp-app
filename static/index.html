@@ -1070,7 +1070,7 @@ mainTabBar.addEventListener('click', e => {
       posUnCustomer = ''; posUnSupplier = ''; posUnOrderNo = '';
     }
     if (curTab === 'po-late') { poLateQ = ''; }
-    if (curTab === 'ps-in') { psInQ = ''; }
+    if (curTab === 'ps-in') { psInQ = ''; psInCus = ''; psInSup = ''; psInOrd = ''; }
     if (curTab === 'fg-no-issue') {
       fniQ = '';
     }
@@ -1284,6 +1284,7 @@ async function closePosUnRow(btn) {
 // 一行 = 一个品号（明细铺平）。默认最近 7 天（含今天），可切 30 天 / 全部。
 // 作废行（USABLE=0）后端不返回。搜索走顶栏搜索框（品号/品名/供应商/单号/采购行）。
 let psInQ = '', psInDays = 7, psInTotal = 0;
+let psInCus = '', psInSup = '', psInOrd = '';   // 客户 / 供应商 / 指令单号（服务端筛选，AND 叠加）
 
 async function loadPsIn() {
   const el = $id('content');
@@ -1291,6 +1292,9 @@ async function loadPsIn() {
   try {
     const params = new URLSearchParams({ days: String(psInDays) });
     if (psInQ) params.set('q', psInQ);
+    if (psInCus) params.set('customer', psInCus);
+    if (psInSup) params.set('supplier', psInSup);
+    if (psInOrd) params.set('order_no', psInOrd);
     const data = await api(BASE + '/ps-in?' + params);
     psInTotal = data.total || 0;
     renderPsIn(data.items || []);
@@ -1298,6 +1302,19 @@ async function loadPsIn() {
 }
 
 function setPsInDays(d) { psInDays = d; loadPsIn(); }
+
+function applyPsInFilters() {
+  psInCus = ($id('psInFCus') || {value:''}).value.trim();
+  psInSup = ($id('psInFSup') || {value:''}).value.trim();
+  psInOrd = ($id('psInFOrd') || {value:''}).value.trim();
+  loadPsIn();
+}
+
+function resetPsInFilters() {
+  psInQ = ''; psInCus = ''; psInSup = ''; psInOrd = '';
+  ['psInFCus', 'psInFSup', 'psInFOrd'].forEach(id => { const e = $id(id); if (e) e.value = ''; });
+  loadPsIn();
+}
 
 function renderPsIn(items) {
   const el = $id('content');
@@ -1310,6 +1327,13 @@ function renderPsIn(items) {
   let h = `
     <div class="pos-un-toolbar">
       <span class="pos-un-filter-row">${rng}</span>
+      <span class="pos-un-filter-row">
+        <input type="text" id="psInFCus" value="${escAttr(psInCus)}" placeholder="客户筛选…" autocomplete="off" onkeydown="if(event.key==='Enter')applyPsInFilters()" style="flex:1;min-width:80px">
+        <input type="text" id="psInFSup" value="${escAttr(psInSup)}" placeholder="供应商筛选…" autocomplete="off" onkeydown="if(event.key==='Enter')applyPsInFilters()" style="flex:1;min-width:80px">
+        <input type="text" id="psInFOrd" value="${escAttr(psInOrd)}" placeholder="指令单筛选…" autocomplete="off" onkeydown="if(event.key==='Enter')applyPsInFilters()" style="flex:1;min-width:80px">
+        <button class="pos-un-filter-reset" onclick="resetPsInFilters()">清除</button>
+        <button onclick="applyPsInFilters()">筛选</button>
+      </span>
       <span class="pos-un-info">${psInTotal} 行</span>
     </div>`;
 
@@ -1338,6 +1362,7 @@ function renderPsIn(items) {
       <div class="qts-row-meta">
         <span>采购行: ${highlight(fmt(r.ref_itm) || '—', q)}</span>
         <span>指令单: ${highlight(fmt(r.order_no) || '—', q)}</span>
+        <span>客户: ${highlight(fmt(r.cust_name) || '—', q)}</span>
       </div>
     </div>`;
   }
@@ -1881,6 +1906,9 @@ function applyCompFilters() {
 // 车间仓「外发计划」分类开关（再点一次取消）
 function setCompPlanCat(c) {
   compPlanCat = (compPlanCat === c) ? '' : c;
+  // 安装/其他 只存在于车间仓（compPlanHit 已按仓库代码 8 限定），
+  // 再叠一个别的仓库 tab 必然筛成 0 条 → 一起清掉（MAK 2026-10-22）
+  if (compPlanCat) compWh = '';
   applyCompFilters();
 }
 
@@ -1950,6 +1978,9 @@ function renderCompletionList() {
 
   if (!completionData.length) {
     el.innerHTML = toolbar + '<div class="state-msg">暂无完工单</div>';
+    // 不能 return：下面还要重建仓库 tab 和「安装/其他」分类，
+    // 否则筛成 0 条时页面上只剩一行字、连返回的按钮都没有，看起来就是白屏（MAK 2026-10-22）
+    renderCompWhTabs(el);
     return;
   }
 
@@ -2069,22 +2100,28 @@ ${stashedHtml}
 
   el.innerHTML = html;
 
-  // 动态渲染仓库 Tab
+  renderCompWhTabs(el);
+}
+
+// 动态渲染仓库 Tab + 车间仓外发计划分类（安装/其他）——空列表时也要渲染
+function renderCompWhTabs(el) {
   const tabsEl = $id('compWhTabs');
   if (tabsEl) {
     const whs = [...new Set(allCompletionData.map(d => d.wh1_name || d.wh1 || '').filter(Boolean))].sort();
+    // tab 上的数字只算未完工（status='open'），已完工/已结案不再计入（MAK 2026-10-22）
+    const openAll = allCompletionData.filter(d => (d.status || 'open') === 'open');
     let tabsHtml = '<span style="font-size:11px;color:var(--sub)">仓库:</span>';
     const allActive = compWh === '';
-    tabsHtml += `<button onclick="filterByWh('')" style="padding:3px 10px;border-radius:14px;border:1px solid ${allActive?'var(--accent)':'var(--border)'};background:${allActive?'var(--accent)':'transparent'};color:${allActive?'#fff':'var(--text)'};font-size:11px;cursor:pointer">全部 (${allCompletionData.length})</button>`;
+    tabsHtml += `<button onclick="filterByWh('')" style="padding:3px 10px;border-radius:14px;border:1px solid ${allActive?'var(--accent)':'var(--border)'};background:${allActive?'var(--accent)':'transparent'};color:${allActive?'#fff':'var(--text)'};font-size:11px;cursor:pointer">全部 (${openAll.length})</button>`;
     whs.forEach(w => {
-      const cnt = allCompletionData.filter(d => (d.wh1_name||d.wh1||'')===w).length;
+      const cnt = openAll.filter(d => (d.wh1_name||d.wh1||'')===w).length;
       const active = compWh === w;
       tabsHtml += `<button onclick="filterByWh('${escAttr(w)}')" style="padding:3px 10px;border-radius:14px;border:1px solid ${active?'var(--accent)':'var(--border)'};background:${active?'var(--accent)':'transparent'};color:${active?'#fff':'var(--text)'};font-size:11px;cursor:pointer">${escHtml(w)} (${cnt})</button>`;
     });
     // 车间仓：外发计划按「安装 / 其他」分类（安装 = 以「安装」开头；MAK 2026-10-02）
     // 常显：安装只存在于车间仓，点了自动只出车间仓的行；按仓库代码 8 认，避免 '8 车间仓' 另一种写法漏掉
     {
-      const cx = allCompletionData.filter(isChetiWh);
+      const cx = openAll.filter(isChetiWh);
       const nA = cx.filter(d => (d.ddjh||'').startsWith('安装')).length;
       const chips = [['安装', nA], ['其他', cx.length - nA]].map(([c, n]) => {
         const act = compPlanCat === c;
